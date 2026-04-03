@@ -1,0 +1,17 @@
+{
+  "appId": "com.stockanalyzer.app",
+  "productName": "StockAnalyzer",
+  "directories": {
+    "output": "dist"
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*"
+  ],
+  "win": {
+    "target": [
+      "dir"
+    ]
+  },
+  "publish": null
+}

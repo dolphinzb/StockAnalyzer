@@ -1,0 +1,53 @@
+# 依赖
+node_modules/
+.pnp
+.pnp.js
+
+# 构建输出
+dist/
+dist-electron/
+out/
+
+# 开发日志
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+.trae/
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 调试
+.npm
+.eslintcache
+.node_repl_history
+
+# 测试
+coverage/
+
+# Electron
+*.log
+
+# 规范和规划文件
+.specify/
+
+# TypeScript 构建信息
+*.tsbuildinfo
+
+# electron-builder
+builder-debug.yml
+builder-effective-config.yaml

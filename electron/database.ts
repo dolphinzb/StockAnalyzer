@@ -1,9 +1,44 @@
 import { app } from 'electron';
-import { join } from 'path';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import log from 'electron-log';
-import type { AppConfig } from '../shared/types';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import initSqlJs, { Database } from 'sql.js';
+import type { AppConfig } from '../shared/types';
+
+/**
+ * 自选股实体类型
+ */
+export interface WatchlistStock {
+  id: number;
+  stockCode: string;
+  stockName: string;
+  buyThreshold: number;
+  sellThreshold: number;
+  monitorEnabled: boolean;
+  currentPrice: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * 添加股票输入类型
+ */
+export interface AddStockInput {
+  stockCode: string;
+  stockName: string;
+  buyThreshold: number;
+  sellThreshold: number;
+}
+
+/**
+ * 更新股票输入类型
+ */
+export interface UpdateStockInput {
+  buyThreshold?: number;
+  sellThreshold?: number;
+  monitorEnabled?: boolean;
+  currentPrice?: number;
+}
 
 export const DEFAULT_CONFIG: AppConfig = {
   trading: {
@@ -69,6 +104,32 @@ export async function initDatabase(): Promise<void> {
         holding_price REAL DEFAULT NULL
       )
     `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS watchlist_stocks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stock_code TEXT UNIQUE NOT NULL,
+        stock_name TEXT NOT NULL,
+        buy_threshold REAL NOT NULL,
+        sell_threshold REAL NOT NULL,
+        monitor_enabled INTEGER NOT NULL DEFAULT 1,
+        current_price REAL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+
+    db.run(`
+      CREATE INDEX IF NOT EXISTS idx_watchlist_stocks_monitor_enabled
+      ON watchlist_stocks(monitor_enabled)
+    `);
+
+    db.run(`
+      CREATE INDEX IF NOT EXISTS idx_watchlist_stocks_stock_code
+      ON watchlist_stocks(stock_code)
+    `);
+
+    log.info('自选股数据库表初始化完成');
 
     const result = db.exec("SELECT * FROM config WHERE key = 'app_config'");
     if (result.length === 0 || result[0].values.length === 0) {
@@ -144,4 +205,141 @@ export function closeDatabase(): void {
     db.close();
     db = null;
   }
+}
+
+function getDb(): Database {
+  if (!db) {
+    throw new Error('数据库未初始化');
+  }
+  return db;
+}
+
+function rowToWatchlistStock(row: any[]): WatchlistStock {
+  return {
+    id: row[0] as number,
+    stockCode: row[1] as string,
+    stockName: row[2] as string,
+    buyThreshold: row[3] as number,
+    sellThreshold: row[4] as number,
+    monitorEnabled: row[5] === 1,
+    currentPrice: row[6] as number | null,
+    createdAt: row[7] as string,
+    updatedAt: row[8] as string,
+  };
+}
+
+export function getWatchlist(): WatchlistStock[] {
+  const database = getDb();
+  const result = database.exec(
+    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, current_price, created_at, updated_at FROM watchlist_stocks ORDER BY monitor_enabled DESC, updated_at DESC'
+  );
+  if (result.length === 0) {
+    return [];
+  }
+  return result[0].values.map(rowToWatchlistStock);
+}
+
+export function getWatchlistById(id: number): WatchlistStock | null {
+  const database = getDb();
+  const result = database.exec(
+    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, current_price, created_at, updated_at FROM watchlist_stocks WHERE id = ?',
+    [id]
+  );
+  if (result.length === 0 || result[0].values.length === 0) {
+    return null;
+  }
+  return rowToWatchlistStock(result[0].values[0]);
+}
+
+export function getEnabledStocks(): WatchlistStock[] {
+  const database = getDb();
+  const result = database.exec(
+    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, current_price, created_at, updated_at FROM watchlist_stocks WHERE monitor_enabled = 1'
+  );
+  if (result.length === 0) {
+    return [];
+  }
+  return result[0].values.map(rowToWatchlistStock);
+}
+
+export function getStockByCode(stockCode: string): WatchlistStock | null {
+  const database = getDb();
+  const result = database.exec(
+    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, current_price, created_at, updated_at FROM watchlist_stocks WHERE stock_code = ?',
+    [stockCode]
+  );
+  if (result.length === 0 || result[0].values.length === 0) {
+    return null;
+  }
+  return rowToWatchlistStock(result[0].values[0]);
+}
+
+export function addStock(input: AddStockInput): WatchlistStock {
+  const database = getDb();
+  const now = new Date().toISOString();
+  database.run(
+    'INSERT INTO watchlist_stocks (stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, current_price, created_at, updated_at) VALUES (?, ?, ?, ?, 0, NULL, ?, ?)',
+    [input.stockCode, input.stockName, input.buyThreshold, input.sellThreshold, now, now]
+  );
+  saveDatabase();
+  const inserted = getStockByCode(input.stockCode);
+  if (!inserted) {
+    throw new Error('添加股票失败');
+  }
+  return inserted;
+}
+
+export function updateStock(id: number, input: UpdateStockInput): WatchlistStock | null {
+  const database = getDb();
+  const existing = getWatchlistById(id);
+  if (!existing) {
+    return null;
+  }
+  const now = new Date().toISOString();
+  const updates: string[] = ['updated_at = ?'];
+  const values: any[] = [now];
+  if (input.buyThreshold !== undefined) {
+    updates.push('buy_threshold = ?');
+    values.push(input.buyThreshold);
+  }
+  if (input.sellThreshold !== undefined) {
+    updates.push('sell_threshold = ?');
+    values.push(input.sellThreshold);
+  }
+  if (input.monitorEnabled !== undefined) {
+    updates.push('monitor_enabled = ?');
+    values.push(input.monitorEnabled ? 1 : 0);
+  }
+  if (input.currentPrice !== undefined) {
+    updates.push('current_price = ?');
+    values.push(input.currentPrice);
+  }
+  values.push(id);
+  database.run(
+    `UPDATE watchlist_stocks SET ${updates.join(', ')} WHERE id = ?`,
+    values
+  );
+  saveDatabase();
+  return getWatchlistById(id);
+}
+
+export function deleteStock(id: number): boolean {
+  const database = getDb();
+  const existing = getWatchlistById(id);
+  if (!existing) {
+    return false;
+  }
+  database.run('DELETE FROM watchlist_stocks WHERE id = ?', [id]);
+  saveDatabase();
+  return true;
+}
+
+export function updateStockPrice(stockCode: string, price: number): void {
+  const database = getDb();
+  const now = new Date().toISOString();
+  database.run(
+    'UPDATE watchlist_stocks SET current_price = ?, updated_at = ? WHERE stock_code = ?',
+    [price, now, stockCode]
+  );
+  saveDatabase();
 }

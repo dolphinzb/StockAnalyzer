@@ -2,7 +2,25 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import log from 'electron-log';
 import { join } from 'path';
 import type { AppConfig } from '../shared/types';
-import { closeDatabase, initDatabase, loadConfig, saveConfig } from './database';
+import {
+  addStock,
+  closeDatabase,
+  deleteStock,
+  getEnabledStocks,
+  getWatchlist,
+  initDatabase,
+  loadConfig,
+  saveConfig,
+  updateStock,
+  type AddStockInput,
+  type UpdateStockInput
+} from './database';
+import {
+  getLastRefreshTime,
+  manualRefresh,
+  startScheduler,
+  stopScheduler,
+} from './services/priceFetcher';
 
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
@@ -102,6 +120,77 @@ ipcMain.handle('config:set', (_event, config: AppConfig) => {
   return success;
 });
 
+ipcMain.handle('watchlist:get', () => {
+  log.debug('IPC: watchlist:get');
+  try {
+    return getWatchlist();
+  } catch (error) {
+    log.error('IPC watchlist:get error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('watchlist:add', (_event, input: AddStockInput) => {
+  log.info('IPC: watchlist:add', JSON.stringify(input));
+  try {
+    if (input.sellThreshold <= input.buyThreshold) {
+      throw new Error('INVALID_THRESHOLD: 卖出阈值必须高于买入阈值');
+    }
+    return addStock(input);
+  } catch (error) {
+    log.error('IPC watchlist:add error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('watchlist:update', (_event, id: number, updates: UpdateStockInput) => {
+  log.info('IPC: watchlist:update', id, JSON.stringify(updates));
+  try {
+    if (updates.buyThreshold !== undefined && updates.sellThreshold !== undefined) {
+      if (updates.sellThreshold <= updates.buyThreshold) {
+        throw new Error('INVALID_THRESHOLD: 卖出阈值必须高于买入阈值');
+      }
+    }
+    const result = updateStock(id, updates);
+    if (!result) {
+      throw new Error('STOCK_NOT_FOUND');
+    }
+    return result;
+  } catch (error) {
+    log.error('IPC watchlist:update error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('watchlist:delete', (_event, id: number) => {
+  log.info('IPC: watchlist:delete', id);
+  try {
+    const success = deleteStock(id);
+    if (!success) {
+      throw new Error('STOCK_NOT_FOUND');
+    }
+  } catch (error) {
+    log.error('IPC watchlist:delete error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('prices:refresh', async () => {
+  log.info('IPC: prices:refresh');
+  try {
+    const stocks = getEnabledStocks();
+    await manualRefresh(stocks);
+  } catch (error) {
+    log.error('IPC prices:refresh error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('prices:last-time', () => {
+  log.debug('IPC: prices:last-time');
+  return getLastRefreshTime();
+});
+
 app.whenReady().then(async () => {
   log.info('App ready');
   app.applicationMenu = null;
@@ -109,6 +198,7 @@ app.whenReady().then(async () => {
   currentConfig = loadConfig();
   log.info('Config loaded on startup');
   createWindow();
+  startScheduler(getEnabledStocks);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -126,5 +216,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   log.info('Application quitting...');
+  stopScheduler();
   closeDatabase();
 });

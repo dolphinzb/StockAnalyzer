@@ -1,6 +1,76 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { AppConfig } from '../shared/types';
 
+/**
+ * 自选股实体类型
+ */
+interface WatchlistStock {
+  id: number;
+  stockCode: string;
+  stockName: string;
+  buyThreshold: number;
+  sellThreshold: number;
+  monitorEnabled: boolean;
+  currentPrice: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * 添加股票输入类型
+ */
+interface AddStockInput {
+  stockCode: string;
+  stockName: string;
+  buyThreshold: number;
+  sellThreshold: number;
+}
+
+/**
+ * 更新股票输入类型
+ */
+interface UpdateStockInput {
+  buyThreshold?: number;
+  sellThreshold?: number;
+  monitorEnabled?: boolean;
+}
+
+/**
+ * 告警类型
+ */
+interface Alert {
+  stockCode: string;
+  stockName: string;
+  alertType: 'BUY' | 'SELL';
+  triggerPrice: number;
+  threshold: number;
+  timestamp: string;
+}
+
+/**
+ * 价格更新类型
+ */
+interface PriceUpdate {
+  stockCode: string;
+  price: number;
+  timestamp: string;
+}
+
+/**
+ * 股票监控 API
+ */
+interface StockWatcherAPI {
+  getWatchlist(): Promise<WatchlistStock[]>;
+  addStock(stock: AddStockInput): Promise<WatchlistStock>;
+  updateStock(id: number, updates: UpdateStockInput): Promise<WatchlistStock>;
+  deleteStock(id: number): Promise<void>;
+  refreshPrices(): Promise<void>;
+  getLastRefreshTime(): Promise<string | null>;
+  onPriceUpdate(callback: (prices: PriceUpdate[]) => void): () => void;
+  onAlert(callback: (alert: Alert) => void): () => void;
+  onRefreshTimeUpdate(callback: (time: string) => void): () => void;
+}
+
 const electronAPI = {
   platform: process.platform as 'windows' | 'mac' | 'linux',
   versions: {
@@ -29,5 +99,31 @@ const configAPI = {
   },
 };
 
+const stockWatcherAPI: StockWatcherAPI = {
+  getWatchlist: (): Promise<WatchlistStock[]> => ipcRenderer.invoke('watchlist:get'),
+  addStock: (stock: AddStockInput): Promise<WatchlistStock> => ipcRenderer.invoke('watchlist:add', stock),
+  updateStock: (id: number, updates: UpdateStockInput): Promise<WatchlistStock> =>
+    ipcRenderer.invoke('watchlist:update', id, updates),
+  deleteStock: (id: number): Promise<void> => ipcRenderer.invoke('watchlist:delete', id),
+  refreshPrices: (): Promise<void> => ipcRenderer.invoke('prices:refresh'),
+  getLastRefreshTime: (): Promise<string | null> => ipcRenderer.invoke('prices:last-time'),
+  onPriceUpdate: (callback: (prices: PriceUpdate[]) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, prices: PriceUpdate[]) => callback(prices);
+    ipcRenderer.on('prices:update', handler);
+    return () => ipcRenderer.removeListener('prices:update', handler);
+  },
+  onAlert: (callback: (alert: Alert) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, alert: Alert) => callback(alert);
+    ipcRenderer.on('alert:trigger', handler);
+    return () => ipcRenderer.removeListener('alert:trigger', handler);
+  },
+  onRefreshTimeUpdate: (callback: (time: string) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, time: string) => callback(time);
+    ipcRenderer.on('refresh:time-update', handler);
+    return () => ipcRenderer.removeListener('refresh:time-update', handler);
+  },
+};
+
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 contextBridge.exposeInMainWorld('configAPI', configAPI);
+contextBridge.exposeInMainWorld('stockWatcherAPI', stockWatcherAPI);

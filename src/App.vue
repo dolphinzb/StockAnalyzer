@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import SideNav from './components/SideNav.vue'
 import TitleBar from './components/TitleBar.vue'
+import ToastNotification from './components/ToastNotification.vue'
 import { useNavigation, type ViewId } from './composables/useNavigation'
 import GridView from './views/GridView.vue'
 import PositionView from './views/PositionView.vue'
@@ -35,6 +36,7 @@ const handleNavigate = (viewId: ViewId) => {
         <component :is="currentComponent" />
       </main>
     </div>
+    <ToastNotification />
   </div>
 </template>
 

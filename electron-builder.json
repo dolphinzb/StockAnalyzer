@@ -2,7 +2,7 @@
   "appId": "com.stockanalyzer.app",
   "productName": "StockAnalyzer",
   "directories": {
-    "output": "dist"
+    "output": "release"
   },
   "files": [
     "dist/**/*",
@@ -10,7 +10,7 @@
   ],
   "win": {
     "target": [
-      "dir"
+      "nsis"
     ]
   },
   "publish": null

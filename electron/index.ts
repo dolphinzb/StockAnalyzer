@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { join } from 'path';
 import log from 'electron-log';
+import { join } from 'path';
+import type { AppConfig } from '../shared/types';
+import { closeDatabase, initDatabase, loadConfig, saveConfig } from './database';
 
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
@@ -10,6 +12,7 @@ log.info('Application starting...');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 let mainWindow: BrowserWindow | null = null;
+let currentConfig: AppConfig | null = null;
 
 function createWindow(): void {
   log.info('Creating main window...');
@@ -19,6 +22,7 @@ function createWindow(): void {
     height: 800,
     minWidth: 800,
     minHeight: 600,
+    frame: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -31,6 +35,10 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     log.info('Window ready to show');
     mainWindow?.show();
+    if (currentConfig) {
+      mainWindow?.webContents.send('config:loaded', currentConfig);
+      log.info('Config sent to renderer');
+    }
   });
 
   mainWindow.on('maximize', () => {
@@ -49,7 +57,7 @@ function createWindow(): void {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(join(__dirname, '../../dist/index.html'));
   }
 
   log.info(`Window created. Dev mode: ${isDev}`);
@@ -78,9 +86,28 @@ ipcMain.handle('window:is-maximized', () => {
   return mainWindow?.isMaximized() ?? false;
 });
 
-app.whenReady().then(() => {
+ipcMain.handle('config:get', () => {
+  log.debug('IPC: config:get');
+  return currentConfig;
+});
+
+ipcMain.handle('config:set', (_event, config: AppConfig) => {
+  log.info('IPC: config:set', JSON.stringify(config));
+  const success = saveConfig(config);
+  log.info('Save config result:', success);
+  console.log('[Electron Main] config:set success:', success);
+  if (success) {
+    currentConfig = config;
+  }
+  return success;
+});
+
+app.whenReady().then(async () => {
   log.info('App ready');
   app.applicationMenu = null;
+  await initDatabase();
+  currentConfig = loadConfig();
+  log.info('Config loaded on startup');
   createWindow();
 
   app.on('activate', () => {
@@ -99,4 +126,5 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   log.info('Application quitting...');
+  closeDatabase();
 });

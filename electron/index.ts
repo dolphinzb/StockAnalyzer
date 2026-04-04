@@ -80,6 +80,7 @@ ipcMain.handle('window:is-maximized', () => {
 
 app.whenReady().then(() => {
   log.info('App ready');
+  app.applicationMenu = null;
   createWindow();
 
   app.on('activate', () => {

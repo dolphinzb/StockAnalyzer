@@ -1,14 +1,40 @@
 <script setup lang="ts">
-import TitleBar from './components/TitleBar.vue';
+import { computed } from 'vue'
+import SideNav from './components/SideNav.vue'
+import TitleBar from './components/TitleBar.vue'
+import { useNavigation, type ViewId } from './composables/useNavigation'
+import GridView from './views/GridView.vue'
+import PositionView from './views/PositionView.vue'
+import SettingsView from './views/SettingsView.vue'
+import WatchlistView from './views/WatchlistView.vue'
+
+const { currentViewId, navigate } = useNavigation()
+
+const viewComponents = {
+  watchlist: WatchlistView,
+  position: PositionView,
+  grid: GridView,
+  settings: SettingsView
+}
+
+const currentComponent = computed(() => {
+  return viewComponents[currentViewId.value]
+})
+
+const handleNavigate = (viewId: ViewId) => {
+  navigate(viewId)
+}
 </script>
 
 <template>
   <div class="app">
     <TitleBar />
-    <main class="main-content">
-      <h1>StockAnalyzer</h1>
-      <p>基于 Electron + Vue3 + TypeScript 的股票分析桌面应用</p>
-    </main>
+    <div class="app-body">
+      <SideNav :current-view-id="currentViewId" @navigate="handleNavigate" />
+      <main class="main-content">
+        <component :is="currentComponent" />
+      </main>
+    </div>
   </div>
 </template>
 
@@ -21,21 +47,15 @@ import TitleBar from './components/TitleBar.vue';
   color: var(--text-color);
 }
 
-.main-content {
+.app-body {
   flex: 1;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
+  overflow: hidden;
+}
 
-  h1 {
-    font-size: 2rem;
-    margin-bottom: 1rem;
-  }
-
-  p {
-    color: var(--text-secondary);
-  }
+.main-content {
+  flex: 1;
+  overflow: auto;
+  background-color: var(--bg-color);
 }
 </style>

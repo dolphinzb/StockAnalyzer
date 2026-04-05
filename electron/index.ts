@@ -5,21 +5,29 @@ import type { AppConfig } from '../shared/types';
 import {
   addStock,
   closeDatabase,
+  addTradeRecord as dbAddTradeRecord,
   deleteStock,
+  deleteTradeRecord,
   getEnabledStocks,
+  getPositions,
+  getTradeRecords,
   getWatchlist,
   initDatabase,
   loadConfig,
   saveConfig,
   updateStock,
+  updateTradeRecord,
   type AddStockInput,
-  type UpdateStockInput
+  type AddTradeInput,
+  type UpdateStockInput,
+  type UpdateTradeInput
 } from './database';
 import {
+  fetchStockPrices,
   getLastRefreshTime,
   manualRefresh,
   startScheduler,
-  stopScheduler,
+  stopScheduler
 } from './services/priceFetcher';
 
 log.transports.file.level = 'info';
@@ -189,6 +197,67 @@ ipcMain.handle('prices:refresh', async () => {
 ipcMain.handle('prices:last-time', () => {
   log.debug('IPC: prices:last-time');
   return getLastRefreshTime();
+});
+
+ipcMain.handle('position:get-list', () => {
+  log.debug('IPC: position:get-list');
+  try {
+    return getPositions();
+  } catch (error) {
+    log.error('IPC position:get-list error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('position:get-records', (_event, stockCode: string) => {
+  log.debug('IPC: position:get-records', stockCode);
+  try {
+    return getTradeRecords(stockCode);
+  } catch (error) {
+    log.error('IPC position:get-records error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('position:add-record', (_event, input: AddTradeInput) => {
+  log.info('IPC: position:add-record', JSON.stringify(input));
+  try {
+    return dbAddTradeRecord(input);
+  } catch (error) {
+    log.error('IPC position:add-record error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('position:update-record', (_event, input: UpdateTradeInput) => {
+  log.info('IPC: position:update-record', JSON.stringify(input));
+  try {
+    return updateTradeRecord(input);
+  } catch (error) {
+    log.error('IPC position:update-record error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('position:delete-record', (_event, id: number) => {
+  log.info('IPC: position:delete-record', id);
+  try {
+    deleteTradeRecord(id);
+    return true;
+  } catch (error) {
+    log.error('IPC position:delete-record error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('position:fetch-prices', async (_event, stockCodes: string[]) => {
+  log.info('IPC: position:fetch-prices', stockCodes);
+  try {
+    return await fetchStockPrices(stockCodes);
+  } catch (error) {
+    log.error('IPC position:fetch-prices error:', error);
+    throw error;
+  }
 });
 
 app.whenReady().then(async () => {

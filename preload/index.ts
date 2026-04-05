@@ -56,6 +56,55 @@ interface PriceUpdate {
   timestamp: string;
 }
 
+interface Position {
+  stockCode: string;
+  stockName: string;
+  holdingCount: number;
+  holdingPrice: number;
+}
+
+interface TradeRecord {
+  id: number;
+  stockCode: string;
+  stockName: string;
+  tradeDate: string;
+  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
+  tradePrice: number;
+  tradeCount: number;
+  holdingCount: number;
+  holdingPrice: number;
+}
+
+interface AddTradeInput {
+  stockCode: string;
+  stockName: string;
+  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
+  tradeDate: string;
+  tradePrice: number;
+  tradeCount: number;
+}
+
+interface UpdateTradeInput {
+  id: number;
+  stockCode: string;
+  stockName: string;
+  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
+  tradeDate: string;
+  tradePrice: number;
+  tradeCount: number;
+  holdingCount: number;
+  holdingPrice: number;
+}
+
+interface PositionAPI {
+  getPositions(): Promise<Position[]>;
+  getTradeRecords(stockCode: string): Promise<TradeRecord[]>;
+  addTradeRecord(trade: AddTradeInput): Promise<TradeRecord>;
+  updateTradeRecord(trade: UpdateTradeInput): Promise<TradeRecord>;
+  deleteTradeRecord(id: number): Promise<boolean>;
+  fetchPrices(stockCodes: string[]): Promise<{ stockCode: string; price: number; success: boolean; error?: string }[]>;
+}
+
 /**
  * 股票监控 API
  */
@@ -127,3 +176,14 @@ const stockWatcherAPI: StockWatcherAPI = {
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 contextBridge.exposeInMainWorld('configAPI', configAPI);
 contextBridge.exposeInMainWorld('stockWatcherAPI', stockWatcherAPI);
+
+const positionAPI: PositionAPI = {
+  getPositions: (): Promise<Position[]> => ipcRenderer.invoke('position:get-list'),
+  getTradeRecords: (stockCode: string): Promise<TradeRecord[]> => ipcRenderer.invoke('position:get-records', stockCode),
+  addTradeRecord: (trade: AddTradeInput): Promise<TradeRecord> => ipcRenderer.invoke('position:add-record', trade),
+  updateTradeRecord: (trade: UpdateTradeInput): Promise<TradeRecord> => ipcRenderer.invoke('position:update-record', trade),
+  deleteTradeRecord: (id: number): Promise<boolean> => ipcRenderer.invoke('position:delete-record', id),
+  fetchPrices: (stockCodes: string[]): Promise<{ stockCode: string; price: number; success: boolean; error?: string }[]> => ipcRenderer.invoke('position:fetch-prices', stockCodes),
+};
+
+contextBridge.exposeInMainWorld('positionApi', positionAPI);

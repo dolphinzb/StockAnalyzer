@@ -53,5 +53,56 @@ export interface StockWatcherAPI {
 declare global {
   interface Window {
     stockWatcherAPI: StockWatcherAPI;
+    positionApi: PositionAPI;
   }
+}
+
+export interface TradeRecord {
+  id: number;
+  stockCode: string;
+  stockName: string;
+  tradeDate: string;
+  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
+  tradePrice: number;
+  tradeCount: number;
+  holdingCount: number;
+  holdingPrice: number;
+}
+
+export interface Position {
+  stockCode: string;
+  stockName: string;
+  holdingCount: number;
+  holdingPrice: number;
+  lastTradeDate: string;
+  currentPrice: number | null;
+  profitAmount: number | null;
+  profitRatio: number | null;
+}
+
+export interface AddTradeInput {
+  stockCode: string;
+  stockName: string;
+  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
+  tradeDate: string;
+  tradePrice: number;
+  tradeCount: number;
+}
+
+export interface UpdateTradeInput {
+  id: number;
+  stockCode: string;
+  stockName: string;
+  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
+  tradeDate: string;
+  tradePrice: number;
+  tradeCount: number;
+}
+
+export interface PositionAPI {
+  getPositions(): Promise<Position[]>;
+  getTradeRecords(stockCode: string): Promise<TradeRecord[]>;
+  addTradeRecord(trade: AddTradeInput): Promise<TradeRecord>;
+  updateTradeRecord(trade: UpdateTradeInput): Promise<TradeRecord>;
+  deleteTradeRecord(id: number): Promise<boolean>;
 }

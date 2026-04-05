@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import initSqlJs, { Database } from 'sql.js';
 import type { AppConfig } from '../shared/types';
+import { calcHoldingPrice, type CalcResult } from './services/tradeService';
 
 /**
  * 自选股实体类型
@@ -150,11 +151,15 @@ export async function initDatabase(): Promise<void> {
 }
 
 function saveDatabase(): void {
-  if (!db) return;
+  if (!db) {
+    log.warn('saveDatabase: db is null');
+    return;
+  }
   const dbPath = getDatabasePath();
   const data = db.export();
   const buffer = Buffer.from(data);
   writeFileSync(dbPath, buffer);
+  log.info('saveDatabase: 数据库已保存到', dbPath);
 }
 
 export function loadConfig(): AppConfig {
@@ -342,4 +347,184 @@ export function updateStockPrice(stockCode: string, price: number): void {
     [price, now, stockCode]
   );
   saveDatabase();
+}
+
+export interface Position {
+  stockCode: string;
+  stockName: string;
+  holdingCount: number;
+  holdingPrice: number;
+  lastTradeDate: string;
+  currentPrice: number | null;
+  profitAmount: number | null;
+  profitRatio: number | null;
+}
+
+export interface TradeRecord {
+  id: number;
+  stockCode: string;
+  stockName: string;
+  tradeDate: string;
+  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
+  tradePrice: number;
+  tradeCount: number;
+  holdingCount: number;
+  holdingPrice: number;
+}
+
+export interface AddTradeInput {
+  stockCode: string;
+  stockName: string;
+  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
+  tradeDate: string;
+  tradePrice: number;
+  tradeCount: number;
+}
+
+function rowToTradeRecord(row: any[]): TradeRecord {
+  return {
+    id: row[0] as number,
+    stockCode: row[1] as string,
+    stockName: row[2] as string,
+    tradeDate: row[3] as string,
+    tradeType: row[4] as 'BUY' | 'SELL' | 'DIVIDEND',
+    tradePrice: row[5] as number,
+    tradeCount: row[6] as number,
+    holdingCount: row[7] as number,
+    holdingPrice: row[8] as number,
+  };
+}
+
+export function getPositions(): Position[] {
+  const database = getDb();
+  const result = database.exec(`
+    SELECT stock_code, stock_name, holding_count, holding_price, trade_date
+    FROM trade_record
+    WHERE holding_count > 0
+    GROUP BY stock_code
+    HAVING trade_date = MAX(trade_date)
+  `);
+  if (result.length === 0 || result[0].values.length === 0) {
+    return [];
+  }
+  return result[0].values.map(row => ({
+    stockCode: row[0] as string,
+    stockName: row[1] as string,
+    holdingCount: row[2] as number,
+    holdingPrice: row[3] as number,
+    lastTradeDate: row[4] as string,
+    currentPrice: null,
+    profitAmount: null,
+    profitRatio: null,
+  }));
+}
+
+export function getLastZeroTrade(stockCode: string): TradeRecord | null {
+  const database = getDb();
+  const result = database.exec(
+    `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
+     FROM trade_record
+     WHERE stock_code = ? AND holding_count = 0
+     ORDER BY trade_date DESC LIMIT 1`,
+    [stockCode]
+  );
+  if (result.length === 0 || result[0].values.length === 0) {
+    return null;
+  }
+  return rowToTradeRecord(result[0].values[0]);
+}
+
+export interface UpdateTradeInput {
+  id: number;
+  stockCode: string;
+  stockName: string;
+  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
+  tradeDate: string;
+  tradePrice: number;
+  tradeCount: number;
+  holdingCount: number;
+  holdingPrice: number;
+}
+
+export function updateTradeRecord(input: UpdateTradeInput): TradeRecord {
+  const database = getDb();
+  log.info('updateTradeRecord input:', JSON.stringify(input));
+  database.run(
+    `UPDATE trade_record
+     SET stock_code = ?, stock_name = ?, trade_date = ?, trade_type = ?, trade_price = ?, trade_count = ?, holding_count = ?, holding_price = ?
+     WHERE id = ?`,
+    [input.stockCode, input.stockName, input.tradeDate, input.tradeType, input.tradePrice, input.tradeCount, input.holdingCount, input.holdingPrice, input.id]
+  );
+  saveDatabase();
+  const result = database.exec(
+    `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
+     FROM trade_record WHERE id = ?`,
+    [input.id]
+  );
+  if (result.length === 0 || result[0].values.length === 0) {
+    throw new Error('更新交易记录失败');
+  }
+  return rowToTradeRecord(result[0].values[0]);
+}
+
+export function deleteTradeRecord(id: number): void {
+  const database = getDb();
+  database.run(`DELETE FROM trade_record WHERE id = ?`, [id]);
+  saveDatabase();
+}
+
+export function getTradeRecords(stockCode: string): TradeRecord[] {
+  const database = getDb();
+  const lastZero = getLastZeroTrade(stockCode);
+  let query: string;
+  let params: any[];
+  if (lastZero) {
+    query = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
+             FROM trade_record
+             WHERE stock_code = ? AND trade_date >= ?
+             ORDER BY trade_date DESC`;
+    params = [stockCode, lastZero.tradeDate];
+  } else {
+    query = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
+             FROM trade_record
+             WHERE stock_code = ?
+             ORDER BY trade_date DESC`;
+    params = [stockCode];
+  }
+  const result = database.exec(query, params);
+  if (result.length === 0) {
+    return [];
+  }
+  return result[0].values.map(rowToTradeRecord);
+}
+
+export function addTradeRecord(input: AddTradeInput): TradeRecord {
+  const database = getDb();
+  const records = getTradeRecords(input.stockCode);
+  let preRecord: TradeRecord | null = null;
+  if (records.length > 0) {
+    preRecord = records[0];
+  }
+  const calcResult: CalcResult = calcHoldingPrice(
+    preRecord,
+    input.tradeType,
+    input.tradePrice,
+    input.tradeCount,
+    input.stockCode
+  );
+  database.run(
+    `INSERT INTO trade_record (stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [input.stockCode, input.stockName, input.tradeDate, input.tradeType, input.tradePrice, input.tradeCount, calcResult.holdingCount, calcResult.holdingPrice]
+  );
+  saveDatabase();
+  const result = database.exec(
+    `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
+     FROM trade_record WHERE stock_code = ? ORDER BY trade_date DESC LIMIT 1`,
+    [input.stockCode]
+  );
+  if (result.length === 0 || result[0].values.length === 0) {
+    throw new Error('添加交易记录失败');
+  }
+  return rowToTradeRecord(result[0].values[0]);
 }

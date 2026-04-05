@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue';
-import type { WatchlistStock, AddStockInput } from '../types';
+import { computed, ref, watch } from 'vue';
+import type { AddStockInput, WatchlistStock } from '../types';
 
 const props = defineProps<{
   stockId: number | null;
@@ -156,7 +156,7 @@ function handleClose() {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(128, 128, 128, 0.5);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -164,7 +164,7 @@ function handleClose() {
 }
 
 .stock-editor {
-  background-color: var(--bg-primary);
+  background-color: #ffffff;
   border-radius: 8px;
   width: 400px;
   max-width: 90vw;

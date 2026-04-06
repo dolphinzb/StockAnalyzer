@@ -55,12 +55,8 @@
     },
     "win": {
       "target": [
-        "nsis"
+        "dir"
       ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
     }
   }
 }

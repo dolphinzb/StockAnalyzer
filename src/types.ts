@@ -54,7 +54,13 @@ declare global {
   interface Window {
     stockWatcherAPI: StockWatcherAPI;
     positionApi: PositionAPI;
+    gridApi: GridAPI;
   }
+}
+
+export interface GridAPI {
+  calculatePosition(input: CalculatePositionInput): PositionResult;
+  calculateOpen(input: CalculateOpenInput): OpenResult;
 }
 
 export interface TradeRecord {
@@ -105,4 +111,30 @@ export interface PositionAPI {
   addTradeRecord(trade: AddTradeInput): Promise<TradeRecord>;
   updateTradeRecord(trade: UpdateTradeInput): Promise<TradeRecord>;
   deleteTradeRecord(id: number): Promise<boolean>;
+  fetchPrices(stockCodes: string[]): Promise<{ stockCode: string; price: number; success: boolean; error?: string }[]>;
+}
+
+export interface CalculatePositionInput {
+  totalAmount: number;
+  currentPrice: number;
+  currentHoldingCount: number;
+  averageHoldingPrice: number;
+}
+
+export interface PositionResult {
+  currentPositionAmount: number;
+  targetPosition: number;
+  targetPositionAmount: number;
+  adjustAmount: number;
+  deviationPercent: number;
+}
+
+export interface CalculateOpenInput {
+  totalAmount: number;
+  openPrice: number;
+}
+
+export interface OpenResult {
+  openAmount: number;
+  buyCount: number;
 }

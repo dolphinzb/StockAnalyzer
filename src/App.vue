@@ -5,6 +5,7 @@ import TitleBar from './components/TitleBar.vue'
 import ToastNotification from './components/ToastNotification.vue'
 import { useNavigation, type ViewId } from './composables/useNavigation'
 import GridView from './views/GridView.vue'
+import LogPage from './views/LogPage.vue'
 import PositionView from './views/PositionView.vue'
 import SettingsView from './views/SettingsView.vue'
 import WatchlistView from './views/WatchlistView.vue'
@@ -15,7 +16,8 @@ const viewComponents = {
   watchlist: WatchlistView,
   position: PositionView,
   grid: GridView,
-  settings: SettingsView
+  settings: SettingsView,
+  log: LogPage
 }
 
 const currentComponent = computed(() => {

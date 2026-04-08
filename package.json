@@ -25,6 +25,7 @@
   "devDependencies": {
     "@commitlint/cli": "^19.2.1",
     "@commitlint/config-conventional": "^19.1.0",
+    "@electron/rebuild": "^4.0.3",
     "@types/node": "^20.11.28",
     "@types/sql.js": "^1.4.11",
     "@vitejs/plugin-vue": "^5.0.4",

@@ -254,3 +254,20 @@ const gridApi = {
 };
 
 contextBridge.exposeInMainWorld('gridApi', gridApi);
+
+interface LogReadResult {
+  content: string;
+  error: string | null;
+}
+
+interface LogAPI {
+  readLog(): Promise<LogReadResult>;
+  getLogPath(): Promise<string>;
+}
+
+const logApi: LogAPI = {
+  readLog: (): Promise<LogReadResult> => ipcRenderer.invoke('log:read'),
+  getLogPath: (): Promise<string> => ipcRenderer.invoke('log:getPath'),
+};
+
+contextBridge.exposeInMainWorld('logApi', logApi);

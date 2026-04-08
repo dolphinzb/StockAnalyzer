@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import log from 'electron-log';
+import fs from 'fs';
 import { join } from 'path';
 import type { AppConfig } from '../shared/types';
 import {
@@ -258,6 +259,30 @@ ipcMain.handle('position:fetch-prices', async (_event, stockCodes: string[]) => 
     log.error('IPC position:fetch-prices error:', error);
     throw error;
   }
+});
+
+ipcMain.handle('log:read', async () => {
+  log.debug('IPC: log:read');
+  const logPath = join(app.getPath('userData'), 'logs', 'main.log');
+  try {
+    const content = await fs.promises.readFile(logPath, 'utf-8');
+    return { content, error: null };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    log.error('IPC log:read error:', errorMessage);
+    if (errorMessage.includes('ENOENT')) {
+      return { content: '', error: 'LOG_FILE_NOT_FOUND' };
+    }
+    if (errorMessage.includes('EACCES')) {
+      return { content: '', error: 'LOG_FILE_PERMISSION_DENIED' };
+    }
+    return { content: '', error: errorMessage };
+  }
+});
+
+ipcMain.handle('log:getPath', () => {
+  log.debug('IPC: log:getPath');
+  return join(app.getPath('userData'), 'logs', 'main.log');
 });
 
 app.whenReady().then(async () => {

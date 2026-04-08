@@ -55,6 +55,7 @@ declare global {
     stockWatcherAPI: StockWatcherAPI;
     positionApi: PositionAPI;
     gridApi: GridAPI;
+    logApi: LogAPI;
   }
 }
 
@@ -137,4 +138,14 @@ export interface CalculateOpenInput {
 export interface OpenResult {
   openAmount: number;
   buyCount: number;
+}
+
+export interface LogReadResult {
+  content: string;
+  error: string | null;
+}
+
+export interface LogAPI {
+  readLog(): Promise<LogReadResult>;
+  getLogPath(): Promise<string>;
 }

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron';
 import log from 'electron-log';
 import fs from 'fs';
 import { join } from 'path';
@@ -39,7 +39,66 @@ log.info('Application starting...');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let currentConfig: AppConfig | null = null;
+let isQuitting = false;
+
+function createTray(): void {
+  const iconPath = isDev
+    ? join(__dirname, '../../icon.png')
+    : join(process.resourcesPath || '', 'icon.png');
+
+  log.info('Loading tray icon from:', iconPath);
+
+  let trayIcon: Electron.NativeImage;
+  try {
+    trayIcon = nativeImage.createFromPath(iconPath);
+    if (trayIcon.isEmpty()) {
+      throw new Error('Icon is empty');
+    }
+  } catch (error) {
+    log.warn('Failed to load tray icon:', error);
+    return;
+  }
+
+  tray = new Tray(trayIcon);
+  tray.setToolTip('StockAnalyzer');
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: '显示窗口',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: '退出',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(contextMenu);
+
+  tray.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    }
+  });
+
+  log.info('System tray created');
+}
 
 function createWindow(): void {
   log.info('Creating main window...');
@@ -80,6 +139,14 @@ function createWindow(): void {
     mainWindow = null;
   });
 
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+      log.info('Window hidden to tray');
+    }
+  });
+
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
@@ -92,7 +159,7 @@ function createWindow(): void {
 
 ipcMain.on('window:minimize', () => {
   log.debug('IPC: window:minimize');
-  mainWindow?.minimize();
+  mainWindow?.hide();
 });
 
 ipcMain.on('window:maximize', () => {
@@ -106,7 +173,8 @@ ipcMain.on('window:maximize', () => {
 
 ipcMain.on('window:close', () => {
   log.debug('IPC: window:close');
-  mainWindow?.close();
+  isQuitting = true;
+  app.quit();
 });
 
 ipcMain.handle('window:is-maximized', () => {
@@ -292,6 +360,8 @@ app.whenReady().then(async () => {
   currentConfig = loadConfig();
   log.info('Config loaded on startup');
   createWindow();
+  createTray();
+  isQuitting = false;
   startScheduler(getEnabledStocks);
 
   app.on('activate', () => {
@@ -310,6 +380,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   log.info('Application quitting...');
+  isQuitting = true;
   stopScheduler();
   closeDatabase();
 });

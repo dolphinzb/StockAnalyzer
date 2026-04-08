@@ -15,11 +15,11 @@
 
 **Purpose**: 创建项目基础结构，初始化 npm 项目
 
-- [ ] T001 创建项目目录结构 per plan.md: `electron/`, `src/`, `preload/`, `shared/`, `public/`
-- [ ] T002 初始化 npm 项目，创建 `package.json`，配置项目元数据
-- [ ] T003 安装核心依赖：electron@^28.0.0, vite@^5.0.0, vue@^3.4.0, typescript@^5.3.0
-- [ ] T004 安装开发依赖：@vitejs/plugin-vue, electron-builder, electron-log
-- [ ] T005 [P] 安装代码规范依赖：eslint, prettier, eslint-plugin-vue, @commitlint/cli, @commitlint/config-conventional
+- [x] T001 创建项目目录结构 per plan.md: `electron/`, `src/`, `preload/`, `shared/`, `public/`
+- [x] T002 初始化 npm 项目，创建 `package.json`，配置项目元数据
+- [x] T003 安装核心依赖：electron@^28.0.0, vite@^5.0.0, vue@^3.4.0, typescript@^5.3.0
+- [x] T004 安装开发依赖：@vitejs/plugin-vue, electron-builder, electron-log
+- [x] T005 [P] 安装代码规范依赖：eslint, prettier, eslint-plugin-vue, @commitlint/cli, @commitlint/config-conventional
 
 ---
 
@@ -27,9 +27,9 @@
 
 **Purpose**: 配置 TypeScript 严格模式，符合章程要求
 
-- [ ] T006 创建 `tsconfig.json`，配置严格模式：`strict: true`, `noImplicitAny: true`, `strictNullChecks: true`
-- [ ] T007 创建 `tsconfig.node.json`，配置 Node 环境（用于 Vite 配置）
-- [ ] T008 创建 `shared/types/index.ts`，定义 WindowAPI 和 ElectronVersions 类型
+- [x] T006 创建 `tsconfig.json`，配置严格模式：`strict: true`, `noImplicitAny: true`, `strictNullChecks: true`
+- [x] T007 创建 `tsconfig.node.json`，配置 Node 环境（用于 Vite 配置）
+- [x] T008 创建 `shared/types/index.ts`，定义 WindowAPI 和 ElectronVersions 类型
 
 ---
 
@@ -37,9 +37,9 @@
 
 **Purpose**: 配置 Vite 构建工具，支持 Electron 主进程和渲染进程
 
-- [ ] T009 创建 `vite.config.ts`，配置 Vue 插件和 Electron 主进程构建
-- [ ] T010 配置 Vite 开发服务器，启用 HMR 和端口配置
-- [ ] T011 配置 Vite 生产构建，输出到 `dist/` 目录
+- [x] T009 创建 `vite.config.ts`，配置 Vue 插件和 Electron 主进程构建
+- [x] T010 配置 Vite 开发服务器，启用 HMR 和端口配置
+- [x] T011 配置 Vite 生产构建，输出到 `dist/` 目录
 
 ---
 
@@ -49,11 +49,27 @@
 
 **Independent Test**: 执行 `npm run dev` 后 Electron 窗口成功打开
 
-- [ ] T012 创建 `electron/index.ts`，实现主进程入口
-- [ ] T013 [P] 在 `electron/index.ts` 中配置 BrowserWindow，启用 `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`
-- [ ] T014 [P] 实现窗口管理 IPC 处理器：window:minimize, window:maximize, window:close, window:is-maximized
-- [ ] T015 [P] 集成 electron-log，配置主进程日志输出
+- [x] T012 创建 `electron/index.ts`，实现主进程入口
+- [x] T013 [P] 在 `electron/index.ts` 中配置 BrowserWindow，启用 `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`
+- [x] T014 [P] 实现窗口管理 IPC 处理器：window:minimize, window:maximize, window:close, window:is-maximized
+- [x] T015 [P] 集成 electron-log，配置主进程日志输出
 - [ ] T016 配置开发模式热重载检测，自动重启主进程
+
+---
+
+## Phase 4.5: 系统托盘
+
+**Purpose**: 实现窗口最小化到系统托盘功能
+
+**Independent Test**: 点击最小化按钮后窗口消失，点击托盘图标后窗口恢复
+
+- [x] T016.1 [P] 在 `electron/index.ts` 中导入 Tray, Menu, nativeImage 类型
+- [x] T016.2 [P] 实现 `createTray()` 函数，创建系统托盘图标和上下文菜单
+- [x] T016.3 [P] 修改 `window:minimize` IPC 处理器，调用 `window.hide()` 而非 `minimize()`
+- [x] T016.4 [P] 添加 `window.on('close')` 事件监听，实现关闭按钮最小化到托盘
+- [x] T016.5 [P] 添加 `app.isQuitting` 标志，确保退出菜单项能正确退出应用
+- [x] T016.6 [P] 在 `app.whenReady()` 中调用 `createTray()` 创建托盘
+- [x] T016.7 [P] 配置托盘图标路径：开发环境 `build/icon.png`，生产环境 `resourcesPath/icon.png`
 
 ---
 
@@ -63,9 +79,9 @@
 
 **Independent Test**: 渲染进程可调用 window.minimize(), window.maximize(), window.close()
 
-- [ ] T017 创建 `preload/index.ts`，配置 contextBridge
-- [ ] T018 [P] 暴露 WindowAPI：`platform`, `versions`, `minimize`, `maximize`, `close`, `isMaximized`
-- [ ] T019 [P] 暴露 IPC 通道监听：window:maximized 事件
+- [x] T017 创建 `preload/index.ts`，配置 contextBridge
+- [x] T018 [P] 暴露 WindowAPI：`platform`, `versions`, `minimize`, `maximize`, `close`, `isMaximized`
+- [x] T019 [P] 暴露 IPC 通道监听：window:maximized 事件
 
 ---
 
@@ -75,11 +91,11 @@
 
 **Independent Test**: 执行 `npm run dev` 后浏览器窗口显示 Vue 应用界面
 
-- [ ] T020 创建 `src/main.ts`，初始化 Vue 应用
-- [ ] T021 创建 `src/App.vue`，使用 `<script setup>` 语法，实现基本布局
-- [ ] T022 [P] 创建 `src/components/TitleBar.vue`，实现自定义标题栏（最小化、最大化、关闭按钮）
-- [ ] T023 [P] 在 TitleBar 中实现窗口控制按钮，调用 preload API
-- [ ] T024 创建 `src/styles/main.scss`，配置基本样式和 CSS Variables
+- [x] T020 创建 `src/main.ts`，初始化 Vue 应用
+- [x] T021 创建 `src/App.vue`，使用 `<script setup>` 语法，实现基本布局
+- [x] T022 [P] 创建 `src/components/TitleBar.vue`，实现自定义标题栏（最小化、最大化、关闭按钮）
+- [x] T023 [P] 在 TitleBar 中实现窗口控制按钮，调用 preload API
+- [x] T024 创建 `src/styles/main.scss`，配置基本样式和 CSS Variables
 
 ---
 
@@ -87,9 +103,9 @@
 
 **Purpose**: 配置 ESLint、Prettier 和 commitlint
 
-- [ ] T025 创建 `.eslintrc.cjs`，配置 Vue 3 + TypeScript + Prettier 规则
-- [ ] T026 创建 `.prettierrc`，配置代码格式化规则
-- [ ] T027 [P] 创建 `commitlint.config.js`，配置 Conventional Commits 规则
+- [x] T025 创建 `.eslintrc.cjs`，配置 Vue 3 + TypeScript + Prettier 规则
+- [x] T026 创建 `.prettierrc`，配置代码格式化规则
+- [x] T027 [P] 创建 `commitlint.config.js`，配置 Conventional Commits 规则
 - [ ] T028 [P] 配置 husky 和 lint-staged（可选，按需）
 
 ---
@@ -100,9 +116,9 @@
 
 **Independent Test**: 执行 `npm run build` 后 `dist/win-unpacked/` 包含 `.exe` 文件
 
-- [ ] T029 创建 `electron-builder.json`，配置 Windows 打包选项
-- [ ] T030 [P] 配置输出目录：`dist/win-unpacked/`
-- [ ] T031 [P] 配置构建目标：nsis 或 portable
+- [x] T029 创建 `electron-builder.json`，配置 Windows 打包选项
+- [x] T030 [P] 配置输出目录：`dist/win-unpacked/`
+- [x] T031 [P] 配置构建目标：nsis 或 portable
 
 ---
 
@@ -110,11 +126,11 @@
 
 **Purpose**: 在 package.json 中配置 npm scripts
 
-- [ ] T032 配置 `npm run dev`：启动 Vite 开发服务器和 Electron
-- [ ] T033 配置 `npm run build`：执行 Vite 构建和 electron-builder 打包
-- [ ] T034 配置 `npm run preview`：预览构建结果
-- [ ] T035 [P] 配置 `npm run lint` 和 `npm run lint:fix`
-- [ ] T036 [P] 配置 `npm run typecheck`：执行 TypeScript 类型检查
+- [x] T032 配置 `npm run dev`：启动 Vite 开发服务器和 Electron
+- [x] T033 配置 `npm run build`：执行 Vite 构建和 electron-builder 打包
+- [x] T034 配置 `npm run preview`：预览构建结果
+- [x] T035 [P] 配置 `npm run lint` 和 `npm run lint:fix`
+- [x] T036 [P] 配置 `npm run typecheck`：执行 TypeScript 类型检查
 
 ---
 
@@ -125,7 +141,7 @@
 **Note**: 测试覆盖率检查非强制，仅配置测试框架和占位文件
 
 - [ ] T037 [P] 安装 Vitest 依赖，配置 `vitest.config.ts`
-- [ ] T038 [P] 创建测试占位文件：`tests/unit/.gitkeep`, `tests/e2e/.gitkeep`
+- [x] T038 [P] 创建测试占位文件：`tests/unit/.gitkeep`, `tests/e2e/.gitkeep`
 - [ ] T039 [P] 安装 Playwright 依赖（可选）
 
 ---
@@ -134,8 +150,8 @@
 
 **Purpose**: 创建 SPEC.md 链接和 README 更新
 
-- [ ] T040 创建 `SPEC.md`，链接到 `specs/001-project-scaffold/spec.md`
-- [ ] T041 更新项目 README，添加开发命令说明
+- [x] T040 创建 `SPEC.md`，链接到 `specs/001-project-scaffold/spec.md`
+- [x] T041 更新项目 README，添加开发命令说明
 
 ---
 
@@ -148,7 +164,7 @@ Phase 1 (项目初始化)
 Phase 2 (TypeScript) ──┐
     │                  │
     ▼                  │
-Phase 3 (Vite)        │  Phase 4, 5 (Electron + Preload)
+Phase 3 (Vite)        │  Phase 4, 4.5, 5 (Electron + Preload + Tray)
     │                  │         │
     ▼                  ▼         │
 Phase 6 (Vue) ◄───────┴──────────┘
@@ -174,6 +190,7 @@ Phase 11 (项目完善)
 - T003, T004, T005 可并行执行
 - T006, T007 可并行执行
 - T012, T013, T014, T015 可并行执行（同一文件的不同功能）
+- T016.1 ~ T016.7 可并行执行（同一文件的不同功能）
 - T017, T018, T019 可并行执行
 - T021, T022, T023 可并行执行（不同组件）
 - T025, T026, T027, T028 可并行执行
@@ -186,6 +203,7 @@ Phase 11 (项目完善)
 | Phase 2 | 3 | TypeScript 配置 |
 | Phase 3 | 3 | Vite 配置 |
 | Phase 4 | 5 | Electron 主进程 |
+| Phase 4.5 | 7 | 系统托盘 |
 | Phase 5 | 3 | Preload 脚本 |
 | Phase 6 | 5 | Vue 渲染进程 |
 | Phase 7 | 4 | 代码规范配置 |
@@ -193,14 +211,15 @@ Phase 11 (项目完善)
 | Phase 9 | 4 | 命令脚本 |
 | Phase 10 | 3 | 测试配置（可选） |
 | Phase 11 | 2 | 项目完善 |
-| **总计** | **40** | |
+| **总计** | **47** | |
 
 ## 建议的 MVP 范围
 
-**最小可行产品 (MVP)** = Phase 1-6 + Phase 8-9
+**最小可行产品 (MVP)** = Phase 1-6 + Phase 4.5 + Phase 8-9
 
 即：
 - T001-T020 基本项目结构
+- T016.1-T016.7 系统托盘功能
 - T021-T023 基本 UI 和窗口控制
 - T029-T036 构建和命令配置
 

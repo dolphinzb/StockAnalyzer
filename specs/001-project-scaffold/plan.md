@@ -34,6 +34,7 @@
 | 可维护性 | Vue 3 Composition API | ✅ | 使用 `<script setup>` 语法 |
 | 架构约束 | 目录结构 | ✅ | main/, preload/, renderer/, shared/ |
 | 架构约束 | IPC 通信 | ✅ | 通过 contextBridge 暴露 API |
+| 功能性 | 系统托盘 | ✅ | Electron Tray API 实现最小化到托盘 |
 
 **结论**: 所有可检查项均通过。数据完整性相关验证机制将在后续功能中实现。
 
@@ -115,3 +116,69 @@ c:\WebProjects\StockAnalyzer\
 | 类型系统 | TypeScript 5.x (严格) | 章程指定 |
 | 打包工具 | electron-builder | 成熟方案 |
 | 代码规范 | ESLint + Prettier | 章程要求 |
+| 系统托盘 | Electron Tray + Menu | 原生支持，无需额外依赖 |
+
+## Phase 1: 系统托盘实现
+
+### 设计决策
+
+1. **最小化行为**
+   - 决策: 点击最小化按钮时调用 `window.hide()` 而非 `window.minimize()`
+   - 理由: 实现最小化到托盘效果，窗口从任务栏消失但应用继续运行
+
+2. **关闭行为**
+   - 决策: 点击关闭按钮时隐藏窗口而非退出应用
+   - 理由: 符合托盘应用标准行为，用户可通过托盘菜单退出
+
+3. **托盘图标**
+   - 决策: 从 `build/icon.png` (开发) 或 `resourcesPath/icon.png` (生产) 加载
+   - 理由: electron-builder 打包时资源文件放在 resourcesPath
+   - 备选: 使用系统默认图标作为回退
+
+4. **托盘菜单**
+   - 决策: 仅包含"显示窗口"和"退出"两个选项
+   - 理由: 保持简洁，符合功能范围
+
+5. **退出标志**
+   - 决策: 使用 `app.isQuitting` 标志区分用户主动退出和窗口关闭
+   - 理由: 防止窗口关闭事件阻止实际退出
+
+### 技术实现
+
+```typescript
+// 核心实现
+let tray: Tray | null = null;
+let mainWindow: BrowserWindow | null = null;
+
+// 创建托盘
+function createTray(): void {
+  const icon = nativeImage.createFromPath(iconPath);
+  tray = new Tray(icon);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: '显示窗口', click: () => mainWindow?.show() },
+    { type: 'separator' },
+    { label: '退出', click: () => { app.isQuitting = true; app.quit(); } }
+  ]));
+  tray.on('click', () => mainWindow?.isVisible() ? mainWindow.hide() : mainWindow?.show());
+}
+
+// 窗口最小化处理
+ipcMain.on('window:minimize', () => mainWindow?.hide());
+
+// 窗口关闭处理（最小化到托盘）
+mainWindow.on('close', (event) => {
+  if (!app.isQuitting) {
+    event.preventDefault();
+    mainWindow?.hide();
+  }
+});
+```
+
+### 架构影响
+
+| 组件 | 影响 | 说明 |
+|------|------|------|
+| electron/index.ts | 新增 createTray 函数 | 约 50 行代码 |
+| electron/index.ts | 修改窗口创建逻辑 | 添加 close 事件监听 |
+| electron/index.ts | 修改 app.whenReady | 添加 tray 创建调用 |
+| electron-builder.json | 新增 icon 配置 | 打包时包含图标资源 |

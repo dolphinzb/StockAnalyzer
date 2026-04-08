@@ -10,7 +10,7 @@
   ],
   "win": {
     "target": [
-      "nsis"
+      "dir"
     ]
   },
   "publish": null

@@ -51,6 +51,13 @@
       "dist/**/*",
       "dist-electron/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "icon": "icon.png",
     "extraMetadata": {
       "main": "dist-electron/electron/index.js"
     },

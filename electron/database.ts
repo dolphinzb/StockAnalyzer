@@ -16,7 +16,6 @@ export interface WatchlistStock {
   buyThreshold: number;
   sellThreshold: number;
   monitorEnabled: boolean;
-  currentPrice: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,7 +37,6 @@ export interface UpdateStockInput {
   buyThreshold?: number;
   sellThreshold?: number;
   monitorEnabled?: boolean;
-  currentPrice?: number;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -114,7 +112,6 @@ export async function initDatabase(): Promise<void> {
         buy_threshold REAL NOT NULL,
         sell_threshold REAL NOT NULL,
         monitor_enabled INTEGER NOT NULL DEFAULT 1,
-        current_price REAL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -227,16 +224,15 @@ function rowToWatchlistStock(row: any[]): WatchlistStock {
     buyThreshold: row[3] as number,
     sellThreshold: row[4] as number,
     monitorEnabled: row[5] === 1,
-    currentPrice: row[6] as number | null,
-    createdAt: row[7] as string,
-    updatedAt: row[8] as string,
+    createdAt: row[6] as string,
+    updatedAt: row[7] as string,
   };
 }
 
 export function getWatchlist(): WatchlistStock[] {
   const database = getDb();
   const result = database.exec(
-    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, current_price, created_at, updated_at FROM watchlist_stocks ORDER BY monitor_enabled DESC, updated_at DESC'
+    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at FROM watchlist_stocks ORDER BY monitor_enabled DESC, updated_at DESC'
   );
   if (result.length === 0) {
     return [];
@@ -247,7 +243,7 @@ export function getWatchlist(): WatchlistStock[] {
 export function getWatchlistById(id: number): WatchlistStock | null {
   const database = getDb();
   const result = database.exec(
-    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, current_price, created_at, updated_at FROM watchlist_stocks WHERE id = ?',
+    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at FROM watchlist_stocks WHERE id = ?',
     [id]
   );
   if (result.length === 0 || result[0].values.length === 0) {
@@ -259,7 +255,7 @@ export function getWatchlistById(id: number): WatchlistStock | null {
 export function getEnabledStocks(): WatchlistStock[] {
   const database = getDb();
   const result = database.exec(
-    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, current_price, created_at, updated_at FROM watchlist_stocks WHERE monitor_enabled = 1'
+    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at FROM watchlist_stocks WHERE monitor_enabled = 1'
   );
   if (result.length === 0) {
     return [];
@@ -270,7 +266,7 @@ export function getEnabledStocks(): WatchlistStock[] {
 export function getStockByCode(stockCode: string): WatchlistStock | null {
   const database = getDb();
   const result = database.exec(
-    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, current_price, created_at, updated_at FROM watchlist_stocks WHERE stock_code = ?',
+    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at FROM watchlist_stocks WHERE stock_code = ?',
     [stockCode]
   );
   if (result.length === 0 || result[0].values.length === 0) {
@@ -283,7 +279,7 @@ export function addStock(input: AddStockInput): WatchlistStock {
   const database = getDb();
   const now = new Date().toISOString();
   database.run(
-    'INSERT INTO watchlist_stocks (stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, current_price, created_at, updated_at) VALUES (?, ?, ?, ?, 0, NULL, ?, ?)',
+    'INSERT INTO watchlist_stocks (stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)',
     [input.stockCode, input.stockName, input.buyThreshold, input.sellThreshold, now, now]
   );
   saveDatabase();
@@ -315,10 +311,6 @@ export function updateStock(id: number, input: UpdateStockInput): WatchlistStock
     updates.push('monitor_enabled = ?');
     values.push(input.monitorEnabled ? 1 : 0);
   }
-  if (input.currentPrice !== undefined) {
-    updates.push('current_price = ?');
-    values.push(input.currentPrice);
-  }
   values.push(id);
   database.run(
     `UPDATE watchlist_stocks SET ${updates.join(', ')} WHERE id = ?`,
@@ -337,16 +329,6 @@ export function deleteStock(id: number): boolean {
   database.run('DELETE FROM watchlist_stocks WHERE id = ?', [id]);
   saveDatabase();
   return true;
-}
-
-export function updateStockPrice(stockCode: string, price: number): void {
-  const database = getDb();
-  const now = new Date().toISOString();
-  database.run(
-    'UPDATE watchlist_stocks SET current_price = ?, updated_at = ? WHERE stock_code = ?',
-    [price, now, stockCode]
-  );
-  saveDatabase();
 }
 
 export interface Position {

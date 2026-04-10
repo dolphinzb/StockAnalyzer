@@ -3,6 +3,13 @@
 **Branch**: `006-stock-watchlist-page` | **Date**: 2026-04-04 | **Spec**: [spec.md](../006-stock-watchlist-page/spec.md)
 **Input**: Feature specification from `/specs/006-stock-watchlist-page/spec.md`
 
+## 需求变更记录
+
+### 变更 2026-04-10
+
+- **变更内容**: 定时任务获取到最新价格后，不再保存到数据库；数据库表中删除当前价格字段；页面上展示的当前价格直接使用API实时获取
+- **变更原因**: 当前价格是实时数据，无需持久化，直接从API获取更能保证数据时效性
+
 ## Summary
 
 实现自选股页面功能，用户可在 Electron 桌面应用中管理自选股列表、设置价格阈值、开启/关闭监控，并通过定时任务自动获取股票价格。告警通过页面显示和系统通知方式提醒用户，数据持久化到 SQLite 数据库。

@@ -8,6 +8,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
   const isLoading = ref(false);
   const isRefreshing = ref(false);
   const alerts = ref<Alert[]>([]);
+  const priceMap = ref<Map<string, number>>(new Map());
 
   const enabledStocks = computed(() =>
     stocks.value.filter(s => s.monitorEnabled)
@@ -21,6 +22,10 @@ export const useWatchlistStore = defineStore('watchlist', () => {
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
   });
+
+  function getCurrentPrice(stockCode: string): number | null {
+    return priceMap.value.get(stockCode) ?? null;
+  }
 
   async function fetchStocks(): Promise<void> {
     isLoading.value = true;
@@ -65,11 +70,9 @@ export const useWatchlistStore = defineStore('watchlist', () => {
 
   function handlePriceUpdate(prices: PriceUpdate[]): void {
     prices.forEach(update => {
-      const stock = stocks.value.find(s => s.stockCode === update.stockCode);
-      if (stock) {
-        stock.currentPrice = update.price;
-      }
+      priceMap.value.set(update.stockCode, update.price);
     });
+    priceMap.value = new Map(priceMap.value);
   }
 
   function handleAlert(alert: Alert): void {
@@ -101,8 +104,10 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     isLoading,
     isRefreshing,
     alerts,
+    priceMap,
     enabledStocks,
     sortedStocks,
+    getCurrentPrice,
     fetchStocks,
     addStock,
     updateStock,

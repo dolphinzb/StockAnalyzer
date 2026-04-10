@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { WatchlistStock } from '../types';
+import { useWatchlistStore } from '../stores/watchlist';
 
 const props = defineProps<{
   stock: WatchlistStock;
 }>();
+
+const store = useWatchlistStore();
 
 const emit = defineEmits<{
   edit: [stockId: number];
@@ -23,6 +27,8 @@ function handleToggleMonitor(event: Event) {
   const target = event.target as HTMLInputElement;
   emit('toggleMonitor', props.stock.id, target.checked);
 }
+
+const currentPrice = computed(() => store.getCurrentPrice(props.stock.stockCode));
 
 function formatPrice(price: number | null): string {
   if (price === null || price === undefined) {
@@ -49,7 +55,7 @@ function getPriceColorClass(price: number | null): string {
   <div class="stock-item" :class="{ 'monitor-enabled': stock.monitorEnabled }">
     <span class="col-code">{{ stock.stockCode }}</span>
     <span class="col-name">{{ stock.stockName }}</span>
-    <span class="col-price" :class="getPriceColorClass(stock.currentPrice)">{{ formatPrice(stock.currentPrice) }}</span>
+    <span class="col-price" :class="getPriceColorClass(currentPrice)">{{ formatPrice(currentPrice) }}</span>
     <span class="col-threshold">{{ formatPrice(stock.buyThreshold) }}</span>
     <span class="col-threshold">{{ formatPrice(stock.sellThreshold) }}</span>
     <span class="col-monitor">

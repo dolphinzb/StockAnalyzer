@@ -1,8 +1,9 @@
 import { BrowserWindow } from 'electron';
 import log from 'electron-log';
+import type { AppConfig } from '../../shared/types';
 import type { WatchlistStock } from '../database';
-import { loadConfig, updateStockPrice } from '../database';
-import { checkAlerts } from './alertService';
+import { loadConfig } from '../database';
+import { checkAndTriggerAlert, type PriceUpdate } from './alertService';
 
 export interface PriceResult {
   stockCode: string;
@@ -30,8 +31,7 @@ function getStockCodeWithPrefix(stockCode: string): string {
   return `sz${stockCode}`;
 }
 
-function isWithinTradingHours(): boolean {
-  const config = loadConfig();
+function isWithinTradingHours(config: AppConfig): boolean {
   const now = new Date();
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
@@ -53,7 +53,7 @@ function getMainWindow(): BrowserWindow | null {
   return windows.length > 0 ? windows[0] : null;
 }
 
-function sendPriceUpdate(prices: PriceResult[]): void {
+function sendPriceUpdate(prices: PriceUpdate[]): void {
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('prices:update', prices);
@@ -117,7 +117,7 @@ function parseStockPrice(responseText: string): number | null {
   }
 }
 
-export async function refreshAllEnabledStocks(stocks: WatchlistStock[]): Promise<void> {
+export async function refreshAllEnabledStocks(stocks: WatchlistStock[], config: AppConfig): Promise<void> {
   const enabledStocks = stocks.filter(s => s.monitorEnabled);
   if (enabledStocks.length === 0) {
     log.debug('No enabled stocks to refresh');
@@ -127,29 +127,36 @@ export async function refreshAllEnabledStocks(stocks: WatchlistStock[]): Promise
   log.info(`Refreshing prices for ${enabledStocks.length} stocks`);
 
   const now = new Date().toISOString();
-  const results = await fetchStockPrices(enabledStocks.map(s => s.stockCode));
+  const results = await fetchStockPrices(enabledStocks.map(s => s.stockCode), config);
 
   for (const result of results) {
-    const stock = enabledStocks.find(s => s.stockCode === result.stockCode);
-    if (stock && result.success) {
-      updateStockPrice(stock.stockCode, result.price);
-      stock.currentPrice = result.price;
+    if (result.success) {
+      const stock = enabledStocks.find(s => s.stockCode === result.stockCode);
+      if (stock) {
+        checkAndTriggerAlert(stock, result.price);
+      }
     }
   }
 
-  sendPriceUpdate(results);
+  const priceUpdates = results
+    .filter(r => r.success)
+    .map(r => ({
+      stockCode: r.stockCode,
+      price: r.price,
+      timestamp: now,
+    }));
+  sendPriceUpdate(priceUpdates);
 
   lastRefreshTime = now;
   sendRefreshTimeUpdate(now);
   log.info(`Price refresh completed at ${now}`);
 }
 
-export async function fetchStockPrices(stockCodes: string[]): Promise<PriceResult[]> {
+export async function fetchStockPrices(stockCodes: string[], config: AppConfig): Promise<PriceResult[]> {
   if (stockCodes.length === 0) {
     return [];
   }
 
-  const config = loadConfig();
   if (!config.api?.url) {
     return stockCodes.map(code => ({ stockCode: code, price: 0, success: false, error: 'API URL not configured' }));
   }
@@ -215,7 +222,8 @@ export function getLastRefreshTime(): string | null {
 }
 
 export async function manualRefresh(stocks: WatchlistStock[]): Promise<void> {
-  await refreshAllEnabledStocks(stocks);
+  const config = loadConfig();
+  await refreshAllEnabledStocks(stocks, config);
 }
 
 export function startScheduler(getStocks: () => WatchlistStock[]): void {
@@ -232,14 +240,14 @@ export function startScheduler(getStocks: () => WatchlistStock[]): void {
 
   schedulerInterval = setInterval(async () => {
     try {
-      if (!isWithinTradingHours()) {
+      const currentConfig = loadConfig();
+      if (!isWithinTradingHours(currentConfig)) {
         log.debug('Outside trading hours, skipping price fetch');
         return;
       }
 
       const stocks = getStocks();
-      await refreshAllEnabledStocks(stocks);
-      checkAlerts(stocks.filter(s => s.monitorEnabled && s.currentPrice !== null));
+      await refreshAllEnabledStocks(stocks, currentConfig);
     } catch (error) {
       log.error('Scheduler error:', error);
     }

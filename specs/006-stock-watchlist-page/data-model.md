@@ -3,6 +3,13 @@
 **Feature**: 006-stock-watchlist-page
 **Date**: 2026-04-04
 
+## 需求变更记录
+
+### 变更 2026-04-10
+
+- **变更内容**: 定时任务获取到最新价格后，不再保存到数据库；数据库表中删除当前价格字段；页面上展示的当前价格直接使用API实时获取
+- **变更原因**: 当前价格是实时数据，无需持久化，直接从API获取更能保证数据时效性
+
 ## 实体定义
 
 ### WatchlistStock (自选股)
@@ -15,11 +22,12 @@
 | buyThreshold | REAL | NOT NULL | 买入阈值 |
 | sellThreshold | REAL | NOT NULL | 卖出阈值 |
 | monitorEnabled | INTEGER | NOT NULL, DEFAULT 0 | 监控开关 (0/1) |
-| currentPrice | REAL | NULL | 当前价格 |
 | createdAt | TEXT | NOT NULL | 创建时间 |
 | updatedAt | TEXT | NOT NULL | 更新时间 |
 
 **约束**: `sellThreshold > buyThreshold` (应用层校验)
+
+**注意**: currentPrice 字段已移除，当前价格不持久化到数据库，页面展示时直接通过API实时获取
 
 ## 数据库表结构
 
@@ -31,11 +39,12 @@ CREATE TABLE IF NOT EXISTS watchlist_stocks (
     buy_threshold REAL NOT NULL,
     sell_threshold REAL NOT NULL,
     monitor_enabled INTEGER NOT NULL DEFAULT 0,
-    current_price REAL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 ```
+
+**注意**: current_price 字段已移除，价格数据不持久化
 
 ## 配置来源
 
@@ -97,13 +106,14 @@ enum AlertType {
 │ stock_code          │
 │ stock_name          │
 │ buy_threshold       │
-│ sell_threshold      │
+│ sell_threshold     │
 │ monitor_enabled     │
-│ current_price       │
 │ created_at          │
 │ updated_at          │
 └─────────────────────┘
 ```
+
+**注**: current_price 已移除，价格不持久化
 
 ## 索引
 

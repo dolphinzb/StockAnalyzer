@@ -322,7 +322,8 @@ ipcMain.handle('position:delete-record', (_event, id: number) => {
 ipcMain.handle('position:fetch-prices', async (_event, stockCodes: string[]) => {
   log.info('IPC: position:fetch-prices', stockCodes);
   try {
-    return await fetchStockPrices(stockCodes);
+    const config = loadConfig();
+    return await fetchStockPrices(stockCodes, config);
   } catch (error) {
     log.error('IPC position:fetch-prices error:', error);
     throw error;

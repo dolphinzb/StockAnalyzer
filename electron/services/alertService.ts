@@ -11,6 +11,12 @@ export interface Alert {
   timestamp: string;
 }
 
+export interface PriceUpdate {
+  stockCode: string;
+  price: number;
+  timestamp: string;
+}
+
 interface AlertDebounceEntry {
   type: 'BUY' | 'SELL';
   lastTime: number;
@@ -88,14 +94,6 @@ export function checkAndTriggerAlert(stock: WatchlistStock, currentPrice: number
   showSystemNotification(alert);
 
   log.info(`Alert triggered: ${alertType} for ${stock.stockCode} at ${currentPrice}`);
-}
-
-export function checkAlerts(stocks: WatchlistStock[]): void {
-  stocks.forEach(stock => {
-    if (stock.currentPrice !== null && stock.currentPrice !== undefined) {
-      checkAndTriggerAlert(stock, stock.currentPrice);
-    }
-  });
 }
 
 export function clearAlertDebounce(): void {

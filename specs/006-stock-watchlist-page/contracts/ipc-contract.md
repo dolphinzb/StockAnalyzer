@@ -3,6 +3,13 @@
 **Feature**: 006-stock-watchlist-page
 **Date**: 2026-04-04
 
+## 需求变更记录
+
+### 变更 2026-04-10
+
+- **变更内容**: 定时任务获取到最新价格后，不再保存到数据库；数据库表中删除当前价格字段；页面上展示的当前价格直接使用API实时获取
+- **变更原因**: 当前价格是实时数据，无需持久化，直接从API获取更能保证数据时效性
+
 ## 概述
 
 本契约定义了渲染进程（Renderer）与主进程（Main）之间的 IPC 通信接口。
@@ -45,11 +52,12 @@ interface WatchlistStock {
   buyThreshold: number;
   sellThreshold: number;
   monitorEnabled: boolean;
-  currentPrice: number | null;
   createdAt: string;
   updatedAt: string;
 }
 ```
+
+**注意**: currentPrice 字段已移除，当前价格通过 PriceUpdate 事件实时获取，不包含在持久化数据中
 
 ### MonitorConfig
 

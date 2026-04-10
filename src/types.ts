@@ -5,7 +5,6 @@ export interface WatchlistStock {
   buyThreshold: number;
   sellThreshold: number;
   monitorEnabled: boolean;
-  currentPrice: number | null;
   createdAt: string;
   updatedAt: string;
 }

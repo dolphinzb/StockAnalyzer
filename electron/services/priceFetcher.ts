@@ -1,8 +1,8 @@
 import { BrowserWindow } from 'electron';
 import log from 'electron-log';
 import type { WatchlistStock } from '../database';
-import { loadConfig, updateStockPrice } from '../database';
-import { checkAlerts } from './alertService';
+import { loadConfig } from '../database';
+import { checkAndTriggerAlert, type PriceUpdate } from './alertService';
 
 export interface PriceResult {
   stockCode: string;
@@ -53,7 +53,7 @@ function getMainWindow(): BrowserWindow | null {
   return windows.length > 0 ? windows[0] : null;
 }
 
-function sendPriceUpdate(prices: PriceResult[]): void {
+function sendPriceUpdate(prices: PriceUpdate[]): void {
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('prices:update', prices);
@@ -130,14 +130,22 @@ export async function refreshAllEnabledStocks(stocks: WatchlistStock[]): Promise
   const results = await fetchStockPrices(enabledStocks.map(s => s.stockCode));
 
   for (const result of results) {
-    const stock = enabledStocks.find(s => s.stockCode === result.stockCode);
-    if (stock && result.success) {
-      updateStockPrice(stock.stockCode, result.price);
-      stock.currentPrice = result.price;
+    if (result.success) {
+      const stock = enabledStocks.find(s => s.stockCode === result.stockCode);
+      if (stock) {
+        checkAndTriggerAlert(stock, result.price);
+      }
     }
   }
 
-  sendPriceUpdate(results);
+  const priceUpdates = results
+    .filter(r => r.success)
+    .map(r => ({
+      stockCode: r.stockCode,
+      price: r.price,
+      timestamp: now,
+    }));
+  sendPriceUpdate(priceUpdates);
 
   lastRefreshTime = now;
   sendRefreshTimeUpdate(now);
@@ -239,7 +247,6 @@ export function startScheduler(getStocks: () => WatchlistStock[]): void {
 
       const stocks = getStocks();
       await refreshAllEnabledStocks(stocks);
-      checkAlerts(stocks.filter(s => s.monitorEnabled && s.currentPrice !== null));
     } catch (error) {
       log.error('Scheduler error:', error);
     }

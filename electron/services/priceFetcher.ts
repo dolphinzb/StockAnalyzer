@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron';
 import log from 'electron-log';
+import type { AppConfig } from '../../shared/types';
 import type { WatchlistStock } from '../database';
 import { loadConfig } from '../database';
 import { checkAndTriggerAlert, type PriceUpdate } from './alertService';
@@ -30,8 +31,7 @@ function getStockCodeWithPrefix(stockCode: string): string {
   return `sz${stockCode}`;
 }
 
-function isWithinTradingHours(): boolean {
-  const config = loadConfig();
+function isWithinTradingHours(config: AppConfig): boolean {
   const now = new Date();
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
@@ -117,7 +117,7 @@ function parseStockPrice(responseText: string): number | null {
   }
 }
 
-export async function refreshAllEnabledStocks(stocks: WatchlistStock[]): Promise<void> {
+export async function refreshAllEnabledStocks(stocks: WatchlistStock[], config: AppConfig): Promise<void> {
   const enabledStocks = stocks.filter(s => s.monitorEnabled);
   if (enabledStocks.length === 0) {
     log.debug('No enabled stocks to refresh');
@@ -127,7 +127,7 @@ export async function refreshAllEnabledStocks(stocks: WatchlistStock[]): Promise
   log.info(`Refreshing prices for ${enabledStocks.length} stocks`);
 
   const now = new Date().toISOString();
-  const results = await fetchStockPrices(enabledStocks.map(s => s.stockCode));
+  const results = await fetchStockPrices(enabledStocks.map(s => s.stockCode), config);
 
   for (const result of results) {
     if (result.success) {
@@ -152,12 +152,11 @@ export async function refreshAllEnabledStocks(stocks: WatchlistStock[]): Promise
   log.info(`Price refresh completed at ${now}`);
 }
 
-export async function fetchStockPrices(stockCodes: string[]): Promise<PriceResult[]> {
+export async function fetchStockPrices(stockCodes: string[], config: AppConfig): Promise<PriceResult[]> {
   if (stockCodes.length === 0) {
     return [];
   }
 
-  const config = loadConfig();
   if (!config.api?.url) {
     return stockCodes.map(code => ({ stockCode: code, price: 0, success: false, error: 'API URL not configured' }));
   }
@@ -223,7 +222,8 @@ export function getLastRefreshTime(): string | null {
 }
 
 export async function manualRefresh(stocks: WatchlistStock[]): Promise<void> {
-  await refreshAllEnabledStocks(stocks);
+  const config = loadConfig();
+  await refreshAllEnabledStocks(stocks, config);
 }
 
 export function startScheduler(getStocks: () => WatchlistStock[]): void {
@@ -240,13 +240,14 @@ export function startScheduler(getStocks: () => WatchlistStock[]): void {
 
   schedulerInterval = setInterval(async () => {
     try {
-      if (!isWithinTradingHours()) {
+      const currentConfig = loadConfig();
+      if (!isWithinTradingHours(currentConfig)) {
         log.debug('Outside trading hours, skipping price fetch');
         return;
       }
 
       const stocks = getStocks();
-      await refreshAllEnabledStocks(stocks);
+      await refreshAllEnabledStocks(stocks, currentConfig);
     } catch (error) {
       log.error('Scheduler error:', error);
     }

@@ -24,6 +24,7 @@ import {
   type UpdateTradeInput
 } from './database';
 import {
+  fetchStockName,
   fetchStockPrices,
   getLastRefreshTime,
   manualRefresh,
@@ -326,6 +327,16 @@ ipcMain.handle('position:fetch-prices', async (_event, stockCodes: string[]) => 
     return await fetchStockPrices(stockCodes, config);
   } catch (error) {
     log.error('IPC position:fetch-prices error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('stock:get-name', async (_event, stockCode: string) => {
+  log.info('IPC: stock:get-name', stockCode);
+  try {
+    return await fetchStockName(stockCode);
+  } catch (error) {
+    log.error('IPC stock:get-name error:', error);
     throw error;
   }
 });

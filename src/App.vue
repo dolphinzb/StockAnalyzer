@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import SideNav from './components/SideNav.vue'
 import TitleBar from './components/TitleBar.vue'
 import ToastNotification from './components/ToastNotification.vue'
 import { useNavigation, type ViewId } from './composables/useNavigation'
+import { useWatchlistStore } from './stores/watchlist'
 import GridView from './views/GridView.vue'
 import LogPage from './views/LogPage.vue'
 import PositionView from './views/PositionView.vue'
@@ -11,6 +12,7 @@ import SettingsView from './views/SettingsView.vue'
 import WatchlistView from './views/WatchlistView.vue'
 
 const { currentViewId, navigate } = useNavigation()
+const watchlistStore = useWatchlistStore()
 
 const viewComponents = {
   watchlist: WatchlistView,
@@ -27,6 +29,18 @@ const currentComponent = computed(() => {
 const handleNavigate = (viewId: ViewId) => {
   navigate(viewId)
 }
+
+let cleanupWatchlist: (() => void) | null = null;
+
+onMounted(() => {
+  cleanupWatchlist = watchlistStore.setupEventListeners();
+});
+
+onUnmounted(() => {
+  if (cleanupWatchlist) {
+    cleanupWatchlist();
+  }
+});
 </script>
 
 <template>

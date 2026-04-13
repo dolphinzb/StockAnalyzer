@@ -1,5 +1,12 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import type { PositionAPI } from '../types';
+
+declare global {
+  interface Window {
+    positionApi: PositionAPI;
+  }
+}
 
 interface TradeRecord {
   id?: number;
@@ -31,6 +38,7 @@ const tradeCount = ref<number | string>('');
 const holdingCount = ref<number | string>('');
 const holdingPrice = ref<number | string>('');
 const errorMessage = ref('');
+const isLoadingStockName = ref(false);
 
 watch(() => props.record, (record) => {
   if (record) {
@@ -44,6 +52,36 @@ watch(() => props.record, (record) => {
     holdingPrice.value = record.holdingPrice;
   }
 }, { immediate: true });
+
+async function handleStockCodeBlur() {
+  await fetchStockName();
+}
+
+async function handleStockCodeEnter(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    await fetchStockName();
+  }
+}
+
+async function fetchStockName() {
+  const code = stockCode.value.trim();
+  if (!code || props.record) {
+    return;
+  }
+
+  isLoadingStockName.value = true;
+  try {
+    const result = await window.positionApi.getStockName(code);
+    if (result.success && result.stockName) {
+      stockName.value = result.stockName;
+    }
+  } catch (error) {
+    console.error('Failed to fetch stock name:', error);
+  } finally {
+    isLoadingStockName.value = false;
+  }
+}
 
 function validateForm(): boolean {
   if (!stockCode.value.trim()) {
@@ -117,12 +155,18 @@ function handleClose() {
       <form class="editor-form" @submit.prevent="handleSubmit">
         <div class="form-group">
           <label for="stockCode">股票代码</label>
-          <input
-            id="stockCode"
-            v-model="stockCode"
-            type="text"
-            placeholder="如: 600519"
-          />
+          <div class="input-with-loading">
+            <input
+              id="stockCode"
+              v-model="stockCode"
+              type="text"
+              placeholder="如: 600519"
+              :disabled="!!record"
+              @blur="handleStockCodeBlur"
+              @keydown="handleStockCodeEnter"
+            />
+            <span v-if="isLoadingStockName" class="loading-indicator">...</span>
+          </div>
         </div>
 
         <div class="form-group">

@@ -112,6 +112,7 @@ export interface PositionAPI {
   updateTradeRecord(trade: UpdateTradeInput): Promise<TradeRecord>;
   deleteTradeRecord(id: number): Promise<boolean>;
   fetchPrices(stockCodes: string[]): Promise<{ stockCode: string; price: number; success: boolean; error?: string }[]>;
+  getStockName(stockCode: string): Promise<{ stockCode: string; stockName: string; success: boolean; error?: string }>;
 }
 
 export interface CalculatePositionInput {

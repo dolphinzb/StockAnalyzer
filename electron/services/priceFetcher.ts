@@ -85,7 +85,9 @@ export async function fetchStockPrice(stockCode: string): Promise<PriceResult> {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const text = await response.text();
+    const arrayBuffer = await response.arrayBuffer();
+    const decoder = new TextDecoder('gbk');
+    const text = decoder.decode(arrayBuffer);
     log.info(`API原始响应 [${stockCode}]: ${text}`);
     const price = parseStockPrice(text);
 
@@ -98,6 +100,64 @@ export async function fetchStockPrice(stockCode: string): Promise<PriceResult> {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error(`Failed to fetch price for ${stockCode}:`, errorMessage);
     return { stockCode, price: 0, success: false, error: errorMessage };
+  }
+}
+
+export interface StockInfo {
+  stockCode: string;
+  stockName: string;
+  success: boolean;
+  error?: string;
+}
+
+export async function fetchStockName(stockCode: string): Promise<StockInfo> {
+  try {
+    const config = loadConfig();
+    if (!config.api?.url) {
+      return { stockCode, stockName: '', success: false, error: 'API URL not configured' };
+    }
+
+    const stockCodeWithPrefix = getStockCodeWithPrefix(stockCode);
+    const url = `${config.api.url}${stockCodeWithPrefix}`;
+    const response = await fetch(url, {
+      headers: {
+        Referer: 'http://finance.sina.com.cn',
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const decoder = new TextDecoder('gbk');
+    const text = decoder.decode(arrayBuffer);
+    log.info(`API原始响应 [${stockCode}]: ${text}`);
+    const stockName = parseStockName(text, stockCode);
+
+    if (!stockName) {
+      return { stockCode, stockName: '', success: false, error: 'Failed to parse stock name' };
+    }
+
+    return { stockCode, stockName, success: true };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    log.error(`Failed to fetch stock name for ${stockCode}:`, errorMessage);
+    return { stockCode, stockName: '', success: false, error: errorMessage };
+  }
+}
+
+function parseStockName(responseText: string, _stockCode: string): string | null {
+  try {
+    const match = responseText.match(/hq_str_\w+="([^"]+)"/);
+    if (match && match[1]) {
+      const parts = match[1].split(',');
+      if (parts.length >= 1) {
+        return parts[0];
+      }
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 
@@ -175,7 +235,9 @@ export async function fetchStockPrices(stockCodes: string[], config: AppConfig):
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const text = await response.text();
+    const arrayBuffer = await response.arrayBuffer();
+    const decoder = new TextDecoder('gbk');
+    const text = decoder.decode(arrayBuffer);
     log.info(`API批量响应: ${text}`);
 
     return parseStockPricesResponse(text, stockCodes);

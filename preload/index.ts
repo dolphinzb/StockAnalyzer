@@ -103,6 +103,7 @@ interface PositionAPI {
   updateTradeRecord(trade: UpdateTradeInput): Promise<TradeRecord>;
   deleteTradeRecord(id: number): Promise<boolean>;
   fetchPrices(stockCodes: string[]): Promise<{ stockCode: string; price: number; success: boolean; error?: string }[]>;
+  getStockName(stockCode: string): Promise<{ stockCode: string; stockName: string; success: boolean; error?: string }>;
 }
 
 /**
@@ -184,6 +185,7 @@ const positionAPI: PositionAPI = {
   updateTradeRecord: (trade: UpdateTradeInput): Promise<TradeRecord> => ipcRenderer.invoke('position:update-record', trade),
   deleteTradeRecord: (id: number): Promise<boolean> => ipcRenderer.invoke('position:delete-record', id),
   fetchPrices: (stockCodes: string[]): Promise<{ stockCode: string; price: number; success: boolean; error?: string }[]> => ipcRenderer.invoke('position:fetch-prices', stockCodes),
+  getStockName: (stockCode: string): Promise<{ stockCode: string; stockName: string; success: boolean; error?: string }> => ipcRenderer.invoke('stock:get-name', stockCode),
 };
 
 contextBridge.exposeInMainWorld('positionApi', positionAPI);

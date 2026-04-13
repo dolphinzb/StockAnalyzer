@@ -71,7 +71,7 @@ export interface ApiProviderOption {
  * API Provider 常量
  */
 export const API_PROVIDERS: ApiProviderOption[] = [
-  { value: 'sina', label: '新浪采集API', defaultUrl: 'https://hq.sinajs.cn/list=' },
+  { value: 'sina', label: '新浪财经API', defaultUrl: 'https://hq.sinajs.cn/list=' },
   { value: 'eastmoney', label: '东方财富API', defaultUrl: 'https://push2.eastmoney.com/api/qt/stock/get' },
   { value: 'tencent', label: '腾讯API', defaultUrl: 'https://web.sqt.gtimg.cn/q=' },
 ];

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import RefreshButton from '../components/RefreshButton.vue';
 import StockEditor from '../components/StockEditor.vue';
 import StockList from '../components/StockList.vue';
@@ -17,17 +17,8 @@ const sortedStocks = computed(() => store.sortedStocks);
 const lastRefreshTime = computed(() => store.lastRefreshTime);
 const isRefreshing = computed(() => store.isRefreshing);
 
-let cleanup: (() => void) | null = null;
-
 onMounted(async () => {
-  cleanup = store.setupEventListeners();
   await store.fetchStocks();
-});
-
-onUnmounted(() => {
-  if (cleanup) {
-    cleanup();
-  }
 });
 
 function handleAddStock() {

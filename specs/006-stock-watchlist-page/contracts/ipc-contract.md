@@ -10,6 +10,11 @@
 - **变更内容**: 定时任务获取到最新价格后，不再保存到数据库；数据库表中删除当前价格字段；页面上展示的当前价格直接使用API实时获取
 - **变更原因**: 当前价格是实时数据，无需持久化，直接从API获取更能保证数据时效性
 
+### 变更 2026-04-16
+
+- **变更内容**: PriceUpdate 类型增加开盘价、当日最高价、当日最低价、昨日收盘价、涨跌额、涨跌幅字段；页面展示时涨跌额/涨跌幅为正红色、为负绿色
+- **变更原因**: 用户需要更完整的日内行情信息，便于快速判断股票当日走势和波动范围
+
 ## 概述
 
 本契约定义了渲染进程（Renderer）与主进程（Main）之间的 IPC 通信接口。
@@ -86,10 +91,18 @@ interface Alert {
 ```typescript
 interface PriceUpdate {
   stockCode: string;
-  price: number;
+  price: number;               // 当前价格
+  openPrice: number;           // 开盘价
+  highPrice: number;           // 当日最高价
+  lowPrice: number;            // 当日最低价
+  prevClosePrice: number;      // 昨日收盘价
+  priceChange: number;         // 涨跌额 (= price - prevClosePrice)
+  priceChangePercent: number;  // 涨跌幅 (= (price - prevClosePrice) / prevClosePrice × 100%，保留两位小数)
   timestamp: string;
 }
 ```
+
+**显示规则**: priceChange 和 priceChangePercent 为正时红色显示，为负时绿色显示（A股红涨绿跌惯例）
 
 ## 输入类型
 

@@ -8,6 +8,10 @@ import { checkAndTriggerAlert, type PriceUpdate } from './alertService';
 export interface PriceResult {
   stockCode: string;
   price: number;
+  openPrice: number;
+  highPrice: number;
+  lowPrice: number;
+  prevClosePrice: number;
   success: boolean;
   error?: string;
 }
@@ -71,7 +75,7 @@ export async function fetchStockPrice(stockCode: string): Promise<PriceResult> {
   try {
     const config = loadConfig();
     if (!config.api?.url) {
-      return { stockCode, price: 0, success: false, error: 'API URL not configured' };
+      return { stockCode, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: 'API URL not configured' };
     }
 
     const stockCodeWithPrefix = getStockCodeWithPrefix(stockCode);
@@ -89,17 +93,17 @@ export async function fetchStockPrice(stockCode: string): Promise<PriceResult> {
     const decoder = new TextDecoder('gbk');
     const text = decoder.decode(arrayBuffer);
     log.info(`API原始响应 [${stockCode}]: ${text}`);
-    const price = parseStockPrice(text);
+    const stockData = parseStockData(text);
 
-    if (price === null) {
-      return { stockCode, price: 0, success: false, error: 'Failed to parse price' };
+    if (stockData === null) {
+      return { stockCode, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: 'Failed to parse price' };
     }
 
-    return { stockCode, price, success: true };
+    return { stockCode, ...stockData, success: true };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error(`Failed to fetch price for ${stockCode}:`, errorMessage);
-    return { stockCode, price: 0, success: false, error: errorMessage };
+    return { stockCode, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: errorMessage };
   }
 }
 
@@ -161,20 +165,39 @@ function parseStockName(responseText: string, _stockCode: string): string | null
   }
 }
 
-function parseStockPrice(responseText: string): number | null {
+interface ParsedStockData {
+  price: number;
+  openPrice: number;
+  prevClosePrice: number;
+  highPrice: number;
+  lowPrice: number;
+}
+
+function parseStockData(responseText: string): ParsedStockData | null {
   try {
     const match = responseText.match(/="([^"]+)"/);
     if (match && match[1]) {
       const parts = match[1].split(',');
-      if (parts.length >= 3) {
-        const priceStr = parts[3];
-        return parseFloat(priceStr);
+      // 新浪API字段: 0=名称, 1=今开, 2=昨收, 3=当前价, 4=最高, 5=最低
+      if (parts.length >= 6) {
+        return {
+          openPrice: parseFloat(parts[1]),
+          prevClosePrice: parseFloat(parts[2]),
+          price: parseFloat(parts[3]),
+          highPrice: parseFloat(parts[4]),
+          lowPrice: parseFloat(parts[5]),
+        };
       }
     }
     return null;
   } catch {
     return null;
   }
+}
+
+function parseStockPrice(responseText: string): number | null {
+  const data = parseStockData(responseText);
+  return data ? data.price : null;
 }
 
 export async function refreshAllEnabledStocks(stocks: WatchlistStock[], config: AppConfig): Promise<void> {
@@ -200,11 +223,23 @@ export async function refreshAllEnabledStocks(stocks: WatchlistStock[], config: 
 
   const priceUpdates = results
     .filter(r => r.success)
-    .map(r => ({
-      stockCode: r.stockCode,
-      price: r.price,
-      timestamp: now,
-    }));
+    .map(r => {
+      const priceChange = r.prevClosePrice !== 0 ? r.price - r.prevClosePrice : 0;
+      const priceChangePercent = r.prevClosePrice !== 0
+        ? Math.round(((r.price - r.prevClosePrice) / r.prevClosePrice) * 10000) / 100
+        : 0;
+      return {
+        stockCode: r.stockCode,
+        price: r.price,
+        openPrice: r.openPrice,
+        highPrice: r.highPrice,
+        lowPrice: r.lowPrice,
+        prevClosePrice: r.prevClosePrice,
+        priceChange,
+        priceChangePercent,
+        timestamp: now,
+      };
+    });
   sendPriceUpdate(priceUpdates);
 
   lastRefreshTime = now;
@@ -218,7 +253,7 @@ export async function fetchStockPrices(stockCodes: string[], config: AppConfig):
   }
 
   if (!config.api?.url) {
-    return stockCodes.map(code => ({ stockCode: code, price: 0, success: false, error: 'API URL not configured' }));
+    return stockCodes.map(code => ({ stockCode: code, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: 'API URL not configured' }));
   }
 
   const stockCodesWithPrefix = stockCodes.map(code => getStockCodeWithPrefix(code));
@@ -244,7 +279,7 @@ export async function fetchStockPrices(stockCodes: string[], config: AppConfig):
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error(`Batch fetch error:`, errorMessage);
-    return stockCodes.map(code => ({ stockCode: code, price: 0, success: false, error: errorMessage }));
+    return stockCodes.map(code => ({ stockCode: code, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: errorMessage }));
   }
 }
 
@@ -260,19 +295,30 @@ function parseStockPricesResponse(responseText: string, stockCodes: string[]): P
     if (match && match[1] && match[2]) {
       const stockCode = match[1].replace(/^(sh|sz|bj)/, '');
       const parts = match[2].split(',');
+      // 新浪API字段: 0=名称, 1=今开, 2=昨收, 3=当前价, 4=最高, 5=最低
       const price = parts.length >= 4 ? parseFloat(parts[3]) : null;
 
-      if (price !== null && !isNaN(price)) {
-        results.push({ stockCode, price, success: true });
+      if (price !== null && !isNaN(price) && parts.length >= 6) {
+        results.push({
+          stockCode,
+          price,
+          openPrice: parseFloat(parts[1]),
+          prevClosePrice: parseFloat(parts[2]),
+          highPrice: parseFloat(parts[4]),
+          lowPrice: parseFloat(parts[5]),
+          success: true,
+        });
+      } else if (price !== null && !isNaN(price)) {
+        results.push({ stockCode, price, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: true });
       } else {
-        results.push({ stockCode, price: 0, success: false, error: 'Invalid price data' });
+        results.push({ stockCode, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: 'Invalid price data' });
       }
     }
   }
 
   for (const code of stockCodes) {
     if (!results.some(r => r.stockCode === code)) {
-      results.push({ stockCode: code, price: 0, success: false, error: 'Stock not found in response' });
+      results.push({ stockCode: code, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: 'Stock not found in response' });
     }
   }
 

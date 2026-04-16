@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { WatchlistStock } from '../types';
+import type { WatchlistStock, PriceUpdate } from '../types';
 import { useWatchlistStore } from '../stores/watchlist';
 
 const props = defineProps<{
@@ -28,13 +28,35 @@ function handleToggleMonitor(event: Event) {
   emit('toggleMonitor', props.stock.id, target.checked);
 }
 
-const currentPrice = computed(() => store.getCurrentPrice(props.stock.stockCode));
+const stockPrice = computed<PriceUpdate | null>(() => store.getStockPrice(props.stock.stockCode));
+const currentPrice = computed(() => stockPrice.value?.price ?? null);
+const openPrice = computed(() => stockPrice.value?.openPrice ?? null);
+const highPrice = computed(() => stockPrice.value?.highPrice ?? null);
+const lowPrice = computed(() => stockPrice.value?.lowPrice ?? null);
+const priceChange = computed(() => stockPrice.value?.priceChange ?? null);
+const priceChangePercent = computed(() => stockPrice.value?.priceChangePercent ?? null);
 
 function formatPrice(price: number | null): string {
   if (price === null || price === undefined) {
     return '-';
   }
   return `¥${price.toFixed(2)}`;
+}
+
+function formatChange(value: number | null): string {
+  if (value === null || value === undefined) {
+    return '-';
+  }
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(2)}`;
+}
+
+function formatChangePercent(value: number | null): string {
+  if (value === null || value === undefined) {
+    return '-';
+  }
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(2)}%`;
 }
 
 function getPriceColorClass(price: number | null): string {
@@ -49,12 +71,25 @@ function getPriceColorClass(price: number | null): string {
   }
   return '';
 }
+
+/** 涨跌颜色：A股红涨绿跌 */
+function getChangeColorClass(value: number | null): string {
+  if (value === null || value === undefined || value === 0) {
+    return '';
+  }
+  return value > 0 ? 'price-up' : 'price-down';
+}
 </script>
 
 <template>
   <div class="stock-item" :class="{ 'monitor-enabled': stock.monitorEnabled }">
     <span class="col-code">{{ stock.stockCode }}</span>
     <span class="col-name">{{ stock.stockName }}</span>
+    <span class="col-price">{{ formatPrice(openPrice) }}</span>
+    <span class="col-price">{{ formatPrice(highPrice) }}</span>
+    <span class="col-price">{{ formatPrice(lowPrice) }}</span>
+    <span class="col-change" :class="getChangeColorClass(priceChange)">{{ formatChange(priceChange) }}</span>
+    <span class="col-change" :class="getChangeColorClass(priceChangePercent)">{{ formatChangePercent(priceChangePercent) }}</span>
     <span class="col-price" :class="getPriceColorClass(currentPrice)">{{ formatPrice(currentPrice) }}</span>
     <span class="col-threshold">{{ formatPrice(stock.buyThreshold) }}</span>
     <span class="col-threshold">{{ formatPrice(stock.sellThreshold) }}</span>
@@ -78,7 +113,7 @@ function getPriceColorClass(price: number | null): string {
 <style scoped lang="scss">
 .stock-item {
   display: grid;
-  grid-template-columns: 100px 100px 100px 100px 100px 80px 120px;
+  grid-template-columns: 60px 60px 80px 80px 80px 80px 80px 90px 90px 90px 80px 120px;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   align-items: center;
@@ -94,13 +129,8 @@ function getPriceColorClass(price: number | null): string {
   }
 }
 
-.col-code {
-  font-family: monospace;
-}
-
-.col-price,
-.col-threshold {
-  text-align: right;
+.stock-item > span {
+  text-align: center;
   font-family: monospace;
 }
 
@@ -110,6 +140,17 @@ function getPriceColorClass(price: number | null): string {
 }
 
 .price-buy {
+  color: #43a047;
+  font-weight: 600;
+}
+
+/* A股红涨绿跌 */
+.price-up {
+  color: #e53935;
+  font-weight: 600;
+}
+
+.price-down {
   color: #43a047;
   font-weight: 600;
 }
@@ -167,6 +208,7 @@ function getPriceColorClass(price: number | null): string {
 .col-actions {
   display: flex;
   gap: 0.5rem;
+  justify-content: center;
 }
 
 .btn-edit,

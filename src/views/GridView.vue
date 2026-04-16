@@ -66,7 +66,7 @@ const onStockChange = (stockCode: string) => {
   }
 };
 
-const calculate = () => {
+const calculate = async () => {
   if (!form.totalAmount || !form.currentPrice || !form.currentHoldingCount || !form.averageHoldingPrice) {
     showToast('请填写所有字段', 'info');
     return;
@@ -80,8 +80,7 @@ const calculate = () => {
       averageHoldingPrice: parseFloat(form.averageHoldingPrice)
     };
 
-    const { calculatePosition } = window.gridApi;
-    const data = calculatePosition(params);
+    const data = await window.gridApi.calculatePosition(params);
     result.value = data;
     showToast('计算成功', 'success');
   } catch (error) {
@@ -111,7 +110,7 @@ const getAdjustedAvailableFunds = () => {
   return parseFloat(form.totalAmount) - getAdjustedPositionAmount();
 };
 
-const calculateOpen = () => {
+const calculateOpen = async () => {
   if (!openForm.totalAmount || !openForm.openPrice) {
     showToast('请填写所有字段', 'info');
     return;
@@ -123,8 +122,7 @@ const calculateOpen = () => {
       openPrice: parseFloat(openForm.openPrice)
     };
 
-    const { calculateOpen } = window.gridApi;
-    const data = calculateOpen(params);
+    const data = await window.gridApi.calculateOpen(params);
     openResult.value = data;
     showToast('计算成功', 'success');
   } catch (error) {
@@ -246,19 +244,19 @@ onMounted(() => {
           <div
             class="metric-card"
             :class="{
-              'adjust-buy': result.adjustAmount > 0,
-              'adjust-sell': result.adjustAmount < 0,
-              'adjust-none': result.adjustAmount === 0
+              'adjust-buy': result.adjustAmount > 0 && Math.abs(result.deviationPercent) > 10,
+              'adjust-sell': result.adjustAmount < 0 && Math.abs(result.deviationPercent) > 10,
+              'adjust-none': result.adjustAmount === 0 || Math.abs(result.deviationPercent) <= 10
             }"
           >
             <div class="metric-title">
-              {{ result.adjustAmount > 0 ? '需要买入' : (result.adjustAmount < 0 ? '需要卖出' : '无需调整') }}
+              {{ Math.abs(result.deviationPercent) <= 10 ? '无需调整' : (result.adjustAmount > 0 ? '需要买入' : '需要卖出') }}
             </div>
-            <div class="metric-value">{{ Math.abs(result.adjustAmount) }} 股</div>
+            <div class="metric-value">{{ Math.abs(result.deviationPercent) <= 10 ? 0 : Math.abs(result.adjustAmount) }} 股</div>
             <div class="metric-detail">
-              金额: ¥{{ (Math.abs(result.adjustAmount) * parseFloat(form.currentPrice)).toFixed(2) }}
+              {{ Math.abs(result.deviationPercent) <= 10 ? '偏差在正常范围内' : '金额: ¥' + (Math.abs(result.adjustAmount) * parseFloat(form.currentPrice)).toFixed(2) }}
             </div>
-            <div class="metric-detail">
+            <div v-if="Math.abs(result.deviationPercent) > 10" class="metric-detail">
               手数: {{ Math.abs(result.adjustAmount) / 100 }} 手
             </div>
           </div>
@@ -557,7 +555,7 @@ onMounted(() => {
   font-size: 14px;
 
   &:hover {
-    background: var(--primary-color-dark);
+    background: var(--color-primary-dark);
   }
 }
 

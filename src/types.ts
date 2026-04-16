@@ -49,20 +49,6 @@ export interface StockWatcherAPI {
   onRefreshTimeUpdate(callback: (time: string) => void): () => void;
 }
 
-declare global {
-  interface Window {
-    stockWatcherAPI: StockWatcherAPI;
-    positionApi: PositionAPI;
-    gridApi: GridAPI;
-    logApi: LogAPI;
-  }
-}
-
-export interface GridAPI {
-  calculatePosition(input: CalculatePositionInput): PositionResult;
-  calculateOpen(input: CalculateOpenInput): OpenResult;
-}
-
 export interface TradeRecord {
   id: number;
   stockCode: string;
@@ -115,31 +101,6 @@ export interface PositionAPI {
   getStockName(stockCode: string): Promise<{ stockCode: string; stockName: string; success: boolean; error?: string }>;
 }
 
-export interface CalculatePositionInput {
-  totalAmount: number;
-  currentPrice: number;
-  currentHoldingCount: number;
-  averageHoldingPrice: number;
-}
-
-export interface PositionResult {
-  currentPositionAmount: number;
-  targetPosition: number;
-  targetPositionAmount: number;
-  adjustAmount: number;
-  deviationPercent: number;
-}
-
-export interface CalculateOpenInput {
-  totalAmount: number;
-  openPrice: number;
-}
-
-export interface OpenResult {
-  openAmount: number;
-  buyCount: number;
-}
-
 export interface LogReadResult {
   content: string;
   error: string | null;
@@ -148,4 +109,18 @@ export interface LogReadResult {
 export interface LogAPI {
   readLog(): Promise<LogReadResult>;
   getLogPath(): Promise<string>;
+}
+
+// 从 shared 重新导出共享类型，供渲染进程使用
+export type {
+  CalculateOpenInput, CalculatePositionInput, GridAPI, OpenResult, PositionResult
+} from '../shared/types';
+
+declare global {
+  interface Window {
+    stockWatcherAPI: StockWatcherAPI;
+    positionApi: PositionAPI;
+    gridApi: GridAPI;
+    logApi: LogAPI;
+  }
 }

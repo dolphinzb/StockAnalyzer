@@ -104,9 +104,68 @@ export const IPC_CHANNELS = {
   CONFIG_LOADED: 'config:loaded',
 } as const;
 
+/**
+ * 持仓调整计算输入参数
+ */
+export interface CalculatePositionInput {
+  /** 总资金金额 */
+  totalAmount: number;
+  /** 当前股价 */
+  currentPrice: number;
+  /** 当前持仓数量（股） */
+  currentHoldingCount: number;
+  /** 持仓均价 */
+  averageHoldingPrice: number;
+}
+
+/**
+ * 持仓调整计算结果
+ */
+export interface PositionResult {
+  /** 当前持仓成本金额 */
+  currentPositionAmount: number;
+  /** 目标持仓数量（股，向下取整到100的整数倍） */
+  targetPosition: number;
+  /** 目标持仓金额 */
+  targetPositionAmount: number;
+  /** 调整数量（正数为买入，负数为卖出） */
+  adjustAmount: number;
+  /** 偏差百分比 */
+  deviationPercent: number;
+}
+
+/**
+ * 开仓计算输入参数
+ */
+export interface CalculateOpenInput {
+  /** 总资金金额 */
+  totalAmount: number;
+  /** 开仓股价 */
+  openPrice: number;
+}
+
+/**
+ * 开仓计算结果
+ */
+export interface OpenResult {
+  /** 开仓金额（总资金的50%） */
+  openAmount: number;
+  /** 建议买入数量（股，向下取整到100的整数倍） */
+  buyCount: number;
+}
+
+/**
+ * 网格交易API类型 - 通过 preload contextBridge 暴露给渲染进程
+ */
+export interface GridAPI {
+  calculatePosition(input: CalculatePositionInput): PositionResult;
+  calculateOpen(input: CalculateOpenInput): OpenResult;
+}
+
 declare global {
   interface Window {
     electronAPI: WindowAPI;
     configAPI: ConfigAPI;
+    gridAPI: GridAPI;
   }
 }

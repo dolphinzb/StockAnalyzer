@@ -24,6 +24,10 @@ import {
   type UpdateTradeInput
 } from './database';
 import {
+  calculateOpen,
+  calculatePosition
+} from './services/gridService';
+import {
   fetchStockName,
   fetchStockPrices,
   getLastRefreshTime,
@@ -363,6 +367,16 @@ ipcMain.handle('log:read', async () => {
 ipcMain.handle('log:getPath', () => {
   log.debug('IPC: log:getPath');
   return join(app.getPath('userData'), 'logs', 'main.log');
+});
+
+ipcMain.handle('grid:calculatePosition', (_event, input) => {
+  log.debug('IPC: grid:calculatePosition', input);
+  return calculatePosition(input);
+});
+
+ipcMain.handle('grid:calculateOpen', (_event, input) => {
+  log.debug('IPC: grid:calculateOpen', input);
+  return calculateOpen(input);
 });
 
 app.whenReady().then(async () => {

@@ -3,6 +3,18 @@
 **Feature**: 006-stock-watchlist-page
 **Date**: 2026-04-04
 
+## 需求变更记录
+
+### 变更 2026-04-10
+
+- **变更内容**: 定时任务获取到最新价格后，不再保存到数据库；数据库表中删除当前价格字段；页面上展示的当前价格直接使用API实时获取
+- **变更原因**: 当前价格是实时数据，无需持久化，直接从API获取更能保证数据时效性
+
+### 变更 2026-04-16
+
+- **变更内容**: 自选股列表在"名称"列与"当前价格"列之间增加五列：开盘价、当日最高价、当日最低价、涨跌额、涨跌幅；涨跌额/涨跌幅为正时红色显示，为负时绿色显示（遵循A股红涨绿跌惯例）
+- **变更原因**: 用户需要更完整的日内行情信息，便于快速判断股票当日走势和波动范围
+
 ## 功能概述
 
 自选股页面允许用户：
@@ -37,6 +49,7 @@ import { defineStore } from 'pinia';
 
 export const useWatchlistStore = defineStore('watchlist', () => {
   const stocks = ref<WatchlistStock[]>([]);
+  const priceMap = ref<Record<string, StockPrice>>({});  // stockCode -> StockPrice
   const lastRefreshTime = ref<string | null>(null);
   const isLoading = ref(false);
   const isRefreshing = ref(false);
@@ -55,6 +68,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
 
   return {
     stocks,
+    priceMap,
     lastRefreshTime,
     isLoading,
     isRefreshing,
@@ -88,7 +102,7 @@ const newStock = await api.addStock({
 // 订阅价格更新
 const unsubscribe = api.onPriceUpdate((updates) => {
   updates.forEach(update => {
-    console.log(`${update.stockCode}: ${update.price}`);
+    console.log(`${update.stockCode}: 当前价=${update.price}, 开盘价=${update.openPrice}, 最高=${update.highPrice}, 最低=${update.lowPrice}, 涨跌额=${update.priceChange}, 涨跌幅=${update.priceChangePercent}%`);
   });
 });
 
@@ -116,8 +130,9 @@ const unsubscribeAlert = api.onAlert((alert) => {
 │ - 读取 config 表的 app_config                               │
 │ - 检查当前时间是否在交易时间段内                             │
 │ - 查询所有 monitor_enabled=1 的股票                         │
-│ - 调用外部 API 获取价格                                      │
-│ - 更新数据库 current_price                                  │
+│ - 调用外部 API 获取价格（含开盘价、最高价、最低价、昨日收盘价）│
+│ - 计算涨跌额和涨跌幅                                         │
+│ - 通过事件推送价格更新到渲染进程                              │
 │ - 检查阈值，触发告警                                         │
 │ - 更新最后刷新时间                                           │
 └─────────────────────────────────────────────────────────────┘
@@ -177,7 +192,6 @@ db.run(`
     buy_threshold REAL NOT NULL,
     sell_threshold REAL NOT NULL,
     monitor_enabled INTEGER NOT NULL DEFAULT 0,
-    current_price REAL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );

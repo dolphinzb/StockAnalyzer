@@ -30,6 +30,11 @@ function handleToggleMonitor(stockId: number, enabled: boolean) {
     <div class="stock-list-header">
       <span class="col-code">股票代码</span>
       <span class="col-name">名称</span>
+      <span class="col-price">开盘价</span>
+      <span class="col-price">最高价</span>
+      <span class="col-price">最低价</span>
+      <span class="col-change">涨跌额</span>
+      <span class="col-change">涨跌幅</span>
       <span class="col-price">当前价格</span>
       <span class="col-threshold">买入阈值</span>
       <span class="col-threshold">卖出阈值</span>
@@ -61,7 +66,7 @@ function handleToggleMonitor(stockId: number, enabled: boolean) {
 
 .stock-list-header {
   display: grid;
-  grid-template-columns: 100px 100px 100px 100px 100px 80px 120px;
+  grid-template-columns: 60px 60px 80px 80px 80px 80px 80px 90px 90px 90px 80px 120px;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   background-color: var(--bg-secondary);
@@ -75,17 +80,7 @@ function handleToggleMonitor(stockId: number, enabled: boolean) {
   overflow-y: auto;
 }
 
-.col-code,
-.col-name,
-.col-price,
-.col-threshold,
-.col-monitor,
-.col-actions {
-  text-align: left;
-}
-
-.col-price,
-.col-threshold {
-  text-align: right;
+.stock-list-header span {
+  text-align: center;
 }
 </style>

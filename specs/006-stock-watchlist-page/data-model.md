@@ -10,6 +10,11 @@
 - **变更内容**: 定时任务获取到最新价格后，不再保存到数据库；数据库表中删除当前价格字段；页面上展示的当前价格直接使用API实时获取
 - **变更原因**: 当前价格是实时数据，无需持久化，直接从API获取更能保证数据时效性
 
+### 变更 2026-04-16
+
+- **变更内容**: 股票价格实体增加开盘价、当日最高价、当日最低价、昨日收盘价字段；增加涨跌额和涨跌幅计算属性；页面展示时涨跌额/涨跌幅为正红色、为负绿色
+- **变更原因**: 用户需要更完整的日内行情信息，便于快速判断股票当日走势和波动范围
+
 ## 实体定义
 
 ### WatchlistStock (自选股)
@@ -28,6 +33,24 @@
 **约束**: `sellThreshold > buyThreshold` (应用层校验)
 
 **注意**: currentPrice 字段已移除，当前价格不持久化到数据库，页面展示时直接通过API实时获取
+
+### StockPrice (股票价格 - 运行时数据，不持久化)
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| stockCode | string | 股票代码 |
+| currentPrice | number | 当前价格 |
+| openPrice | number | 开盘价 |
+| prevClosePrice | number | 昨日收盘价 |
+| highPrice | number | 当日最高价 |
+| lowPrice | number | 当日最低价 |
+| priceChange | number | 涨跌额（= currentPrice - prevClosePrice） |
+| priceChangePercent | number | 涨跌幅（= (currentPrice - prevClosePrice) / prevClosePrice × 100%，保留两位小数） |
+| timestamp | string | 获取时间戳 |
+
+**显示规则**:
+- 涨跌额(priceChange)和涨跌幅(priceChangePercent)为正时红色显示，为负时绿色显示（遵循A股红涨绿跌惯例）
+- priceChange 和 priceChangePercent 为计算属性，由当前价格和昨日收盘价计算得出
 
 ## 数据库表结构
 

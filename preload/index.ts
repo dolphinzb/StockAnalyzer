@@ -53,6 +53,12 @@ interface Alert {
 interface PriceUpdate {
   stockCode: string;
   price: number;
+  openPrice: number;
+  highPrice: number;
+  lowPrice: number;
+  prevClosePrice: number;
+  priceChange: number;
+  priceChangePercent: number;
   timestamp: string;
 }
 

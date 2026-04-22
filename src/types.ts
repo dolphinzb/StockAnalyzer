@@ -1,3 +1,5 @@
+import type { IndexData } from '../shared/types';
+
 export interface WatchlistStock {
   id: number;
   stockCode: string;
@@ -53,6 +55,7 @@ export interface StockWatcherAPI {
   onPriceUpdate(callback: (prices: PriceUpdate[]) => void): () => void;
   onAlert(callback: (alert: Alert) => void): () => void;
   onRefreshTimeUpdate(callback: (time: string) => void): () => void;
+  onIndexUpdate(callback: (data: { indices: IndexData[]; status: 'normal' | 'error'; errorMessage?: string | null; timestamp: string }) => void): () => void;
 }
 
 export interface TradeRecord {
@@ -119,8 +122,9 @@ export interface LogAPI {
 
 // 从 shared 重新导出共享类型，供渲染进程使用
 export type {
-  CalculateOpenInput, CalculatePositionInput, GridAPI, OpenResult, PositionResult
+  CalculateOpenInput, CalculatePositionInput, GridAPI, IndexData, IndexDataState, IndexDirection, OpenResult, PositionResult
 } from '../shared/types';
+
 
 declare global {
   interface Window {

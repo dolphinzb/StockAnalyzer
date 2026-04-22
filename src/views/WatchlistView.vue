@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import IndexStatusBar from '../components/IndexStatusBar.vue';
 import RefreshButton from '../components/RefreshButton.vue';
 import StockEditor from '../components/StockEditor.vue';
 import StockList from '../components/StockList.vue';
@@ -96,6 +97,9 @@ function handleToggleMonitor(stockId: number, enabled: boolean) {
       <p>暂无自选股</p>
       <button class="btn-add" @click="handleAddStock">添加第一只股票</button>
     </div>
+
+    <!-- 指数状态栏 -->
+    <IndexStatusBar :index-data-state="store.indexDataState" />
   </div>
 </template>
 

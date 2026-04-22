@@ -1,55 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AppConfig } from '../shared/types';
+import type { CalculateOpenInput, CalculatePositionInput, ConfigAPI, GridAPI, IndexData, OpenResult, PositionResult, WindowAPI } from '../shared/types';
 
-/**
- * 自选股实体类型
- */
-interface WatchlistStock {
-  id: number;
-  stockCode: string;
-  stockName: string;
-  buyThreshold: number;
-  sellThreshold: number;
-  monitorEnabled: boolean;
-  currentPrice: number | null;
-  createdAt: string;
-  updatedAt: string;
+// LogAPI 本地定义
+interface LogReadResult {
+  content: string;
+  error: string | null;
 }
 
-/**
- * 添加股票输入类型
- */
-interface AddStockInput {
-  stockCode: string;
-  stockName: string;
-  buyThreshold: number;
-  sellThreshold: number;
+interface LogAPI {
+  readLog(): Promise<LogReadResult>;
+  getLogPath(): Promise<string>;
 }
 
-/**
- * 更新股票输入类型
- */
-interface UpdateStockInput {
-  buyThreshold?: number;
-  sellThreshold?: number;
-  monitorEnabled?: boolean;
-}
-
-/**
- * 告警类型
- */
-interface Alert {
-  stockCode: string;
-  stockName: string;
-  alertType: 'BUY' | 'SELL';
-  triggerPrice: number;
-  threshold: number;
-  timestamp: string;
-}
-
-/**
- * 价格更新类型
- */
+// 渲染进程本地类型（从 src/types 导入，但 preload 无法直接导入，需要重新定义）
 interface PriceUpdate {
   stockCode: string;
   price: number;
@@ -62,23 +25,37 @@ interface PriceUpdate {
   timestamp: string;
 }
 
-interface Position {
+interface Alert {
   stockCode: string;
   stockName: string;
-  holdingCount: number;
-  holdingPrice: number;
+  alertType: 'BUY' | 'SELL';
+  triggerPrice: number;
+  threshold: number;
+  timestamp: string;
 }
 
-interface TradeRecord {
+interface WatchlistStock {
   id: number;
   stockCode: string;
   stockName: string;
-  tradeDate: string;
-  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
-  tradePrice: number;
-  tradeCount: number;
-  holdingCount: number;
-  holdingPrice: number;
+  buyThreshold: number;
+  sellThreshold: number;
+  monitorEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface AddStockInput {
+  stockCode: string;
+  stockName: string;
+  buyThreshold: number;
+  sellThreshold: number;
+}
+
+interface UpdateStockInput {
+  buyThreshold?: number;
+  sellThreshold?: number;
+  monitorEnabled?: boolean;
 }
 
 interface AddTradeInput {
@@ -98,23 +75,8 @@ interface UpdateTradeInput {
   tradeDate: string;
   tradePrice: number;
   tradeCount: number;
-  holdingCount: number;
-  holdingPrice: number;
 }
 
-interface PositionAPI {
-  getPositions(): Promise<Position[]>;
-  getTradeRecords(stockCode: string): Promise<TradeRecord[]>;
-  addTradeRecord(trade: AddTradeInput): Promise<TradeRecord>;
-  updateTradeRecord(trade: UpdateTradeInput): Promise<TradeRecord>;
-  deleteTradeRecord(id: number): Promise<boolean>;
-  fetchPrices(stockCodes: string[]): Promise<{ stockCode: string; price: number; success: boolean; error?: string }[]>;
-  getStockName(stockCode: string): Promise<{ stockCode: string; stockName: string; success: boolean; error?: string }>;
-}
-
-/**
- * 股票监控 API
- */
 interface StockWatcherAPI {
   getWatchlist(): Promise<WatchlistStock[]>;
   addStock(stock: AddStockInput): Promise<WatchlistStock>;
@@ -125,9 +87,21 @@ interface StockWatcherAPI {
   onPriceUpdate(callback: (prices: PriceUpdate[]) => void): () => void;
   onAlert(callback: (alert: Alert) => void): () => void;
   onRefreshTimeUpdate(callback: (time: string) => void): () => void;
+  onIndexUpdate(callback: (data: { indices: IndexData[]; status: 'normal' | 'error'; errorMessage?: string | null; timestamp: string }) => void): () => void;
 }
 
-const electronAPI = {
+interface PositionAPI {
+  getPositions(): Promise<any[]>;
+  getTradeRecords(stockCode: string): Promise<any[]>;
+  addTradeRecord(trade: AddTradeInput): Promise<any>;
+  updateTradeRecord(trade: UpdateTradeInput): Promise<any>;
+  deleteTradeRecord(id: number): Promise<boolean>;
+  fetchPrices(stockCodes: string[]): Promise<{ stockCode: string; price: number; success: boolean; error?: string }[]>;
+  getStockName(stockCode: string): Promise<{ stockCode: string; stockName: string; success: boolean; error?: string }>;
+}
+
+// 窗口控制 API
+const windowAPI: WindowAPI = {
   platform: process.platform as 'windows' | 'mac' | 'linux',
   versions: {
     node: process.versions.node,
@@ -139,110 +113,102 @@ const electronAPI = {
   close: () => ipcRenderer.send('window:close'),
   isMaximized: () => ipcRenderer.invoke('window:is-maximized'),
   onMaximized: (callback: (isMaximized: boolean) => void) => {
-    ipcRenderer.on('window:maximized', (_event, isMaximized) => {
-      callback(isMaximized);
-    });
+    const handler = (_event: Electron.IpcRendererEvent, isMaximized: boolean) => callback(isMaximized);
+    ipcRenderer.on('window:maximized', handler);
+    return () => ipcRenderer.removeListener('window:maximized', handler);
   },
 };
 
-const configAPI = {
-  getConfig: (): Promise<AppConfig> => ipcRenderer.invoke('config:get'),
-  setConfig: (config: AppConfig): Promise<boolean> => ipcRenderer.invoke('config:set', config),
-  onConfigLoaded: (callback: (config: AppConfig) => void) => {
-    ipcRenderer.on('config:loaded', (_event, config) => {
-      callback(config);
-    });
+// 配置 API
+const configAPI: ConfigAPI = {
+  getConfig: () => ipcRenderer.invoke('config:get'),
+  setConfig: (config) => ipcRenderer.invoke('config:set', config),
+  onConfigLoaded: (callback: (config: import('../shared/types').AppConfig) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, config: import('../shared/types').AppConfig) => callback(config);
+    ipcRenderer.on('config:loaded', handler);
+    return () => ipcRenderer.removeListener('config:loaded', handler);
   },
 };
 
+// 自选股监控 API
 const stockWatcherAPI: StockWatcherAPI = {
-  getWatchlist: (): Promise<WatchlistStock[]> => ipcRenderer.invoke('watchlist:get'),
-  addStock: (stock: AddStockInput): Promise<WatchlistStock> => ipcRenderer.invoke('watchlist:add', stock),
-  updateStock: (id: number, updates: UpdateStockInput): Promise<WatchlistStock> =>
-    ipcRenderer.invoke('watchlist:update', id, updates),
-  deleteStock: (id: number): Promise<void> => ipcRenderer.invoke('watchlist:delete', id),
-  refreshPrices: (): Promise<void> => ipcRenderer.invoke('prices:refresh'),
-  getLastRefreshTime: (): Promise<string | null> => ipcRenderer.invoke('prices:last-time'),
-  onPriceUpdate: (callback: (prices: PriceUpdate[]) => void): (() => void) => {
+  getWatchlist: () => ipcRenderer.invoke('watchlist:get'),
+  addStock: (input: AddStockInput) => ipcRenderer.invoke('watchlist:add', input),
+  updateStock: (id: number, updates: UpdateStockInput) => ipcRenderer.invoke('watchlist:update', id, updates),
+  deleteStock: (id: number) => ipcRenderer.invoke('watchlist:delete', id),
+  refreshPrices: () => ipcRenderer.invoke('prices:refresh'),
+  getLastRefreshTime: () => ipcRenderer.invoke('prices:last-time'),
+  onPriceUpdate: (callback: (prices: PriceUpdate[]) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, prices: PriceUpdate[]) => callback(prices);
     ipcRenderer.on('prices:update', handler);
     return () => ipcRenderer.removeListener('prices:update', handler);
   },
-  onAlert: (callback: (alert: Alert) => void): (() => void) => {
+  onAlert: (callback: (alert: Alert) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, alert: Alert) => callback(alert);
     ipcRenderer.on('alert:trigger', handler);
     return () => ipcRenderer.removeListener('alert:trigger', handler);
   },
-  onRefreshTimeUpdate: (callback: (time: string) => void): (() => void) => {
+  onRefreshTimeUpdate: (callback: (time: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, time: string) => callback(time);
-    ipcRenderer.on('refresh:time-update', handler);
-    return () => ipcRenderer.removeListener('refresh:time-update', handler);
+    ipcRenderer.on('refresh:time', handler);
+    return () => ipcRenderer.removeListener('refresh:time', handler);
+  },
+  onIndexUpdate: (callback: (data: { indices: IndexData[]; status: 'normal' | 'error'; errorMessage?: string | null; timestamp: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { indices: IndexData[]; status: 'normal' | 'error'; errorMessage?: string | null; timestamp: string }) => callback(data);
+    ipcRenderer.on('index:update', handler);
+    return () => ipcRenderer.removeListener('index:update', handler);
   },
 };
 
-contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+// 持仓 API
+const positionAPI: PositionAPI = {
+  getPositions: () => ipcRenderer.invoke('position:get-list'),
+  getTradeRecords: (stockCode: string) => ipcRenderer.invoke('position:get-records', stockCode),
+  addTradeRecord: (trade: AddTradeInput) => ipcRenderer.invoke('position:add-record', trade),
+  updateTradeRecord: (trade: UpdateTradeInput) => ipcRenderer.invoke('position:update-record', trade),
+  deleteTradeRecord: (id: number) => ipcRenderer.invoke('position:delete-record', id),
+  fetchPrices: (stockCodes: string[]) => ipcRenderer.invoke('position:fetch-prices', stockCodes),
+  getStockName: (stockCode: string) => ipcRenderer.invoke('stock:get-name', stockCode),
+};
+
+// 网格交易 API
+const gridAPI: GridAPI = {
+  calculatePosition: (input: CalculatePositionInput): PositionResult => {
+    const { totalAmount, currentPrice, currentHoldingCount, averageHoldingPrice } = input;
+    const currentPositionAmount = currentHoldingCount * averageHoldingPrice;
+    const targetPositionAmount = totalAmount / 3;
+    const targetPosition = Math.floor(targetPositionAmount / currentPrice / 100) * 100;
+    const adjustAmount = targetPosition - currentHoldingCount;
+    const deviationPercent = currentHoldingCount > 0 ? Math.abs(adjustAmount) / currentHoldingCount * 100 : 0;
+    return {
+      currentPositionAmount,
+      targetPosition,
+      targetPositionAmount,
+      adjustAmount,
+      deviationPercent,
+    };
+  },
+  calculateOpen: (input: CalculateOpenInput): OpenResult => {
+    const { totalAmount, openPrice } = input;
+    const openAmount = totalAmount * 0.5;
+    const buyCount = Math.floor(openAmount / openPrice / 100) * 100;
+    return {
+      openAmount,
+      buyCount,
+    };
+  },
+};
+
+// 日志 API
+const logAPI: LogAPI = {
+  readLog: () => ipcRenderer.invoke('log:read'),
+  getLogPath: () => ipcRenderer.invoke('log:getPath'),
+};
+
+// 暴露所有 API 到渲染进程
+contextBridge.exposeInMainWorld('electronAPI', windowAPI);
 contextBridge.exposeInMainWorld('configAPI', configAPI);
 contextBridge.exposeInMainWorld('stockWatcherAPI', stockWatcherAPI);
-
-const positionAPI: PositionAPI = {
-  getPositions: (): Promise<Position[]> => ipcRenderer.invoke('position:get-list'),
-  getTradeRecords: (stockCode: string): Promise<TradeRecord[]> => ipcRenderer.invoke('position:get-records', stockCode),
-  addTradeRecord: (trade: AddTradeInput): Promise<TradeRecord> => ipcRenderer.invoke('position:add-record', trade),
-  updateTradeRecord: (trade: UpdateTradeInput): Promise<TradeRecord> => ipcRenderer.invoke('position:update-record', trade),
-  deleteTradeRecord: (id: number): Promise<boolean> => ipcRenderer.invoke('position:delete-record', id),
-  fetchPrices: (stockCodes: string[]): Promise<{ stockCode: string; price: number; success: boolean; error?: string }[]> => ipcRenderer.invoke('position:fetch-prices', stockCodes),
-  getStockName: (stockCode: string): Promise<{ stockCode: string; stockName: string; success: boolean; error?: string }> => ipcRenderer.invoke('stock:get-name', stockCode),
-};
-
 contextBridge.exposeInMainWorld('positionApi', positionAPI);
-
-interface CalculatePositionInput {
-  totalAmount: number;
-  currentPrice: number;
-  currentHoldingCount: number;
-  averageHoldingPrice: number;
-}
-
-interface PositionResult {
-  currentPositionAmount: number;
-  targetPosition: number;
-  targetPositionAmount: number;
-  adjustAmount: number;
-  deviationPercent: number;
-}
-
-interface CalculateOpenInput {
-  totalAmount: number;
-  openPrice: number;
-}
-
-interface OpenResult {
-  openAmount: number;
-  buyCount: number;
-}
-
-const gridApi = {
-  calculatePosition: (input: CalculatePositionInput): Promise<PositionResult> =>
-    ipcRenderer.invoke('grid:calculatePosition', input),
-  calculateOpen: (input: CalculateOpenInput): Promise<OpenResult> =>
-    ipcRenderer.invoke('grid:calculateOpen', input)
-};
-
-contextBridge.exposeInMainWorld('gridApi', gridApi);
-
-interface LogReadResult {
-  content: string;
-  error: string | null;
-}
-
-interface LogAPI {
-  readLog(): Promise<LogReadResult>;
-  getLogPath(): Promise<string>;
-}
-
-const logApi: LogAPI = {
-  readLog: (): Promise<LogReadResult> => ipcRenderer.invoke('log:read'),
-  getLogPath: (): Promise<string> => ipcRenderer.invoke('log:getPath'),
-};
-
-contextBridge.exposeInMainWorld('logApi', logApi);
+contextBridge.exposeInMainWorld('gridApi', gridAPI);
+contextBridge.exposeInMainWorld('logApi', logAPI);

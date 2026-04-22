@@ -1,9 +1,19 @@
 import { BrowserWindow } from 'electron';
 import log from 'electron-log';
-import type { AppConfig } from '../../shared/types';
+import type { AppConfig, IndexData, IndexDirection } from '../../shared/types';
 import type { WatchlistStock } from '../database';
 import { loadConfig } from '../database';
 import { checkAndTriggerAlert, type PriceUpdate } from './alertService';
+
+// 指数代码常量（带前缀）
+const INDEX_CODES = ['sh000001', 'sz399001'];
+const INDEX_NAMES: Record<string, string> = {
+  'sh000001': '上证指数',
+  'sz399001': '深成指数',
+};
+
+// 上次成功获取的指数数据（用于错误时显示）
+let lastSuccessfulIndexData: IndexData[] = [];
 
 export interface PriceResult {
   stockCode: string;
@@ -67,7 +77,7 @@ function sendPriceUpdate(prices: PriceUpdate[]): void {
 function sendRefreshTimeUpdate(time: string): void {
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('refresh:time-update', time);
+    mainWindow.webContents.send('refresh:time', time);
   }
 }
 
@@ -202,45 +212,70 @@ function parseStockPrice(responseText: string): number | null {
 
 export async function refreshAllEnabledStocks(stocks: WatchlistStock[], config: AppConfig): Promise<void> {
   const enabledStocks = stocks.filter(s => s.monitorEnabled);
-  if (enabledStocks.length === 0) {
-    log.debug('No enabled stocks to refresh');
-    return;
-  }
-
-  log.info(`Refreshing prices for ${enabledStocks.length} stocks`);
-
   const now = new Date().toISOString();
-  const results = await fetchStockPrices(enabledStocks.map(s => s.stockCode), config);
 
-  for (const result of results) {
+  // 始终获取指数数据（无论是否有监控股票）
+  const allCodes = [...enabledStocks.map(s => s.stockCode), ...INDEX_CODES];
+  const results = await fetchStockPrices(allCodes, config);
+
+  // 分离股票和指数结果（解析后代码保留前缀）
+  const stockResults = results.filter(r => !INDEX_CODES.includes(r.stockCode));
+  const indexResults = results.filter(r => INDEX_CODES.includes(r.stockCode));
+
+  // log.info(`指数结果数量: ${indexResults.length}`);
+  // log.info(`指数结果详情: ${JSON.stringify(indexResults)}`);
+
+  // 检查股票价格告警
+  for (const result of stockResults) {
     if (result.success) {
-      const stock = enabledStocks.find(s => s.stockCode === result.stockCode);
+      // 去掉前缀后匹配数据库中的股票代码
+      const codeWithoutPrefix = result.stockCode.replace(/^(sh|sz|bj)/, '');
+      const stock = enabledStocks.find(s => s.stockCode === codeWithoutPrefix);
       if (stock) {
         checkAndTriggerAlert(stock, result.price);
       }
     }
   }
 
-  const priceUpdates = results
-    .filter(r => r.success)
-    .map(r => {
-      const priceChange = r.prevClosePrice !== 0 ? r.price - r.prevClosePrice : 0;
-      const priceChangePercent = r.prevClosePrice !== 0
-        ? Math.round(((r.price - r.prevClosePrice) / r.prevClosePrice) * 10000) / 100
-        : 0;
-      return {
-        stockCode: r.stockCode,
-        price: r.price,
-        openPrice: r.openPrice,
-        highPrice: r.highPrice,
-        lowPrice: r.lowPrice,
-        prevClosePrice: r.prevClosePrice,
-        priceChange,
-        priceChangePercent,
-        timestamp: now,
-      };
-    });
-  sendPriceUpdate(priceUpdates);
+  // 发送股票价格更新（仅当有股票时）
+  if (stockResults.length > 0) {
+    const priceUpdates = stockResults
+      .filter(r => r.success)
+      .map(r => {
+        const priceChange = r.prevClosePrice !== 0 ? r.price - r.prevClosePrice : 0;
+        const priceChangePercent = r.prevClosePrice !== 0
+          ? Math.round(((r.price - r.prevClosePrice) / r.prevClosePrice) * 10000) / 100
+          : 0;
+        return {
+          // 去掉前缀，与数据库格式一致
+          stockCode: r.stockCode.replace(/^(sh|sz|bj)/, ''),
+          price: r.price,
+          openPrice: r.openPrice,
+          highPrice: r.highPrice,
+          lowPrice: r.lowPrice,
+          prevClosePrice: r.prevClosePrice,
+          priceChange,
+          priceChangePercent,
+          timestamp: now,
+        };
+      });
+    sendPriceUpdate(priceUpdates);
+  }
+
+  // 解析并发送指数数据更新
+  const indexData = parseIndexData(indexResults, now);
+
+  // log.info(`解析后的指数数据: ${JSON.stringify(indexData)}`);
+
+  // 检查指数数据是否全部获取失败
+  const allIndexFailed = indexResults.length > 0 && indexResults.every(r => !r.success);
+  if (allIndexFailed) {
+    // log.info('指数数据全部获取失败，发送错误状态');
+    sendIndexUpdate([], 'error', '数据更新失败');
+  } else {
+    // log.info('指数数据获取成功，发送正常状态');
+    sendIndexUpdate(indexData, 'normal');
+  }
 
   lastRefreshTime = now;
   sendRefreshTimeUpdate(now);
@@ -293,7 +328,8 @@ function parseStockPricesResponse(responseText: string, stockCodes: string[]): P
 
     const match = trimmed.match(/hq_str_(\w+)="([^"]+)"/);
     if (match && match[1] && match[2]) {
-      const stockCode = match[1].replace(/^(sh|sz|bj)/, '');
+      // 保留完整代码（带前缀），避免 sh000001 和 sz000001 混淆
+      const stockCode = match[1];
       const parts = match[2].split(',');
       // 新浪API字段: 0=名称, 1=今开, 2=昨收, 3=当前价, 4=最高, 5=最低
       const price = parts.length >= 4 ? parseFloat(parts[3]) : null;
@@ -316,6 +352,7 @@ function parseStockPricesResponse(responseText: string, stockCodes: string[]): P
     }
   }
 
+  // 匹配时直接使用传入的 stockCodes（已带前缀）
   for (const code of stockCodes) {
     if (!results.some(r => r.stockCode === code)) {
       results.push({ stockCode: code, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: 'Stock not found in response' });
@@ -323,6 +360,81 @@ function parseStockPricesResponse(responseText: string, stockCodes: string[]): P
   }
 
   return results;
+}
+
+/**
+ * 解析指数数据
+ * @param indexResults 指数价格结果数组
+ * @param timestamp ISO格式时间戳
+ * @returns 解析后的指数数据数组
+ */
+function parseIndexData(indexResults: PriceResult[], timestamp: string): IndexData[] {
+  const indexData: IndexData[] = [];
+
+  for (const result of indexResults) {
+    // 解析结果已保留前缀
+    const indexCode = result.stockCode;
+    const indexName = INDEX_NAMES[indexCode] || '未知指数';
+
+    if (!result.success || result.price <= 0) {
+      // 获取失败时返回空，使用上次成功数据
+      continue;
+    }
+
+    const currentPrice = result.price;
+    const prevClosePrice = result.prevClosePrice;
+    const change = prevClosePrice !== 0 ? currentPrice - prevClosePrice : 0;
+    const changePercent = prevClosePrice !== 0
+      ? Math.round((change / prevClosePrice) * 10000) / 100
+      : 0;
+
+    // 判断涨跌方向
+    let direction: IndexDirection;
+    if (changePercent > 0) {
+      direction = 'up';
+    } else if (changePercent < 0) {
+      direction = 'down';
+    } else {
+      direction = 'flat';
+    }
+
+    indexData.push({
+      code: indexCode,
+      name: indexName,
+      price: currentPrice,
+      change,
+      changePercent,
+      direction,
+      lastUpdate: timestamp,
+    });
+  }
+
+  // 如果成功获取到数据，更新缓存
+  if (indexData.length > 0) {
+    lastSuccessfulIndexData = indexData;
+  }
+
+  return indexData;
+}
+
+/**
+ * 通过IPC发送指数数据更新到渲染进程
+ * @param indices 指数数据数组
+ * @param status 数据状态
+ * @param errorMessage 错误信息（可选）
+ */
+function sendIndexUpdate(indices: IndexData[], status: 'normal' | 'error', errorMessage?: string): void {
+  const mainWindow = getMainWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    // 如果获取失败，发送上次成功的数据
+    const dataToSend = indices.length > 0 ? indices : lastSuccessfulIndexData;
+    mainWindow.webContents.send('index:update', {
+      indices: dataToSend,
+      status,
+      errorMessage,
+      timestamp: new Date().toISOString(),
+    });
+  }
 }
 
 export function getLastRefreshTime(): string | null {

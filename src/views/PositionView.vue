@@ -35,7 +35,9 @@ async function loadPositions() {
       const priceResults = await window.positionApi.fetchPrices(stockCodes);
       priceResults.forEach(result => {
         if (result.success) {
-          positionStore.handlePriceUpdate(result.stockCode, result.price);
+          // 去掉前缀，与持仓数据中的 stockCode 格式一致
+          const codeWithoutPrefix = result.stockCode.replace(/^(sh|sz|bj)/, '');
+          positionStore.handlePriceUpdate(codeWithoutPrefix, result.price);
         }
       });
     }

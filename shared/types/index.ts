@@ -102,7 +102,47 @@ export const IPC_CHANNELS = {
   CONFIG_GET: 'config:get',
   CONFIG_SET: 'config:set',
   CONFIG_LOADED: 'config:loaded',
+  INDEX_UPDATE: 'index:update',
 } as const;
+
+/**
+ * 指数涨跌方向
+ */
+export type IndexDirection = 'up' | 'down' | 'flat';
+
+/**
+ * 指数数据
+ */
+export interface IndexData {
+  /** 指数代码 (sh000001/sz399001) */
+  code: string;
+  /** 指数名称 (上证指数/深成指数) */
+  name: string;
+  /** 当前指数值 */
+  price: number;
+  /** 涨跌值 (可正可负) */
+  change: number;
+  /** 涨跌幅百分比 (如 1.25 表示 +1.25%) */
+  changePercent: number;
+  /** 涨跌方向 */
+  direction: IndexDirection;
+  /** ISO 格式最后更新时间 */
+  lastUpdate: string;
+}
+
+/**
+ * 指数数据状态
+ */
+export interface IndexDataState {
+  /** 指数数组 */
+  indices: IndexData[];
+  /** 数据状态 */
+  status: 'normal' | 'error';
+  /** 错误信息 */
+  errorMessage: string | null;
+  /** 是否正在加载 */
+  isLoading: boolean;
+}
 
 /**
  * 持仓调整计算输入参数

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
-import type { WatchlistStock, AddStockInput, UpdateStockInput, Alert, PriceUpdate } from '../types';
+import { computed, ref } from 'vue';
+import type { AddStockInput, Alert, IndexData, IndexDataState, PriceUpdate, UpdateStockInput, WatchlistStock } from '../types';
 
 export const useWatchlistStore = defineStore('watchlist', () => {
   const stocks = ref<WatchlistStock[]>([]);
@@ -9,6 +9,14 @@ export const useWatchlistStore = defineStore('watchlist', () => {
   const isRefreshing = ref(false);
   const alerts = ref<Alert[]>([]);
   const priceMap = ref<Map<string, PriceUpdate>>(new Map());
+
+  // 指数数据状态
+  const indexDataState = ref<IndexDataState>({
+    indices: [],
+    status: 'normal',
+    errorMessage: null,
+    isLoading: false,
+  });
 
   const enabledStocks = computed(() =>
     stocks.value.filter(s => s.monitorEnabled)
@@ -90,15 +98,26 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     lastRefreshTime.value = time;
   }
 
+  function handleIndexUpdate(data: { indices: IndexData[]; status: 'normal' | 'error'; errorMessage?: string; timestamp: string }): void {
+    indexDataState.value = {
+      indices: data.indices,
+      status: data.status,
+      errorMessage: data.errorMessage ?? null,
+      isLoading: false,
+    };
+  }
+
   function setupEventListeners(): () => void {
     const unsubPrice = window.stockWatcherAPI.onPriceUpdate(handlePriceUpdate);
     const unsubAlert = window.stockWatcherAPI.onAlert(handleAlert);
     const unsubTime = window.stockWatcherAPI.onRefreshTimeUpdate(handleRefreshTimeUpdate);
+    const unsubIndex = window.stockWatcherAPI.onIndexUpdate(handleIndexUpdate);
 
     return () => {
       unsubPrice();
       unsubAlert();
       unsubTime();
+      unsubIndex();
     };
   }
 
@@ -109,6 +128,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     isRefreshing,
     alerts,
     priceMap,
+    indexDataState,
     enabledStocks,
     sortedStocks,
     getCurrentPrice,
@@ -121,6 +141,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     handlePriceUpdate,
     handleAlert,
     handleRefreshTimeUpdate,
+    handleIndexUpdate,
     setupEventListeners,
   };
 });

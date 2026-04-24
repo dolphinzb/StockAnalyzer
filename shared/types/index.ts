@@ -202,10 +202,116 @@ export interface GridAPI {
   calculateOpen(input: CalculateOpenInput): OpenResult;
 }
 
+/**
+ * 交易明细
+ * 用于前端展示的交易明细数据
+ */
+export interface TradeDetail {
+  /** 交易日期 */
+  tradeDate: string;
+  /** 交易类型 */
+  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
+  /** 交易价格 */
+  tradePrice: number;
+  /** 交易数量 */
+  tradeCount: number;
+  /** 持仓数量 */
+  holdingCount: number;
+  /** 单笔手续费 */
+  fee: number;
+}
+
+/**
+ * 历史开仓记录
+ * 代表一只股票从开仓到清仓的完整交易周期
+ */
+export interface HistoricalTradeRecord {
+  /** 唯一标识符（格式：stockCode_cycleIndex） */
+  id: string;
+  /** 股票代码 */
+  stockCode: string;
+  /** 股票名称 */
+  stockName: string;
+  /** 开仓时间（YYYY-MM-DD） */
+  openTime: string;
+  /** 清仓时间（YYYY-MM-DD） */
+  closeTime: string;
+  /** 总买入次数 */
+  totalBuyCount: number;
+  /** 总卖出次数 */
+  totalSellCount: number;
+  /** 总交易股数 */
+  totalShares: number;
+  /** 总买入金额 */
+  totalBuyAmount: number;
+  /** 总卖出金额 */
+  totalSellAmount: number;
+  /** 分红金额 */
+  totalDividendAmount: number;
+  /** 总手续费 */
+  totalFees: number;
+  /** 总盈利 */
+  totalProfit: number;
+  /** 盈利比例（百分比） */
+  profitRatio: number;
+}
+
+/**
+ * 历史开仓记录API类型 - 通过 preload contextBridge 暴露给渲染进程
+ */
+export interface HistoricalTradeAPI {
+  /** 获取所有历史开仓记录 */
+  getAll(): Promise<HistoricalTradeRecord[]>;
+  /** 获取指定交易周期的交易明细 */
+  getCycleDetails(cycleId: string): Promise<TradeDetail[]>;
+}
+
+/**
+ * 持仓API类型 - 通过 preload contextBridge 暴露给渲染进程
+ */
+export interface PositionAPI {
+  getPositions(): Promise<any[]>;
+  getTradeRecords(stockCode: string): Promise<any[]>;
+  addTradeRecord(trade: any): Promise<any>;
+  updateTradeRecord(trade: any): Promise<any>;
+  deleteTradeRecord(id: number): Promise<boolean>;
+  fetchPrices(stockCodes: string[]): Promise<any[]>;
+  getStockName(stockCode: string): Promise<any>;
+}
+
+/**
+ * 日志API类型 - 通过 preload contextBridge 暴露给渲染进程
+ */
+export interface LogAPI {
+  readLog(): Promise<{ content: string; error: string | null }>;
+  getLogPath(): Promise<string>;
+}
+
+/**
+ * 股票观察者API类型 - 通过 preload contextBridge 暴露给渲染进程
+ */
+export interface StockWatcherAPI {
+  getWatchlist(): Promise<any[]>;
+  addStock(stock: any): Promise<any>;
+  updateStock(id: number, updates: any): Promise<any>;
+  deleteStock(id: number): Promise<void>;
+  refreshPrices(): Promise<void>;
+  getLastRefreshTime(): Promise<string | null>;
+  onPriceUpdate(callback: (prices: any[]) => void): () => void;
+  onAlert(callback: (alert: any) => void): () => void;
+  onRefreshTimeUpdate(callback: (time: string) => void): () => void;
+  onIndexUpdate(callback: (data: { indices: IndexData[]; status: 'normal' | 'error'; errorMessage?: string | null; timestamp: string }) => void): () => void;
+}
+
 declare global {
   interface Window {
     electronAPI: WindowAPI;
     configAPI: ConfigAPI;
     gridAPI: GridAPI;
+    historicalTradeAPI: HistoricalTradeAPI;
+    positionApi: PositionAPI;
+    logApi: LogAPI;
+    stockWatcherAPI: StockWatcherAPI;
   }
 }
+

@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-export type ViewId = 'watchlist' | 'position' | 'grid' | 'settings' | 'log'
+export type ViewId = 'watchlist' | 'position' | 'grid' | 'settings' | 'log' | 'historical-trades'
 
 const currentViewId = ref<ViewId>('watchlist')
 

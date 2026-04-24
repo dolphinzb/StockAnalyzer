@@ -6,6 +6,7 @@ import ToastNotification from './components/ToastNotification.vue'
 import { useNavigation, type ViewId } from './composables/useNavigation'
 import { useWatchlistStore } from './stores/watchlist'
 import GridView from './views/GridView.vue'
+import HistoricalTradesView from './views/HistoricalTradesView.vue'
 import LogPage from './views/LogPage.vue'
 import PositionView from './views/PositionView.vue'
 import SettingsView from './views/SettingsView.vue'
@@ -19,7 +20,8 @@ const viewComponents = {
   position: PositionView,
   grid: GridView,
   settings: SettingsView,
-  log: LogPage
+  log: LogPage,
+  'historical-trades': HistoricalTradesView
 }
 
 const currentComponent = computed(() => {

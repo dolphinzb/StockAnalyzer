@@ -1,5 +1,3 @@
-import type { IndexData } from '../shared/types';
-
 export interface WatchlistStock {
   id: number;
   stockCode: string;
@@ -45,19 +43,6 @@ export interface PriceUpdate {
   timestamp: string;
 }
 
-export interface StockWatcherAPI {
-  getWatchlist(): Promise<WatchlistStock[]>;
-  addStock(stock: AddStockInput): Promise<WatchlistStock>;
-  updateStock(id: number, updates: UpdateStockInput): Promise<WatchlistStock>;
-  deleteStock(id: number): Promise<void>;
-  refreshPrices(): Promise<void>;
-  getLastRefreshTime(): Promise<string | null>;
-  onPriceUpdate(callback: (prices: PriceUpdate[]) => void): () => void;
-  onAlert(callback: (alert: Alert) => void): () => void;
-  onRefreshTimeUpdate(callback: (time: string) => void): () => void;
-  onIndexUpdate(callback: (data: { indices: IndexData[]; status: 'normal' | 'error'; errorMessage?: string | null; timestamp: string }) => void): () => void;
-}
-
 export interface TradeRecord {
   id: number;
   stockCode: string;
@@ -100,37 +85,26 @@ export interface UpdateTradeInput {
   tradeCount: number;
 }
 
-export interface PositionAPI {
-  getPositions(): Promise<Position[]>;
-  getTradeRecords(stockCode: string): Promise<TradeRecord[]>;
-  addTradeRecord(trade: AddTradeInput): Promise<TradeRecord>;
-  updateTradeRecord(trade: UpdateTradeInput): Promise<TradeRecord>;
-  deleteTradeRecord(id: number): Promise<boolean>;
-  fetchPrices(stockCodes: string[]): Promise<{ stockCode: string; price: number; success: boolean; error?: string }[]>;
-  getStockName(stockCode: string): Promise<{ stockCode: string; stockName: string; success: boolean; error?: string }>;
-}
-
 export interface LogReadResult {
   content: string;
   error: string | null;
 }
 
-export interface LogAPI {
-  readLog(): Promise<LogReadResult>;
-  getLogPath(): Promise<string>;
-}
-
 // 从 shared 重新导出共享类型，供渲染进程使用
 export type {
-  CalculateOpenInput, CalculatePositionInput, GridAPI, IndexData, IndexDataState, IndexDirection, OpenResult, PositionResult
+  CalculateOpenInput,
+  CalculatePositionInput,
+  GridAPI,
+  HistoricalTradeAPI,
+  HistoricalTradeRecord,
+  IndexData,
+  IndexDataState,
+  IndexDirection,
+  LogAPI,
+  OpenResult,
+  PositionAPI,
+  PositionResult,
+  StockWatcherAPI,
+  TradeDetail
 } from '../shared/types';
 
-
-declare global {
-  interface Window {
-    stockWatcherAPI: StockWatcherAPI;
-    positionApi: PositionAPI;
-    gridApi: GridAPI;
-    logApi: LogAPI;
-  }
-}

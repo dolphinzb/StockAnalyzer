@@ -28,6 +28,10 @@ import {
   calculatePosition
 } from './services/gridService';
 import {
+  getAllHistoricalTrades,
+  getCycleDetails
+} from './services/historicalTradeService';
+import {
   fetchStockName,
   fetchStockPrices,
   getLastRefreshTime,
@@ -377,6 +381,32 @@ ipcMain.handle('grid:calculatePosition', (_event, input) => {
 ipcMain.handle('grid:calculateOpen', (_event, input) => {
   log.debug('IPC: grid:calculateOpen', input);
   return calculateOpen(input);
+});
+
+/**
+ * 获取所有历史开仓记录
+ */
+ipcMain.handle('historicalTrade:getAll', () => {
+  log.debug('IPC: historicalTrade:getAll');
+  try {
+    return getAllHistoricalTrades();
+  } catch (error) {
+    log.error('IPC historicalTrade:getAll error:', error);
+    throw error;
+  }
+});
+
+/**
+ * 获取指定交易周期的交易明细
+ */
+ipcMain.handle('historicalTrade:getCycleDetails', (_event, cycleId: string) => {
+  log.debug('IPC: historicalTrade:getCycleDetails', cycleId);
+  try {
+    return getCycleDetails(cycleId);
+  } catch (error) {
+    log.error('IPC historicalTrade:getCycleDetails error:', error);
+    throw error;
+  }
 });
 
 app.whenReady().then(async () => {

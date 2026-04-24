@@ -199,10 +199,47 @@ const gridAPI: GridAPI = {
   },
 };
 
+// 历史交易记录相关类型
+interface HistoricalTradeRecord {
+  id: string;
+  stockCode: string;
+  stockName: string;
+  openTime: string;
+  closeTime: string;
+  totalBuyCount: number;
+  totalSellCount: number;
+  totalShares: number;
+  totalBuyAmount: number;
+  totalSellAmount: number;
+  totalFees: number;
+  totalProfit: number;
+  profitRatio: number;
+  totalDividendAmount: number;
+}
+
+interface TradeDetail {
+  tradeDate: string;
+  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
+  tradePrice: number;
+  tradeCount: number;
+  fee: number;
+}
+
+interface HistoricalTradeAPI {
+  getAll(): Promise<HistoricalTradeRecord[]>;
+  getCycleDetails(cycleId: string): Promise<TradeDetail[]>;
+}
+
 // 日志 API
 const logAPI: LogAPI = {
   readLog: () => ipcRenderer.invoke('log:read'),
   getLogPath: () => ipcRenderer.invoke('log:getPath'),
+};
+
+// 历史交易 API
+const historicalTradeAPI: HistoricalTradeAPI = {
+  getAll: () => ipcRenderer.invoke('historicalTrade:getAll'),
+  getCycleDetails: (cycleId: string) => ipcRenderer.invoke('historicalTrade:getCycleDetails', cycleId),
 };
 
 // 暴露所有 API 到渲染进程
@@ -212,3 +249,4 @@ contextBridge.exposeInMainWorld('stockWatcherAPI', stockWatcherAPI);
 contextBridge.exposeInMainWorld('positionApi', positionAPI);
 contextBridge.exposeInMainWorld('gridApi', gridAPI);
 contextBridge.exposeInMainWorld('logApi', logAPI);
+contextBridge.exposeInMainWorld('historicalTradeAPI', historicalTradeAPI);

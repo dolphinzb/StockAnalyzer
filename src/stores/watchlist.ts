@@ -98,7 +98,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     lastRefreshTime.value = time;
   }
 
-  function handleIndexUpdate(data: { indices: IndexData[]; status: 'normal' | 'error'; errorMessage?: string; timestamp: string }): void {
+  function handleIndexUpdate(data: { indices: IndexData[]; status: 'normal' | 'error'; errorMessage?: string | null; timestamp: string }): void {
     indexDataState.value = {
       indices: data.indices,
       status: data.status,

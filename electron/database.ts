@@ -510,3 +510,40 @@ export function addTradeRecord(input: AddTradeInput): TradeRecord {
   }
   return rowToTradeRecord(result[0].values[0]);
 }
+
+/**
+ * 获取所有交易记录
+ * @returns 所有交易记录数组，按股票代码和交易日期排序
+ */
+export function getAllTradeRecords(): TradeRecord[] {
+  const database = getDb();
+  const result = database.exec(
+    `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
+     FROM trade_record
+     ORDER BY stock_code, trade_date ASC`
+  );
+  if (result.length === 0) {
+    return [];
+  }
+  return result[0].values.map(rowToTradeRecord);
+}
+
+/**
+ * 按股票代码查询交易记录
+ * @param stockCode 股票代码
+ * @returns 该股票的所有交易记录数组，按交易日期正序排列
+ */
+export function getTradeRecordsByStockCode(stockCode: string): TradeRecord[] {
+  const database = getDb();
+  const result = database.exec(
+    `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
+     FROM trade_record
+     WHERE stock_code = ?
+     ORDER BY trade_date ASC`,
+    [stockCode]
+  );
+  if (result.length === 0) {
+    return [];
+  }
+  return result[0].values.map(rowToTradeRecord);
+}

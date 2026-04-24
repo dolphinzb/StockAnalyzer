@@ -80,7 +80,7 @@ const calculate = async () => {
       averageHoldingPrice: parseFloat(form.averageHoldingPrice)
     };
 
-    const data = await window.gridApi.calculatePosition(params);
+    const data = await window.gridAPI.calculatePosition(params);
     result.value = data;
     showToast('计算成功', 'success');
   } catch (error) {
@@ -122,7 +122,7 @@ const calculateOpen = async () => {
       openPrice: parseFloat(openForm.openPrice)
     };
 
-    const data = await window.gridApi.calculateOpen(params);
+    const data = await window.gridAPI.calculateOpen(params);
     openResult.value = data;
     showToast('计算成功', 'success');
   } catch (error) {

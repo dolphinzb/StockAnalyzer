@@ -102,6 +102,7 @@ export type {
   IndexDirection,
   LogAPI,
   OpenResult,
+  PaginatedTradeRecords,
   PositionAPI,
   PositionResult,
   StockWatcherAPI,

@@ -90,9 +90,16 @@ interface StockWatcherAPI {
   onIndexUpdate(callback: (data: { indices: IndexData[]; status: 'normal' | 'error'; errorMessage?: string | null; timestamp: string }) => void): () => void;
 }
 
+// 分页查询交易记录的返回结果
+interface PaginatedTradeRecords {
+  records: any[];
+  total: number;
+  hasMore: boolean;
+}
+
 interface PositionAPI {
   getPositions(): Promise<any[]>;
-  getTradeRecords(stockCode: string): Promise<any[]>;
+  getTradeRecords(stockCode: string, page?: number, pageSize?: number): Promise<PaginatedTradeRecords>;
   addTradeRecord(trade: AddTradeInput): Promise<any>;
   updateTradeRecord(trade: UpdateTradeInput): Promise<any>;
   deleteTradeRecord(id: number): Promise<boolean>;
@@ -163,7 +170,7 @@ const stockWatcherAPI: StockWatcherAPI = {
 // 持仓 API
 const positionAPI: PositionAPI = {
   getPositions: () => ipcRenderer.invoke('position:get-list'),
-  getTradeRecords: (stockCode: string) => ipcRenderer.invoke('position:get-records', stockCode),
+  getTradeRecords: (stockCode: string, page?: number, pageSize?: number) => ipcRenderer.invoke('position:get-records', stockCode, page, pageSize),
   addTradeRecord: (trade: AddTradeInput) => ipcRenderer.invoke('position:add-record', trade),
   updateTradeRecord: (trade: UpdateTradeInput) => ipcRenderer.invoke('position:update-record', trade),
   deleteTradeRecord: (id: number) => ipcRenderer.invoke('position:delete-record', id),

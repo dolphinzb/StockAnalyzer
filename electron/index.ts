@@ -287,10 +287,10 @@ ipcMain.handle('position:get-list', () => {
   }
 });
 
-ipcMain.handle('position:get-records', (_event, stockCode: string) => {
-  log.debug('IPC: position:get-records', stockCode);
+ipcMain.handle('position:get-records', (_event, stockCode: string, page?: number, pageSize?: number) => {
+  log.debug('IPC: position:get-records', stockCode, page, pageSize);
   try {
-    return getTradeRecords(stockCode);
+    return getTradeRecords(stockCode, page, pageSize);
   } catch (error) {
     log.error('IPC position:get-records error:', error);
     throw error;

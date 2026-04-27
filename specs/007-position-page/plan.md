@@ -110,12 +110,19 @@ tests/
 
 **IPC 通道**:
 - `position:get-list` - 获取持仓列表
-- `position:get-records` - 获取交易记录
+- `position:get-records` - 获取交易记录（支持分页参数：stockCode, page, pageSize）
 - `position:add-record` - 新增交易记录
 - `position:update-record` - 更新交易记录
 - `position:delete-record` - 删除交易记录
 - `position:fetch-prices` - 获取实时股价
 - `stock:get-name` - 根据股票代码获取股票名称（新增需求FR-005.1）
+
+**交易记录分页设计** (FR-015, FR-016, FR-017):
+- `position:get-records` IPC通道新增分页参数：`page`（页码，从1开始）、`pageSize`（每页条数，默认20）
+- 返回数据结构：`{ records: TradeRecord[], total: number, hasMore: boolean }`
+- 前端维护当前页码和加载状态，滚动到底部时自动请求下一页
+- 切换展开股票时重置页码为1，清空已加载记录，重新加载第一页
+- 加载中显示"加载中..."提示，全部加载完成显示"已加载全部"提示
 
 **股价API**:
 - 使用既有priceFetcher服务从远程API获取实时股价
@@ -135,6 +142,10 @@ tests/
 - 单个持仓项，显示股票信息、盈亏
 - 展开时显示交易记录列表
 - 点击事件触发展开/收起
+- 交易记录列表支持无限滚动加载（FR-015）：维护page和hasMore状态，监听滚动事件，触底时加载下一页
+- 交易记录列表区域设置max-height和overflow-y: auto，确保内容超出时显示纵向滚动条，窗口较小时也能正常滚动和触发加载
+- 切换股票时重置分页状态（FR-017）
+- 加载中/加载完成提示（FR-016）
 
 **TradeEditor.vue**:
 - 交易记录编辑表单
@@ -171,6 +182,12 @@ tests/
 ### Phase 2: 持仓列表 UI
 - 创建PositionView、PositionList、PositionItem组件
 - 实现展开/收起交易记录功能
+
+### Phase 2.1: 交易记录分页加载
+- 数据库查询函数添加分页参数（page, pageSize）
+- IPC通道和Preload API支持分页参数
+- PositionItem组件实现无限滚动加载
+- 加载状态提示（加载中/已加载全部）
 
 ### Phase 3: 交易记录 CRUD
 - 创建TradeEditor组件（包含自动获取股票名称）

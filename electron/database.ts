@@ -416,6 +416,21 @@ export function getLastZeroTrade(stockCode: string): TradeRecord | null {
   return rowToTradeRecord(result[0].values[0]);
 }
 
+function getFirstOpenAfterZero(stockCode: string, zeroDate: string): TradeRecord | null {
+  const database = getDb();
+  const result = database.exec(
+    `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
+     FROM trade_record
+     WHERE stock_code = ? AND trade_date > ? AND trade_type = 'BUY' AND holding_count > 0
+     ORDER BY trade_date ASC LIMIT 1`,
+    [stockCode, zeroDate]
+  );
+  if (result.length === 0 || result[0].values.length === 0) {
+    return null;
+  }
+  return rowToTradeRecord(result[0].values[0]);
+}
+
 export interface UpdateTradeInput {
   id: number;
   stockCode: string;
@@ -461,11 +476,16 @@ export function getTradeRecords(stockCode: string): TradeRecord[] {
   let query: string;
   let params: any[];
   if (lastZero) {
-    query = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
-             FROM trade_record
-             WHERE stock_code = ? AND trade_date >= ?
-             ORDER BY trade_date DESC`;
-    params = [stockCode, lastZero.tradeDate];
+    const firstOpen = getFirstOpenAfterZero(stockCode, lastZero.tradeDate);
+    if (firstOpen) {
+      query = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
+               FROM trade_record
+               WHERE stock_code = ? AND trade_date >= ?
+               ORDER BY trade_date DESC`;
+      params = [stockCode, firstOpen.tradeDate];
+    } else {
+      return [];
+    }
   } else {
     query = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
              FROM trade_record

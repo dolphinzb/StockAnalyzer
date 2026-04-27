@@ -267,11 +267,20 @@ export interface HistoricalTradeAPI {
 }
 
 /**
+ * 分页查询交易记录的返回结果
+ */
+export interface PaginatedTradeRecords {
+  records: any[];
+  total: number;
+  hasMore: boolean;
+}
+
+/**
  * 持仓API类型 - 通过 preload contextBridge 暴露给渲染进程
  */
 export interface PositionAPI {
   getPositions(): Promise<any[]>;
-  getTradeRecords(stockCode: string): Promise<any[]>;
+  getTradeRecords(stockCode: string, page?: number, pageSize?: number): Promise<PaginatedTradeRecords>;
   addTradeRecord(trade: any): Promise<any>;
   updateTradeRecord(trade: any): Promise<any>;
   deleteTradeRecord(id: number): Promise<boolean>;

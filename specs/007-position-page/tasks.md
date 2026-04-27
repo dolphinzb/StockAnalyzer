@@ -2,8 +2,8 @@
 
 **Feature**: 007-position-page
 **Generated**: 2026-04-10
-**User Stories**: 9 (US1, US2, US2.1, US2.2, US3, US3.1, US4, FR-009, FR-010)
-**Total Tasks**: 25
+**User Stories**: 10 (US1, US2, US2.1, US2.2, US3, US3.1, US4, FR-009, FR-010, FR-015/016/017)
+**Total Tasks**: 29
 
 ## Phase 1: 基础设置
 
@@ -20,6 +20,14 @@
 - [x] T008 [P] [US1] 创建持仓项组件，在 `src/components/PositionItem.vue` 实现 PositionItem，单击展开交易记录，再次单击收起
 - [x] T009 [P] [US2] 创建交易记录列表组件，在 `src/components/PositionItem.vue` 实现展开的交易记录列表，按日期倒序显示
 - [x] T010 [P] [US2] 创建交易记录项组件，在 `src/components/TradeRecordItem.vue` 实现 TradeRecordItem，显示交易类型（买入/卖出/股息）、日期（只显示天）、价格、数量、持仓均价
+
+## Phase 2.1: 交易记录分页加载 (FR-015, FR-016, FR-017)
+
+- [x] T026 [FR-015] 更新数据库查询函数支持分页，在 `electron/database.ts` 的 getTradeRecords() 函数添加 page 和 pageSize 参数，返回 `{ records: TradeRecord[], total: number, hasMore: boolean }` 结构
+- [x] T027 [FR-015] 更新 IPC 处理器支持分页参数，在 `electron/index.ts` 的 position:get-records 处理器中传递 page 和 pageSize 参数给 getTradeRecords()
+- [x] T028 [FR-015] 更新 Preload API 支持分页参数，在 `preload/index.ts` 的 getTradeRecords() 方法添加 page 和 pageSize 可选参数（默认 page=1, pageSize=20）
+- [x] T029 [FR-015] [FR-016] 在 PositionItem.vue 中实现无限滚动加载，添加 page/hasMore/loading 状态，交易记录列表区域设置 max-height 和 overflow-y: auto 样式确保显示滚动条，监听列表容器的滚动事件，触底时调用 getTradeRecords(page+1) 追加记录；显示"加载中..."和"已加载全部"提示
+- [x] T030 [FR-017] 切换展开股票时重置分页状态，在 PositionItem.vue 中当展开的股票变化时，重置 page=1、清空已加载记录、重新加载第一页
 
 ## Phase 3: 新增交易 (US3, US4)
 
@@ -64,6 +72,8 @@ T006-T009 (UI组件)
    ↓
 T010 (交易记录项)
    ↓
+T026 (数据库分页) → T027 (IPC分页) → T028 (Preload分页) → T029 (无限滚动UI) → T030 (重置分页状态)
+   ↓
 T011 (TradeEditor) ← T012 (自动获取股票名称) ← T013 (计算逻辑)
    ↓
 T014-T017 (编辑删除功能)
@@ -78,6 +88,9 @@ T022-T025 (获取实时股价)
 ## 并行执行机会
 
 - T006、T007、T008、T009 可以并行执行（不同的 Vue 组件）
+- T010、T026 可以并行执行（UI组件和数据库函数无依赖）
+- T027、T028 必须顺序执行（依赖T026）
+- T029、T030 必须顺序执行（依赖T028，T030依赖T029）
 - T011、T012、T013 可以并行执行（TradeEditor 和计算逻辑无依赖）
 - T014、T015、T016 可以并行执行（UI 组件修改）
 - T022、T023、T024 可以并行执行（T022 依赖这些）
@@ -92,3 +105,6 @@ T022-T025 (获取实时股价)
 - **US3**: 点击新增按钮，填写表单后保存，验证 trade_record 表中有新记录
 - **US3.1** [FR-005.1]: 在交易编辑器中输入股票代码后（输入框失焦或按回车键），验证系统自动调用API获取股票名称并填入股票名称输入框
 - **US4**: 新增买入/卖出/股息交易，验证 holding_price 和 holding_count 计算正确
+- **FR-015**: 展开交易记录超过20条的股票，验证初始只显示20条；滚动到底部后验证自动加载下一页20条
+- **FR-016**: 滚动加载时验证显示"加载中..."提示；全部加载完成后验证显示"已加载全部"提示
+- **FR-017**: 展开股票A后再展开股票B，验证股票A收起、股票B从第一页重新加载

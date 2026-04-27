@@ -470,42 +470,77 @@ export function deleteTradeRecord(id: number): void {
   saveDatabase();
 }
 
-export function getTradeRecords(stockCode: string): TradeRecord[] {
+/**
+ * 分页查询交易记录的返回结果
+ */
+export interface PaginatedTradeRecords {
+  records: TradeRecord[];
+  total: number;
+  hasMore: boolean;
+}
+
+/**
+ * 分页查询交易记录
+ * @param stockCode 股票代码
+ * @param page 页码，从1开始
+ * @param pageSize 每页条数，默认20
+ * @returns 分页结果，包含记录列表、总数和是否还有更多记录
+ */
+export function getTradeRecords(stockCode: string, page: number = 1, pageSize: number = 20): PaginatedTradeRecords {
   const database = getDb();
   const lastZero = getLastZeroTrade(stockCode);
-  let query: string;
-  let params: any[];
+
+  // 构建查询条件：如果有上次清仓记录，只查询该时间之后的交易记录
+  let countQuery: string;
+  let countParams: any[];
+  let dataQuery: string;
+  let dataParams: any[];
+
   if (lastZero) {
-    const firstOpen = getFirstOpenAfterZero(stockCode, lastZero.tradeDate);
-    if (firstOpen) {
-      query = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
-               FROM trade_record
-               WHERE stock_code = ? AND trade_date >= ?
-               ORDER BY trade_date DESC`;
-      params = [stockCode, firstOpen.tradeDate];
-    } else {
-      return [];
-    }
+    countQuery = `SELECT COUNT(*) as total FROM trade_record WHERE stock_code = ? AND trade_date >= ?`;
+    countParams = [stockCode, lastZero.tradeDate];
+    dataQuery = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
+                 FROM trade_record
+                 WHERE stock_code = ? AND trade_date >= ?
+                 ORDER BY trade_date DESC
+                 LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`;
+    dataParams = [stockCode, lastZero.tradeDate];
   } else {
-    query = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
-             FROM trade_record
-             WHERE stock_code = ?
-             ORDER BY trade_date DESC`;
-    params = [stockCode];
+    countQuery = `SELECT COUNT(*) as total FROM trade_record WHERE stock_code = ?`;
+    countParams = [stockCode];
+    dataQuery = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
+                 FROM trade_record
+                 WHERE stock_code = ?
+                 ORDER BY trade_date DESC
+                 LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`;
+    dataParams = [stockCode];
   }
-  const result = database.exec(query, params);
-  if (result.length === 0) {
-    return [];
-  }
-  return result[0].values.map(rowToTradeRecord);
+
+  // 查询总数
+  const countResult = database.exec(countQuery, countParams);
+  const total = countResult.length > 0 && countResult[0].values.length > 0
+    ? (countResult[0].values[0][0] as number)
+    : 0;
+
+  // 查询分页数据
+  const dataResult = database.exec(dataQuery, dataParams);
+  const records = dataResult.length > 0
+    ? dataResult[0].values.map(rowToTradeRecord)
+    : [];
+
+  // 计算是否还有更多记录
+  const hasMore = page * pageSize < total;
+  log.info(`getTradeRecords: stockCode=${stockCode}, page=${page}, pageSize=${pageSize}, total=${total}, hasMore=${hasMore}`);
+  return { records, total, hasMore };
 }
 
 export function addTradeRecord(input: AddTradeInput): TradeRecord {
   const database = getDb();
-  const records = getTradeRecords(input.stockCode);
+  // 获取最新交易记录用于计算持仓，只需第一页第一条
+  const paginatedResult = getTradeRecords(input.stockCode, 1, 1);
   let preRecord: TradeRecord | null = null;
-  if (records.length > 0) {
-    preRecord = records[0];
+  if (paginatedResult.records.length > 0) {
+    preRecord = paginatedResult.records[0];
   }
   const calcResult: CalcResult = calcHoldingPrice(
     preRecord,

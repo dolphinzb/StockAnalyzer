@@ -309,7 +309,7 @@ onMounted(() => {
         <div v-if="Math.abs(result.deviationPercent) > 10" class="alert alert-warning">
           <div class="alert-title">操作建议</div>
           <div class="alert-content">
-            <div>• 当前偏差: {{ result.deviationPercent > 0 ? '持仓过多' : '持仓不足' }}</div>
+            <div>• 当前偏差: {{ result.deviationPercent > 0 ? '持仓不足' : '持仓过多' }}</div>
             <div>• 建议操作: {{ result.adjustAmount > 0 ? '买入' : '卖出' }} {{ Math.abs(result.adjustAmount) }} 股 ({{ Math.abs(result.adjustAmount) / 100 }} 手)</div>
             <div>• 预计金额: ¥{{ (Math.abs(result.adjustAmount) * parseFloat(form.currentPrice)).toFixed(2) }}</div>
             <div>• 调整后持仓: {{ parseInt(form.currentHoldingCount) + result.adjustAmount }} 股</div>

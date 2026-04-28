@@ -198,8 +198,8 @@ export interface OpenResult {
  * 网格交易API类型 - 通过 preload contextBridge 暴露给渲染进程
  */
 export interface GridAPI {
-  calculatePosition(input: CalculatePositionInput): PositionResult;
-  calculateOpen(input: CalculateOpenInput): OpenResult;
+  calculatePosition(input: CalculatePositionInput): Promise<PositionResult>;
+  calculateOpen(input: CalculateOpenInput): Promise<OpenResult>;
 }
 
 /**

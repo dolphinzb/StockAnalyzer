@@ -180,30 +180,10 @@ const positionAPI: PositionAPI = {
 
 // 网格交易 API
 const gridAPI: GridAPI = {
-  calculatePosition: (input: CalculatePositionInput): PositionResult => {
-    const { totalAmount, currentPrice, currentHoldingCount, averageHoldingPrice } = input;
-    const currentPositionAmount = currentHoldingCount * averageHoldingPrice;
-    const targetPositionAmount = totalAmount / 3;
-    const targetPosition = Math.floor(targetPositionAmount / currentPrice / 100) * 100;
-    const adjustAmount = targetPosition - currentHoldingCount;
-    const deviationPercent = currentHoldingCount > 0 ? Math.abs(adjustAmount) / currentHoldingCount * 100 : 0;
-    return {
-      currentPositionAmount,
-      targetPosition,
-      targetPositionAmount,
-      adjustAmount,
-      deviationPercent,
-    };
-  },
-  calculateOpen: (input: CalculateOpenInput): OpenResult => {
-    const { totalAmount, openPrice } = input;
-    const openAmount = totalAmount * 0.5;
-    const buyCount = Math.floor(openAmount / openPrice / 100) * 100;
-    return {
-      openAmount,
-      buyCount,
-    };
-  },
+  calculatePosition: (input: CalculatePositionInput): Promise<PositionResult> => 
+    ipcRenderer.invoke('grid:calculatePosition', input),
+  calculateOpen: (input: CalculateOpenInput): Promise<OpenResult> => 
+    ipcRenderer.invoke('grid:calculateOpen', input),
 };
 
 // 历史交易记录相关类型
@@ -254,6 +234,6 @@ contextBridge.exposeInMainWorld('electronAPI', windowAPI);
 contextBridge.exposeInMainWorld('configAPI', configAPI);
 contextBridge.exposeInMainWorld('stockWatcherAPI', stockWatcherAPI);
 contextBridge.exposeInMainWorld('positionApi', positionAPI);
-contextBridge.exposeInMainWorld('gridApi', gridAPI);
+contextBridge.exposeInMainWorld('gridAPI', gridAPI);
 contextBridge.exposeInMainWorld('logApi', logAPI);
 contextBridge.exposeInMainWorld('historicalTradeAPI', historicalTradeAPI);

@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import type { AddStockInput, WatchlistStock } from '../types';
+import type { AddStockInput, WatchlistStock, PositionAPI } from '../types';
+
+// 声明全局 window 类型，包含 positionApi
+declare global {
+  interface Window {
+    positionApi: PositionAPI;
+  }
+}
 
 const props = defineProps<{
   stockId: number | null;
@@ -17,8 +24,42 @@ const stockName = ref('');
 const buyThreshold = ref<number | string>('');
 const sellThreshold = ref<number | string>('');
 const errorMessage = ref('');
+const isLoadingStockName = ref(false);
 
 const isEditing = computed(() => props.stockId !== null);
+
+// 自动获取股票名称的事件处理函数
+async function handleStockCodeBlur() {
+  await fetchStockName();
+}
+
+async function handleStockCodeEnter(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    await fetchStockName();
+  }
+}
+
+// 调用 API 获取股票名称
+async function fetchStockName() {
+  const code = stockCode.value.trim();
+  // 编辑模式下不触发自动获取
+  if (!code || isEditing.value) {
+    return;
+  }
+
+  isLoadingStockName.value = true;
+  try {
+    const result = await window.positionApi.getStockName(code);
+    if (result.success && result.stockName) {
+      stockName.value = result.stockName;
+    }
+  } catch (error) {
+    console.error('Failed to fetch stock name:', error);
+  } finally {
+    isLoadingStockName.value = false;
+  }
+}
 
 watch(() => props.stock, (newStock) => {
   if (newStock) {
@@ -94,13 +135,18 @@ function handleClose() {
       <form class="editor-form" @submit.prevent="handleSubmit">
         <div class="form-group">
           <label for="stockCode">股票代码</label>
-          <input
-            id="stockCode"
-            v-model="stockCode"
-            type="text"
-            :disabled="isEditing"
-            placeholder="如: 600519"
-          />
+          <div class="input-with-loading">
+            <input
+              id="stockCode"
+              v-model="stockCode"
+              type="text"
+              :disabled="isEditing"
+              placeholder="如: 600519"
+              @blur="handleStockCodeBlur"
+              @keydown="handleStockCodeEnter"
+            />
+            <span v-if="isLoadingStockName" class="loading-indicator">...</span>
+          </div>
         </div>
 
         <div class="form-group">
@@ -228,6 +274,33 @@ function handleClose() {
       background-color: var(--bg-secondary);
       cursor: not-allowed;
     }
+  }
+}
+
+.input-with-loading {
+  position: relative;
+  display: flex;
+  align-items: center;
+
+  input {
+    flex: 1;
+  }
+
+  .loading-indicator {
+    position: absolute;
+    right: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
   }
 }
 

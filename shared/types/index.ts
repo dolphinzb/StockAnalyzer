@@ -297,6 +297,13 @@ export interface LogAPI {
 }
 
 /**
+ * 备份 API 类型 - 通过 preload contextBridge 暴露给渲染进程
+ */
+export interface BackupAPI {
+  manualBackup(): Promise<{ success: boolean; error?: string | null }>;
+}
+
+/**
  * 股票观察者API类型 - 通过 preload contextBridge 暴露给渲染进程
  */
 export interface StockWatcherAPI {
@@ -312,6 +319,106 @@ export interface StockWatcherAPI {
   onIndexUpdate(callback: (data: { indices: IndexData[]; status: 'normal' | 'error'; errorMessage?: string | null; timestamp: string }) => void): () => void;
 }
 
+/**
+ * 策略类型
+ */
+export type StrategyType = 'equal_amount' | 'equal_ratio';
+
+/**
+ * 预设类别
+ */
+export type PresetCategory = 'half_position' | 'conservative' | 'balanced' | 'aggressive';
+
+/**
+ * 策略状态
+ */
+export type ApplicationStatus = 'active' | 'inactive';
+
+/**
+ * 网格策略实体
+ */
+export interface GridStrategy {
+  id: number;
+  name: string;
+  strategy_type: StrategyType;
+  base_price: number;  // 仅用于用户自定义策略，预设模板中为示例值
+  grid_spacing: number;  // 等量：固定金额或百分比；等比：百分比(0.01-0.20)
+  spacing_type?: 'fixed' | 'percentage';  // 间距类型：固定金额或百分比（仅等量网格使用）
+  shares_per_grid: number;
+  grid_levels: number;
+  is_preset: boolean;
+  preset_category?: PresetCategory;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * 策略应用记录
+ */
+export interface StrategyApplication {
+  id: number;
+  strategy_id: number;
+  stock_code: string;
+  applied_at: string;
+  status: ApplicationStatus;
+}
+
+/**
+ * 网格层级数据
+ */
+export interface GridLevel {
+  level: number;
+  trigger_price: number;
+  buy_shares: number;
+  cost: number;
+  cumulative_shares: number;
+  cumulative_cost: number;
+}
+
+/**
+ * 策略预览数据
+ */
+export interface StrategyPreview {
+  strategy: GridStrategy;
+  grids: GridLevel[];
+  total_funds_required: number;
+  max_shares: number;
+}
+
+/**
+ * 创建/更新策略输入
+ */
+export interface CreateStrategyInput {
+  name: string;
+  strategy_type: StrategyType;
+  base_price: number;
+  grid_spacing: number;
+  spacing_type?: 'fixed' | 'percentage';  // 间距类型，默认 fixed
+  shares_per_grid: number;
+  grid_levels: number;
+}
+
+export interface UpdateStrategyInput extends Partial<CreateStrategyInput> {
+  id: number;
+}
+
+/**
+ * 网格策略API类型 - 通过 preload contextBridge 暴露给渲染进程
+ */
+export interface GridStrategyAPI {
+  getAllStrategies(): Promise<GridStrategy[]>;
+  getPresetStrategies(): Promise<GridStrategy[]>;
+  createStrategy(input: CreateStrategyInput): Promise<GridStrategy>;
+  updateStrategy(input: UpdateStrategyInput): Promise<GridStrategy>;
+  deleteStrategy(id: number): Promise<void>;
+  previewStrategy(strategy: CreateStrategyInput): Promise<StrategyPreview>;
+  applyStrategyToStock(strategyId: number, stockCode: string): Promise<StrategyApplication>;
+  getStockStrategy(stockCode: string): Promise<GridStrategy | null>;
+  deactivateStockStrategy(stockCode: string): Promise<void>;
+  isStrategyInUse(strategyId: number): Promise<boolean>;
+  getStrategyUsageInfo(strategyId: number): Promise<Array<{ stock_code: string; applied_at: string }>>;
+}
+
 declare global {
   interface Window {
     electronAPI: WindowAPI;
@@ -321,6 +428,7 @@ declare global {
     positionApi: PositionAPI;
     logApi: LogAPI;
     stockWatcherAPI: StockWatcherAPI;
+    gridStrategyAPI: GridStrategyAPI;
   }
 }
 

@@ -28,6 +28,10 @@ import {
   calculatePosition
 } from './services/gridService';
 import {
+  startBackupScheduler,
+  stopBackupScheduler
+} from './services/backupService';
+import {
   getAllHistoricalTrades,
   getCycleDetails
 } from './services/historicalTradeService';
@@ -409,6 +413,22 @@ ipcMain.handle('historicalTrade:getCycleDetails', (_event, cycleId: string) => {
   }
 });
 
+/**
+ * 手动触发数据库备份
+ */
+ipcMain.handle('backup:manual', async () => {
+  log.debug('IPC: backup:manual');
+  try {
+    const { performBackup } = await import('./services/backupService');
+    await performBackup();
+    return { success: true, error: null };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    log.error('IPC backup:manual error:', errorMessage);
+    return { success: false, error: errorMessage };
+  }
+});
+
 app.whenReady().then(async () => {
   log.info('App ready');
   app.applicationMenu = null;
@@ -419,6 +439,7 @@ app.whenReady().then(async () => {
   createTray();
   isQuitting = false;
   startScheduler(getEnabledStocks);
+  startBackupScheduler(); // 启动数据库备份调度器
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -438,5 +459,6 @@ app.on('before-quit', () => {
   log.info('Application quitting...');
   isQuitting = true;
   stopScheduler();
+  stopBackupScheduler(); // 停止数据库备份调度器
   closeDatabase();
 });

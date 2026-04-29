@@ -125,7 +125,8 @@ function formatDate(dateStr: string | null): string {
 
 function formatPrice(price: number | null): string {
   if (price === null || price === undefined) return '-';
-  return price.toFixed(3);
+  // 最多显示4位小数，去掉末尾的0
+  return parseFloat(price.toFixed(4)).toString();
 }
 
 function formatProfitAmount(amount: number | null): string {

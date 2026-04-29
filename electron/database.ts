@@ -379,12 +379,16 @@ function rowToTradeRecord(row: any[]): TradeRecord {
 
 export function getPositions(): Position[] {
   const database = getDb();
+  // 先获取每个股票的最新交易记录，然后过滤出持仓数量大于0的股票
   const result = database.exec(`
-    SELECT stock_code, stock_name, holding_count, holding_price, trade_date
-    FROM trade_record
-    WHERE holding_count > 0
-    GROUP BY stock_code
-    HAVING trade_date = MAX(trade_date)
+    SELECT t1.stock_code, t1.stock_name, t1.holding_count, t1.holding_price, t1.trade_date
+    FROM trade_record t1
+    INNER JOIN (
+      SELECT stock_code, MAX(trade_date) as max_date
+      FROM trade_record
+      GROUP BY stock_code
+    ) t2 ON t1.stock_code = t2.stock_code AND t1.trade_date = t2.max_date
+    WHERE t1.holding_count > 0
   `);
   if (result.length === 0 || result[0].values.length === 0) {
     return [];
@@ -490,22 +494,32 @@ export function getTradeRecords(stockCode: string, page: number = 1, pageSize: n
   const database = getDb();
   const lastZero = getLastZeroTrade(stockCode);
 
-  // 构建查询条件：如果有上次清仓记录，只查询该时间之后的交易记录
+  // 构建查询条件：如果有上次清仓记录，只查询该清仓之后的交易记录（不包括清仓记录）
   let countQuery: string;
   let countParams: any[];
   let dataQuery: string;
   let dataParams: any[];
 
   if (lastZero) {
-    countQuery = `SELECT COUNT(*) as total FROM trade_record WHERE stock_code = ? AND trade_date >= ?`;
-    countParams = [stockCode, lastZero.tradeDate];
-    dataQuery = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
-                 FROM trade_record
-                 WHERE stock_code = ? AND trade_date >= ?
-                 ORDER BY trade_date DESC
-                 LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`;
-    dataParams = [stockCode, lastZero.tradeDate];
+    // 找到清仓后的第一笔买入记录
+    const firstOpenAfterZero = getFirstOpenAfterZero(stockCode, lastZero.tradeDate);
+    
+    if (firstOpenAfterZero) {
+      // 如果有新的开仓记录，从该记录开始查询
+      countQuery = `SELECT COUNT(*) as total FROM trade_record WHERE stock_code = ? AND trade_date >= ?`;
+      countParams = [stockCode, firstOpenAfterZero.tradeDate];
+      dataQuery = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
+                   FROM trade_record
+                   WHERE stock_code = ? AND trade_date >= ?
+                   ORDER BY trade_date DESC
+                   LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`;
+      dataParams = [stockCode, firstOpenAfterZero.tradeDate];
+    } else {
+      // 如果清仓后没有新的交易，返回空结果
+      return { records: [], total: 0, hasMore: false };
+    }
   } else {
+    // 没有清仓记录，查询所有交易记录
     countQuery = `SELECT COUNT(*) as total FROM trade_record WHERE stock_code = ?`;
     countParams = [stockCode];
     dataQuery = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price

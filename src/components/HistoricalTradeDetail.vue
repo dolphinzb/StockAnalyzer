@@ -18,6 +18,13 @@ function formatAmount(amount: number): string {
 }
 
 /**
+ * 格式化价格，最多显示4位小数，去掉末尾的0
+ */
+function formatPrice(price: number): string {
+  return parseFloat(price.toFixed(4)).toString();
+}
+
+/**
  * 获取交易类型的中文标签
  */
 function getTradeTypeLabel(type: 'BUY' | 'SELL' | 'DIVIDEND'): string {
@@ -78,7 +85,7 @@ function getSignedAmount(detail: TradeDetail): number {
         <div class="col-type" :class="getTradeTypeClass(detail.tradeType)">
           {{ getTradeTypeLabel(detail.tradeType) }}
         </div>
-        <div class="col-price">{{ formatAmount(detail.tradePrice) }}</div>
+        <div class="col-price">{{ formatPrice(detail.tradePrice) }}</div>
         <div class="col-count">{{ detail.tradeCount }}</div>
         <div class="col-amount">{{ formatAmount(getSignedAmount(detail)) }}</div>
         <div class="col-fee">{{ formatAmount(detail.fee) }}</div>

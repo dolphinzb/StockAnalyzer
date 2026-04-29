@@ -83,6 +83,34 @@ async function fetchStockName() {
   }
 }
 
+/**
+ * 验证价格输入，确保最多4位小数
+ */
+function validatePriceInput(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const value = input.value;
+  
+  // 允许空值、数字和小数点
+  if (value === '' || value === '.') {
+    return;
+  }
+  
+  // 验证格式：必须是有效的数字，且最多4位小数
+  const regex = /^\d*\.?\d{0,4}$/;
+  if (!regex.test(value)) {
+    // 如果不符合格式，恢复到上一个有效值
+    input.value = String(tradePrice.value);
+    return;
+  }
+  
+  // 更新对应的响应式变量
+  if (input.id === 'tradePrice') {
+    tradePrice.value = value;
+  } else if (input.id === 'holdingPrice') {
+    holdingPrice.value = value;
+  }
+}
+
 function validateForm(): boolean {
   if (!stockCode.value.trim()) {
     errorMessage.value = '请输入股票代码';
@@ -145,7 +173,7 @@ function handleClose() {
 </script>
 
 <template>
-  <div class="trade-editor-overlay" @click.self="handleClose">
+  <div class="trade-editor-overlay">
     <div class="trade-editor">
       <div class="editor-header">
         <h3>{{ record ? '编辑交易记录' : '新增交易记录' }}</h3>
@@ -202,9 +230,10 @@ function handleClose() {
           <input
             id="tradePrice"
             v-model="tradePrice"
-            type="number"
-            step="0.001"
-            placeholder="如: 1800.00"
+            type="text"
+            inputmode="decimal"
+            placeholder="如: 1800.0000"
+            @input="validatePriceInput"
           />
         </div>
 
@@ -236,9 +265,10 @@ function handleClose() {
           <input
             id="holdingPrice"
             v-model="holdingPrice"
-            type="number"
-            step="0.001"
+            type="text"
+            inputmode="decimal"
             placeholder="持仓均价"
+            @input="validatePriceInput"
           />
         </div>
 

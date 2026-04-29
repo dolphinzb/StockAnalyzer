@@ -125,7 +125,7 @@ function handleClose() {
 </script>
 
 <template>
-  <div class="stock-editor-overlay" @click.self="handleClose">
+  <div class="stock-editor-overlay">
     <div class="stock-editor">
       <div class="editor-header">
         <h3>{{ isEditing ? '编辑股票' : '添加股票' }}</h3>

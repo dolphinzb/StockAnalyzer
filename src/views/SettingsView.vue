@@ -3,6 +3,7 @@ import { onMounted, ref, watch } from 'vue';
 import type { AppConfig } from '../../shared/types';
 import { DEFAULT_CONFIG, useConfig } from '../composables/useConfig';
 import { useToast } from '../composables/useToast';
+import { useBackup } from '../composables/useBackup';
 
 defineOptions({
   name: 'SettingsView'
@@ -19,7 +20,9 @@ const {
 } = useConfig();
 
 const { showToast } = useToast();
+const { triggerManualBackup } = useBackup();
 const localConfig = ref<AppConfig | null>(null);
+const isBackingUp = ref(false);
 
 onMounted(async () => {
   await loadConfig();
@@ -57,6 +60,22 @@ const handleReset = () => {
   resetToDefault();
   if (localConfig.value) {
     localConfig.value = JSON.parse(JSON.stringify(config.value));
+  }
+};
+
+const handleBackup = async () => {
+  isBackingUp.value = true;
+  try {
+    const result = await triggerManualBackup();
+    if (result.success) {
+      showToast('备份成功', 'success');
+    } else {
+      showToast(`备份失败: ${result.error}`, 'error');
+    }
+  } catch (error) {
+    showToast('备份失败', 'error');
+  } finally {
+    isBackingUp.value = false;
   }
 };
 </script>
@@ -164,6 +183,21 @@ const handleReset = () => {
         </button>
       </div>
     </form>
+
+    <section class="settings-section backup-section">
+      <h3>数据备份</h3>
+      <p class="backup-description">
+        手动备份数据库文件，备份文件将保存在与当前数据库相同的目录中。
+      </p>
+      <button 
+        type="button" 
+        class="btn btn-primary" 
+        @click="handleBackup" 
+        :disabled="isBackingUp"
+      >
+        {{ isBackingUp ? '备份中...' : '备份数据库' }}
+      </button>
+    </section>
   </div>
 </template>
 
@@ -309,5 +343,16 @@ const handleReset = () => {
   background: rgba(245, 108, 108, 0.1);
   color: #f56c6c;
   border: 1px solid #f56c6c;
+}
+
+.backup-section {
+  margin-top: 1rem;
+
+  .backup-description {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+    line-height: 1.5;
+  }
 }
 </style>

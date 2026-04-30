@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CalculateOpenInput, CalculatePositionInput, ConfigAPI, GridAPI, IndexData, OpenResult, PositionResult, WindowAPI } from '../shared/types';
+import type { CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, GridAPI, GridStrategy, GridStrategyAPI, IndexData, OpenResult, PositionResult, StrategyApplication, UpdateStrategyInput, WindowAPI } from '../shared/types';
 
 // LogAPI 本地定义
 interface LogReadResult {
@@ -223,10 +223,39 @@ const logAPI: LogAPI = {
   getLogPath: () => ipcRenderer.invoke('log:getPath'),
 };
 
+// 备份 API
+interface BackupResult {
+  success: boolean;
+  error?: string | null;
+}
+
+interface BackupAPI {
+  manualBackup(): Promise<BackupResult>;
+}
+
+const backupAPI: BackupAPI = {
+  manualBackup: () => ipcRenderer.invoke('backup:manual'),
+};
+
 // 历史交易 API
 const historicalTradeAPI: HistoricalTradeAPI = {
   getAll: () => ipcRenderer.invoke('historicalTrade:getAll'),
   getCycleDetails: (cycleId: string) => ipcRenderer.invoke('historicalTrade:getCycleDetails', cycleId),
+};
+
+// 网格策略 API
+const gridStrategyAPI: GridStrategyAPI = {
+  getAllStrategies: () => ipcRenderer.invoke('grid-strategy:get-all'),
+  getPresetStrategies: () => ipcRenderer.invoke('grid-strategy:get-presets'),
+  createStrategy: (input: CreateStrategyInput) => ipcRenderer.invoke('grid-strategy:create', input),
+  updateStrategy: (input: UpdateStrategyInput) => ipcRenderer.invoke('grid-strategy:update', input),
+  deleteStrategy: (id: number) => ipcRenderer.invoke('grid-strategy:delete', id),
+  previewStrategy: (strategy: CreateStrategyInput) => ipcRenderer.invoke('grid-strategy:preview', strategy),
+  applyStrategyToStock: (strategyId: number, stockCode: string) => ipcRenderer.invoke('grid-strategy:apply', strategyId, stockCode),
+  getStockStrategy: (stockCode: string) => ipcRenderer.invoke('grid-strategy:get-stock-strategy', stockCode),
+  deactivateStockStrategy: (stockCode: string) => ipcRenderer.invoke('grid-strategy:deactivate', stockCode),
+  isStrategyInUse: (strategyId: number) => ipcRenderer.invoke('grid-strategy:check-usage', strategyId),
+  getStrategyUsageInfo: (strategyId: number) => ipcRenderer.invoke('grid-strategy:get-usage-info', strategyId),
 };
 
 // 暴露所有 API 到渲染进程
@@ -236,4 +265,6 @@ contextBridge.exposeInMainWorld('stockWatcherAPI', stockWatcherAPI);
 contextBridge.exposeInMainWorld('positionApi', positionAPI);
 contextBridge.exposeInMainWorld('gridAPI', gridAPI);
 contextBridge.exposeInMainWorld('logApi', logAPI);
+contextBridge.exposeInMainWorld('backupApi', backupAPI);
 contextBridge.exposeInMainWorld('historicalTradeAPI', historicalTradeAPI);
+contextBridge.exposeInMainWorld('gridStrategyAPI', gridStrategyAPI);

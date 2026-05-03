@@ -11,6 +11,7 @@ import LogPage from './views/LogPage.vue'
 import PositionView from './views/PositionView.vue'
 import SettingsView from './views/SettingsView.vue'
 import WatchlistView from './views/WatchlistView.vue'
+import FundManagementView from './views/FundManagementView.vue'
 
 const { currentViewId, navigate } = useNavigation()
 const watchlistStore = useWatchlistStore()
@@ -19,9 +20,10 @@ const viewComponents = {
   watchlist: WatchlistView,
   position: PositionView,
   grid: GridView,
+  'historical-trades': HistoricalTradesView,
+  'fund-management': FundManagementView,
   settings: SettingsView,
-  log: LogPage,
-  'historical-trades': HistoricalTradesView
+  log: LogPage
 }
 
 const currentComponent = computed(() => {

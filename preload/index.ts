@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, GridAPI, GridStrategy, GridStrategyAPI, IndexData, OpenResult, PositionResult, StrategyApplication, UpdateStrategyInput, WindowAPI } from '../shared/types';
+import type { CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategy, GridStrategyAPI, IndexData, OpenResult, PositionResult, ProfitStatistics, StrategyApplication, TransferRecord, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
 
 // LogAPI 本地定义
 interface LogReadResult {
@@ -258,6 +258,22 @@ const gridStrategyAPI: GridStrategyAPI = {
   getStrategyUsageInfo: (strategyId: number) => ipcRenderer.invoke('grid-strategy:get-usage-info', strategyId),
 };
 
+// 资金管理 API
+const fundManagementAPI: FundManagementAPI = {
+  getTransferRecords: (limit: number, offset: number) => 
+    ipcRenderer.invoke('get-transfer-records', limit, offset),
+  addTransferRecord: (record: TransferRecordInput) => 
+    ipcRenderer.invoke('add-transfer-record', record),
+  updateTransferRecord: (id: number, data: TransferRecordUpdate) => 
+    ipcRenderer.invoke('update-transfer-record', id, data),
+  deleteTransferRecord: (id: number) => 
+    ipcRenderer.invoke('delete-transfer-record', id),
+  getProfitStatistics: (startDate: string, endDate: string) => 
+    ipcRenderer.invoke('get-profit-statistics', startDate, endDate),
+  getCurrentHoldingsTotal: () => 
+    ipcRenderer.invoke('get-current-holdings-total'),
+};
+
 // 暴露所有 API 到渲染进程
 contextBridge.exposeInMainWorld('electronAPI', windowAPI);
 contextBridge.exposeInMainWorld('configAPI', configAPI);
@@ -268,3 +284,4 @@ contextBridge.exposeInMainWorld('logApi', logAPI);
 contextBridge.exposeInMainWorld('backupApi', backupAPI);
 contextBridge.exposeInMainWorld('historicalTradeAPI', historicalTradeAPI);
 contextBridge.exposeInMainWorld('gridStrategyAPI', gridStrategyAPI);
+contextBridge.exposeInMainWorld('fundManagementAPI', fundManagementAPI);

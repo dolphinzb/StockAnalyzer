@@ -129,6 +129,9 @@ export async function initDatabase(): Promise<void> {
 
     log.info('自选股数据库表初始化完成');
 
+    // 初始化转账记录表
+    initializeTransferRecordsTable();
+
     const result = db.exec("SELECT * FROM config WHERE key = 'app_config'");
     if (result.length === 0 || result[0].values.length === 0) {
       const defaultConfigJson = JSON.stringify(DEFAULT_CONFIG);
@@ -209,7 +212,7 @@ export function closeDatabase(): void {
   }
 }
 
-function getDb(): Database {
+export function getDb(): Database {
   if (!db) {
     throw new Error('数据库未初始化');
   }
@@ -615,4 +618,42 @@ export function getTradeRecordsByStockCode(stockCode: string): TradeRecord[] {
     return [];
   }
   return result[0].values.map(rowToTradeRecord);
+}
+
+/**
+ * 初始化转账记录表
+ * 创建 transfer_records 表用于存储资金管理功能的转账记录
+ */
+export function initializeTransferRecordsTable(): void {
+  const database = getDb();
+  
+  // 检查表是否已存在
+  const tableExists = database.exec(`
+    SELECT name FROM sqlite_master 
+    WHERE type='table' AND name='transfer_records'
+  `);
+  
+  if (tableExists.length === 0) {
+    log.info('创建 transfer_records 表');
+    
+    // 创建转账记录表
+    database.run(`
+      CREATE TABLE transfer_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        transfer_date TEXT NOT NULL,
+        amount REAL NOT NULL CHECK(amount > 0),
+        type TEXT NOT NULL CHECK(type IN ('IN', 'OUT')),
+        created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+      )
+    `);
+    
+    // 创建索引优化查询性能
+    database.run(`CREATE INDEX idx_transfer_date_desc ON transfer_records(transfer_date DESC)`);
+    database.run(`CREATE INDEX idx_transfer_type_date ON transfer_records(type, transfer_date)`);
+    
+    log.info('transfer_records 表及索引创建完成');
+  } else {
+    log.info('transfer_records 表已存在，跳过创建');
+  }
 }

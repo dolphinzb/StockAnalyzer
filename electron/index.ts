@@ -18,10 +18,12 @@ import {
   saveConfig,
   updateStock,
   updateTradeRecord,
+  getDb,
   type AddStockInput,
   type AddTradeInput,
   type UpdateStockInput,
-  type UpdateTradeInput
+  type UpdateTradeInput,
+  type Position
 } from './database';
 import {
   calculateOpen,
@@ -43,6 +45,7 @@ import {
   startScheduler,
   stopScheduler
 } from './services/priceFetcher';
+import { FundService } from './services/fundService';
 
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
@@ -55,6 +58,7 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let currentConfig: AppConfig | null = null;
 let isQuitting = false;
+let fundService: FundService | null = null;
 
 function createTray(): void {
   const iconPath = isDev
@@ -377,6 +381,148 @@ ipcMain.handle('log:getPath', () => {
   return join(app.getPath('userData'), 'logs', 'main.log');
 });
 
+// ==================== 资金管理 IPC Handlers ====================
+
+/**
+ * 获取分页的转账记录列表
+ */
+ipcMain.handle('get-transfer-records', async (_event, limit: number, offset: number) => {
+  log.debug('IPC: get-transfer-records', { limit, offset });
+  try {
+    if (!fundService) {
+      throw new Error('FundService not initialized');
+    }
+    return await fundService.getTransferRecords(limit, offset);
+  } catch (error) {
+    log.error('IPC get-transfer-records error:', error);
+    throw error;
+  }
+});
+
+/**
+ * 新增转账记录
+ */
+ipcMain.handle('add-transfer-record', async (_event, record: { transferDate: string; amount: number; type: string }) => {
+  log.debug('IPC: add-transfer-record', record);
+  try {
+    if (!fundService) {
+      throw new Error('FundService not initialized');
+    }
+    const id = await fundService.addTransferRecord(record);
+    return { id };
+  } catch (error) {
+    log.error('IPC add-transfer-record error:', error);
+    throw error;
+  }
+});
+
+/**
+ * 更新转账记录
+ */
+ipcMain.handle('update-transfer-record', async (_event, id: number, data: { transferDate?: string; amount?: number; type?: string }) => {
+  log.debug('IPC: update-transfer-record', { id, data });
+  try {
+    if (!fundService) {
+      throw new Error('FundService not initialized');
+    }
+    const success = await fundService.updateTransferRecord(id, data);
+    return { success };
+  } catch (error) {
+    log.error('IPC update-transfer-record error:', error);
+    throw error;
+  }
+});
+
+/**
+ * 删除转账记录
+ */
+ipcMain.handle('delete-transfer-record', async (_event, id: number) => {
+  log.debug('IPC: delete-transfer-record', { id });
+  try {
+    if (!fundService) {
+      throw new Error('FundService not initialized');
+    }
+    const success = await fundService.deleteTransferRecord(id);
+    return { success };
+  } catch (error) {
+    log.error('IPC delete-transfer-record error:', error);
+    throw error;
+  }
+});
+
+/**
+ * 获取指定时间段的盈利统计
+ */
+ipcMain.handle('get-profit-statistics', async (_event, startDate: string, endDate: string) => {
+  log.debug('IPC: get-profit-statistics', { startDate, endDate });
+  try {
+    if (!fundService) {
+      throw new Error('FundService not initialized');
+    }
+    return await fundService.getTransferStatsInRange(startDate, endDate);
+  } catch (error) {
+    log.error('IPC get-profit-statistics error:', error);
+    throw error;
+  }
+});
+
+/**
+ * 获取当前持仓总市值
+ */
+ipcMain.handle('get-current-holdings-total', async () => {
+  log.debug('IPC: get-current-holdings-total');
+  try {
+    const positions = getPositions();
+    
+    if (positions.length === 0) {
+      return 0;
+    }
+    
+    // 获取所有持仓股票的代码（添加市场前缀）
+    const stockCodesWithPrefix = positions.map(p => {
+      // 如果股票代码已经包含前缀，直接使用；否则根据代码规则添加
+      if (p.stockCode.startsWith('sh') || p.stockCode.startsWith('sz')) {
+        return p.stockCode;
+      }
+      // 60/68开头是上海，00/30开头是深圳
+      if (p.stockCode.startsWith('60') || p.stockCode.startsWith('68')) {
+        return `sh${p.stockCode}`;
+      } else if (p.stockCode.startsWith('00') || p.stockCode.startsWith('30')) {
+        return `sz${p.stockCode}`;
+      }
+      return p.stockCode; // 其他情况保持原样
+    });
+    
+    // 从价格服务获取实时价格（需要config参数）
+    const config = currentConfig || loadConfig();
+    const priceResults = await fetchStockPrices(stockCodesWithPrefix, config);
+    
+    // 创建股票代码到价格的映射（使用不带前缀的代码作为key，与持仓数据匹配）
+    const priceMap = new Map<string, number>();
+    priceResults.forEach(result => {
+      if (result.success && result.price) {
+        // 去除前缀，使用纯数字代码作为key
+        const codeWithoutPrefix = result.stockCode.replace(/^(sh|sz)/, '');
+        priceMap.set(codeWithoutPrefix, result.price);
+      }
+    });
+    
+    // 计算总市值 = Σ(持仓数量 × 当前价格)
+    const totalValue = positions.reduce((sum, position) => {
+      const currentPrice = priceMap.get(position.stockCode);
+      if (position.holdingCount > 0 && currentPrice) {
+        return sum + (position.holdingCount * currentPrice);
+      }
+      return sum;
+    }, 0);
+    
+    return totalValue;
+  } catch (error) {
+    log.error('IPC get-current-holdings-total error:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('grid:calculatePosition', (_event, input) => {
   log.debug('IPC: grid:calculatePosition', input);
   return calculatePosition(input);
@@ -433,6 +579,7 @@ app.whenReady().then(async () => {
   log.info('App ready');
   app.applicationMenu = null;
   await initDatabase();
+  fundService = new FundService(getDb());
   currentConfig = loadConfig();
   log.info('Config loaded on startup');
   createWindow();

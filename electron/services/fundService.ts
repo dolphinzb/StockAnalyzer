@@ -188,4 +188,56 @@ export class FundService {
       throw error;
     }
   }
+
+  /**
+   * 获取账户余额
+   * @returns 账户余额
+   */
+  async getAccountBalance(): Promise<number> {
+    try {
+      const result = this.db.exec(
+        'SELECT account_balance FROM account_config WHERE id = 1'
+      );
+
+      if (result.length === 0 || result[0].values.length === 0) {
+        log.warn('未找到账户配置记录，返回默认值0');
+        return 0;
+      }
+
+      const balance = result[0].values[0][0] as number;
+      log.info(`获取账户余额成功: ${balance}`);
+      return balance;
+    } catch (error) {
+      log.error('getAccountBalance error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 更新账户余额
+   * @param balance 新的账户余额
+   * @returns 是否成功
+   */
+  async updateAccountBalance(balance: number): Promise<boolean> {
+    try {
+      // 验证余额不能为负数
+      if (balance < 0) {
+        throw new Error('账户余额不能为负数');
+      }
+
+      this.db.run(
+        `UPDATE account_config 
+         SET account_balance = ?, 
+             updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now') 
+         WHERE id = 1`,
+        [balance]
+      );
+
+      log.info(`更新账户余额成功: ${balance}`);
+      return true;
+    } catch (error) {
+      log.error('updateAccountBalance error:', error);
+      throw error;
+    }
+  }
 }

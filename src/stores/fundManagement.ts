@@ -6,6 +6,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   // State
   const transferRecords = ref<TransferRecord[]>([]);
   const profitStatistics = ref<ProfitStatistics | null>(null);
+  const accountBalance = ref<number>(0); // 账户余额（从数据库加载）
   const isLoading = ref(false);
   const error = ref<string | null>(null);
   
@@ -125,11 +126,57 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   }
 
   /**
+   * 获取账户余额（从数据库）
+   */
+  async function fetchAccountBalance(): Promise<void> {
+    try {
+      const balance = await window.fundManagementAPI.getAccountBalance();
+      accountBalance.value = balance;
+    } catch (err) {
+      console.error('fetchAccountBalance error:', err);
+      accountBalance.value = 0; // 出错时默认为0
+    }
+  }
+
+  /**
+   * 更新账户余额（保存到数据库）
+   */
+  async function updateAccountBalance(newBalance: number): Promise<void> {
+    try {
+      isLoading.value = true;
+      error.value = null;
+
+      if (newBalance < 0) {
+        throw new Error('账户余额不能为负数');
+      }
+
+      await window.fundManagementAPI.updateAccountBalance(newBalance);
+      accountBalance.value = newBalance;
+      
+      // 如果已有盈利统计数据，重新计算
+      if (profitStatistics.value) {
+        await calculateProfit(
+          profitStatistics.value.startDate,
+          profitStatistics.value.endDate,
+          newBalance
+        );
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '更新账户余额失败';
+      console.error('updateAccountBalance error:', err);
+      throw err;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  /**
    * 计算盈利统计
    * @param startDate 开始日期（可选，不提供则统计所有历史）
    * @param endDate 结束日期（可选，不提供则统计所有历史）
+   * @param balance 账户余额（可选，默认使用store中的值）
    */
-  async function calculateProfit(startDate?: string, endDate?: string): Promise<void> {
+  async function calculateProfit(startDate?: string, endDate?: string, balance?: number): Promise<void> {
     try {
       isLoading.value = true;
       error.value = null;
@@ -137,6 +184,9 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
       // 如果没有提供日期，使用一个很大的范围来覆盖所有历史记录
       const start = startDate || '1970-01-01';
       const end = endDate || '2099-12-31';
+
+      // 使用传入的余额或store中的余额
+      const currentBalance = balance !== undefined ? balance : accountBalance.value;
 
       // 获取转账统计
       const stats = await window.fundManagementAPI.getProfitStatistics(start, end);
@@ -150,14 +200,15 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
         // 持仓数据获取失败不影响显示，设为0
       }
 
-      // 计算盈利
-      const profit = stats.totalOut - stats.totalIn + currentHoldings;
+      // 计算盈利：转出金额 + 账户余额 + 当前持仓金额 - 转入金额
+      const profit = stats.totalOut + currentBalance + currentHoldings - stats.totalIn;
 
       profitStatistics.value = {
         startDate: start,
         endDate: end,
         totalIn: stats.totalIn,
         totalOut: stats.totalOut,
+        accountBalance: currentBalance,
         currentHoldings,
         profit,
       };
@@ -180,6 +231,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     // State
     transferRecords,
     profitStatistics,
+    accountBalance,
     isLoading,
     error,
     currentPage,
@@ -197,6 +249,8 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     updateTransferRecord,
     deleteTransferRecord,
     calculateProfit,
+    fetchAccountBalance,
+    updateAccountBalance,
     clearError,
   };
 });

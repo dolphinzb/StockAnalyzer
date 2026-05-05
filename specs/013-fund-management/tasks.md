@@ -131,15 +131,16 @@ graph TD
 
 ## Phase 4: User Story 2 - 统计指定时间段内的盈利 (Priority: P2)
 
-**Goal**: 用户可以选择时间段查看盈利统计，实时计算转出-转入+持仓
+**Goal**: 用户可以设置和修改账户余额（系统会持久化保存），并选择一个时间段查看盈利统计，实时计算转出+余额+持仓-转入
 
-**Independent Test**: 在已有转账记录和持仓数据的情况下，选择不同时间段验证盈利计算结果的准确性。
+**Independent Test**: 在已有转账记录和持仓数据的情况下，设置账户余额并选择不同时间段验证盈利计算结果的准确性。
 
 **Acceptance Criteria**:
-1. 首次进入页面时自动显示历史所有转账记录的盈利统计
-2. 用户可以选择日期范围查看特定时间段的盈利
-3. 修改日期范围实时更新结果
-4. 无转账记录时显示盈利=当前持仓
+1. 首次进入页面时自动从数据库加载账户余额，显示历史所有转账记录的盈利统计
+2. 用户可以修改账户余额并保存到数据库
+3. 用户可以选择日期范围查看特定时间段的盈利
+4. 修改日期范围实时更新结果，账户余额保持不变
+5. 无转账记录时显示盈利=账户余额+当前持仓
 
 ### Holdings Integration
 
@@ -147,17 +148,51 @@ graph TD
 - [x] T034 [US2] [P] 在electron/index.ts中实现'get-current-holdings-total' IPC handler（调用持仓服务）
 - [x] T035 [US2] 在preload/index.ts中暴露getCurrentHoldingsTotal API
 
-### Components
+### Database Layer
 
-- [x] T036 [US2] [P] 创建src/components/DateRangePicker.vue日期范围选择器组件（两个date input，验证开始<=结束）
-- [x] T037 [US2] 创建src/components/ProfitStatistics.vue盈利统计组件（显示4个数值卡片）
+- [x] T032a [US2] [P] 在electron/database.ts中添加initializeAccountConfigTable函数创建账户配置表
+- [x] T032b [US2] 在electron/database.ts的initializeDatabase函数中调用initializeAccountConfigTable
+
+### Service Layer
+
+- [x] T032c [US2] [P] 在electron/services/fundService.ts中实现getAccountBalance方法（读取账户余额）
+- [x] T032d [US2] [P] 在electron/services/fundService.ts中实现updateAccountBalance方法（更新账户余额）
+
+### IPC Handlers
+
+- [x] T032e [US2] 在electron/index.ts中注册'get-account-balance' IPC handler
+- [x] T032f [US2] 在electron/index.ts中注册'update-account-balance' IPC handler
+
+### Preload API
+
+- [x] T032g [US2] 在shared/types/index.ts的FundManagementAPI接口中添加getAccountBalance和updateAccountBalance方法
+- [x] T032h [US2] 在preload/index.ts中暴露getAccountBalance和updateAccountBalance API
 
 ### Store & Logic
 
-- [x] T038 [US2] 在src/stores/fundManagement.ts中实现calculateProfit action（支持可选的日期范围参数，无参数时统计所有历史）
+- [x] T038c [US2] 在src/stores/fundManagement.ts中添加accountBalance state
+- [x] T038d [US2] 在src/stores/fundManagement.ts中实现fetchAccountBalance action
+- [x] T038e [US2] 在src/stores/fundManagement.ts中实现updateAccountBalance action（保存到数据库）
+- [x] T038f [US2] 更新calculateProfit action使用store中的accountBalance
+
+### Components
+
+- [x] T037b [US2] 在ProfitStatistics.vue中添加账户余额显示/编辑切换功能
+- [x] T037c [US2] 实现账户余额编辑模式（输入框+保存/取消按钮）
+- [x] T037d [US2] 实现账户余额保存逻辑（调用store.updateAccountBalance）
+- [x] T037e [US2] 组件mounted时调用fetchAccountBalance加载余额
+
+### Store & Logic
+
+- [x] T038 [US2] 在src/stores/fundManagement.ts中实现calculateProfit action（支持可选的日期范围和账户余额参数，无参数时统计所有历史，账户余额默认为0）
 - [x] T039 [US2] 在ProfitStatistics.vue组件mounted时自动调用calculateProfit()加载历史统计
-- [x] T040 [US2] 在ProfitStatistics.vue中集成DateRangePicker和结果显示
+- [x] T040 [US2] 在ProfitStatistics.vue中集成DateRangePicker、账户余额输入和结果显示
 - [x] T041 [US2] 在FundManagementView.vue的盈利统计标签页中集成ProfitStatistics组件
+
+### Type Definitions
+
+- [x] T038a [US2] 更新shared/types/index.ts中的ProfitStatistics接口，添加accountBalance字段
+- [x] T038b [US2] 更新盈利计算公式为：profit = totalOut + accountBalance + currentHoldings - totalIn
 
 ### Edge Cases
 
@@ -219,19 +254,19 @@ graph TD
 
 ## Task Summary
 
-**Total Tasks**: 61 tasks
+**Total Tasks**: 79 tasks
 
 **By Phase**:
 - Phase 1 (Setup): 3 tasks
 - Phase 2 (Foundational): 13 tasks
 - Phase 3 (US1 - 转账记录): 16 tasks
-- Phase 4 (US2 - 盈利统计): 12 tasks
+- Phase 4 (US2 - 盈利统计): 30 tasks
 - Phase 5 (US3 - 快速录入): 5 tasks
 - Phase 6 (Polish): 12 tasks
 
 **By User Story**:
 - US1 (P1): 16 tasks - MVP核心功能
-- US2 (P2): 12 tasks - 盈利统计
+- US2 (P2): 30 tasks - 盈利统计（含账户余额持久化）
 - US3 (P3): 5 tasks - 增强功能
 
 **Parallel Opportunities Identified**:
@@ -241,7 +276,8 @@ graph TD
 - T017-T018 (Phase 3): Composable和Store可并行
 - T019-T022 (Phase 3): 4个组件可并行开发（不同文件）
 - T033-T035 (Phase 4): 持仓集成任务可并行
-- T036-T037 (Phase 4): 2个组件可并行
+- T036-T037a (Phase 4): 组件开发可并行
+- T038a-T038b (Phase 4): 类型定义和公式更新可并行
 - T044-T045 (Phase 5): 模板定义可并行
 
 **MVP Scope (Phase 1+2+3)**: 32 tasks

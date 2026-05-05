@@ -272,6 +272,10 @@ const fundManagementAPI: FundManagementAPI = {
     ipcRenderer.invoke('get-profit-statistics', startDate, endDate),
   getCurrentHoldingsTotal: () => 
     ipcRenderer.invoke('get-current-holdings-total'),
+  getAccountBalance: () => 
+    ipcRenderer.invoke('get-account-balance'),
+  updateAccountBalance: (balance: number) => 
+    ipcRenderer.invoke('update-account-balance', balance),
 };
 
 // 暴露所有 API 到渲染进程

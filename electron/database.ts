@@ -132,6 +132,9 @@ export async function initDatabase(): Promise<void> {
     // 初始化转账记录表
     initializeTransferRecordsTable();
 
+    // 初始化账户配置表
+    initializeAccountConfigTable();
+
     const result = db.exec("SELECT * FROM config WHERE key = 'app_config'");
     if (result.length === 0 || result[0].values.length === 0) {
       const defaultConfigJson = JSON.stringify(DEFAULT_CONFIG);
@@ -618,6 +621,43 @@ export function getTradeRecordsByStockCode(stockCode: string): TradeRecord[] {
     return [];
   }
   return result[0].values.map(rowToTradeRecord);
+}
+
+/**
+ * 初始化账户配置表
+ * 创建 account_config 表用于存储账户余额等配置信息
+ */
+export function initializeAccountConfigTable(): void {
+  const database = getDb();
+  
+  // 检查表是否已存在
+  const tableExists = database.exec(`
+    SELECT name FROM sqlite_master 
+    WHERE type='table' AND name='account_config'
+  `);
+  
+  if (tableExists.length === 0) {
+    log.info('创建 account_config 表');
+    
+    // 创建账户配置表
+    database.run(`
+      CREATE TABLE account_config (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        account_balance REAL NOT NULL DEFAULT 0,
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+      )
+    `);
+    
+    // 插入默认记录（id固定为1，只有一条记录）
+    database.run(`
+      INSERT INTO account_config (id, account_balance) VALUES (1, 0)
+    `);
+    
+    saveDatabase();
+    log.info('account_config 表及默认数据创建完成');
+  } else {
+    log.info('account_config 表已存在，跳过创建');
+  }
 }
 
 /**

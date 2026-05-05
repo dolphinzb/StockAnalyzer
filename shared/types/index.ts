@@ -451,9 +451,11 @@ export interface ProfitStatistics {
   totalIn: number;
   /** 转出总金额 */
   totalOut: number;
+  /** 账户余额 */
+  accountBalance: number;
   /** 当前持仓市值 */
   currentHoldings: number;
-  /** 盈利金额 = totalOut - totalIn + currentHoldings */
+  /** 盈利金额 = totalOut + accountBalance + currentHoldings - totalIn */
   profit: number;
 }
 
@@ -496,6 +498,10 @@ export interface FundManagementAPI {
   }>;
   /** 获取当前持仓总市值 */
   getCurrentHoldingsTotal(): Promise<number>;
+  /** 获取账户余额 */
+  getAccountBalance(): Promise<number>;
+  /** 更新账户余额 */
+  updateAccountBalance(balance: number): Promise<boolean>;
 }
 
 declare global {

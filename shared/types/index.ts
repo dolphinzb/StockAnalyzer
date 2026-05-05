@@ -419,6 +419,91 @@ export interface GridStrategyAPI {
   getStrategyUsageInfo(strategyId: number): Promise<Array<{ stock_code: string; applied_at: string }>>;
 }
 
+/**
+ * 转账记录
+ * 用于资金管理的转账记录实体
+ */
+export interface TransferRecord {
+  /** 唯一标识符 */
+  id: number;
+  /** 转账日期 (YYYY-MM-DD) */
+  transferDate: string;
+  /** 转账金额（正数） */
+  amount: number;
+  /** 转账类型：IN(转入) 或 OUT(转出) */
+  type: 'IN' | 'OUT';
+  /** 创建时间 (ISO 8601) */
+  createdAt?: string;
+  /** 更新时间 (ISO 8601) */
+  updatedAt?: string;
+}
+
+/**
+ * 盈利统计
+ * 指定时间段内的盈利计算结果
+ */
+export interface ProfitStatistics {
+  /** 开始日期 (YYYY-MM-DD) */
+  startDate: string;
+  /** 结束日期 (YYYY-MM-DD) */
+  endDate: string;
+  /** 转入总金额 */
+  totalIn: number;
+  /** 转出总金额 */
+  totalOut: number;
+  /** 账户余额 */
+  accountBalance: number;
+  /** 当前持仓市值 */
+  currentHoldings: number;
+  /** 盈利金额 = totalOut + accountBalance + currentHoldings - totalIn */
+  profit: number;
+}
+
+/**
+ * 转账记录输入（新增时使用）
+ */
+export interface TransferRecordInput {
+  transferDate: string;
+  amount: number;
+  type: 'IN' | 'OUT';
+}
+
+/**
+ * 转账记录更新（修改时使用）
+ */
+export interface TransferRecordUpdate {
+  transferDate?: string;
+  amount?: number;
+  type?: 'IN' | 'OUT';
+}
+
+/**
+ * 资金管理API类型 - 通过 preload contextBridge 暴露给渲染进程
+ */
+export interface FundManagementAPI {
+  /** 获取分页的转账记录列表 */
+  getTransferRecords(limit: number, offset: number): Promise<TransferRecord[]>;
+  /** 新增转账记录 */
+  addTransferRecord(record: TransferRecordInput): Promise<{ id: number }>;
+  /** 更新转账记录 */
+  updateTransferRecord(id: number, data: TransferRecordUpdate): Promise<{ success: boolean }>;
+  /** 删除转账记录 */
+  deleteTransferRecord(id: number): Promise<{ success: boolean }>;
+  /** 获取指定时间段的盈利统计 */
+  getProfitStatistics(startDate: string, endDate: string): Promise<{
+    totalIn: number;
+    totalOut: number;
+    startDate: string;
+    endDate: string;
+  }>;
+  /** 获取当前持仓总市值 */
+  getCurrentHoldingsTotal(): Promise<number>;
+  /** 获取账户余额 */
+  getAccountBalance(): Promise<number>;
+  /** 更新账户余额 */
+  updateAccountBalance(balance: number): Promise<boolean>;
+}
+
 declare global {
   interface Window {
     electronAPI: WindowAPI;
@@ -429,6 +514,7 @@ declare global {
     logApi: LogAPI;
     stockWatcherAPI: StockWatcherAPI;
     gridStrategyAPI: GridStrategyAPI;
+    fundManagementAPI: FundManagementAPI;
   }
 }
 

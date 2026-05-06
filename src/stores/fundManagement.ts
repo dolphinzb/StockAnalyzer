@@ -23,7 +23,26 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   // Actions
   
   /**
-   * 获取转账记录列表（支持分页）
+   * 计算账户余额（辅助方法）
+   * @param previousBalance 上一条记录的余额
+   * @param amount 当前记录金额
+   * @param type 资金类型
+   * @returns 计算后的余额
+   */
+  function calculateAccountBalance(previousBalance: number, amount: number, type: string): number {
+    // IN、DIVIDEND、STOCK_SELL、INTEREST 增加余额
+    if (type === 'IN' || type === 'DIVIDEND' || type === 'STOCK_SELL' || type === 'INTEREST') {
+      return previousBalance + amount;
+    } 
+    // OUT、DIVIDEND_TAX、STOCK_BUY 减少余额
+    else if (type === 'OUT' || type === 'DIVIDEND_TAX' || type === 'STOCK_BUY') {
+      return previousBalance - amount;
+    }
+    return previousBalance;
+  }
+
+  /**
+   * 获取资金明细记录列表（支持分页）
    */
   async function fetchTransferRecords(reset: boolean = false): Promise<void> {
     try {
@@ -60,9 +79,9 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   }
 
   /**
-   * 新增转账记录
+   * 新增资金明细记录
    */
-  async function addTransferRecord(record: { transferDate: string; amount: number; type: 'IN' | 'OUT' }): Promise<void> {
+  async function addTransferRecord(record: { transferDate: string; amount: number; type: 'IN' | 'OUT' | 'DIVIDEND' | 'DIVIDEND_TAX' | 'STOCK_BUY' | 'STOCK_SELL' | 'INTEREST' }): Promise<void> {
     try {
       isLoading.value = true;
       error.value = null;
@@ -81,9 +100,9 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   }
 
   /**
-   * 更新转账记录
+   * 更新资金明细记录
    */
-  async function updateTransferRecord(id: number, data: { transferDate?: string; amount?: number; type?: 'IN' | 'OUT' }): Promise<void> {
+  async function updateTransferRecord(id: number, data: { transferDate?: string; amount?: number; type?: 'IN' | 'OUT' | 'DIVIDEND' | 'DIVIDEND_TAX' | 'STOCK_BUY' | 'STOCK_SELL' | 'INTEREST'; accountBalance?: number }): Promise<void> {
     try {
       isLoading.value = true;
       error.value = null;
@@ -102,7 +121,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   }
 
   /**
-   * 删除转账记录
+   * 删除资金明细记录
    */
   async function deleteTransferRecord(id: number): Promise<void> {
     try {
@@ -251,6 +270,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     calculateProfit,
     fetchAccountBalance,
     updateAccountBalance,
+    calculateAccountBalance, // 导出辅助方法
     clearError,
   };
 });

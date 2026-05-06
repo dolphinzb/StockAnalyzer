@@ -153,7 +153,7 @@ export async function initDatabase(): Promise<void> {
   }
 }
 
-function saveDatabase(): void {
+export function saveDatabase(): void {
   if (!db) {
     log.warn('saveDatabase: db is null');
     return;
@@ -676,13 +676,14 @@ export function initializeTransferRecordsTable(): void {
   if (tableExists.length === 0) {
     log.info('创建 transfer_records 表');
     
-    // 创建转账记录表
+    // 创建资金明细表（包含account_balance字段）
     database.run(`
       CREATE TABLE transfer_records (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         transfer_date TEXT NOT NULL,
         amount REAL NOT NULL CHECK(amount > 0),
-        type TEXT NOT NULL CHECK(type IN ('IN', 'OUT')),
+        type TEXT NOT NULL CHECK(type IN ('IN', 'OUT', 'DIVIDEND', 'DIVIDEND_TAX', 'STOCK_BUY', 'STOCK_SELL', 'INTEREST')),
+        account_balance REAL NOT NULL DEFAULT 0,
         created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
         updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
       )
@@ -695,5 +696,7 @@ export function initializeTransferRecordsTable(): void {
     log.info('transfer_records 表及索引创建完成');
   } else {
     log.info('transfer_records 表已存在，跳过创建');
+    // 注意：如果需要迁移，请手动执行: npm run migrate
+    // 详见: docs/数据库迁移指南.md
   }
 }

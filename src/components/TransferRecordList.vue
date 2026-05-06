@@ -2,9 +2,9 @@
   <div class="transfer-record-list">
     <!-- 工具栏 -->
     <div class="list-toolbar">
-      <h2>转账记录</h2>
+      <h2>资金明细</h2>
       <button class="btn-add" @click="$emit('add')">
-        + 新增转账
+        + 新增记录
       </button>
     </div>
 
@@ -15,8 +15,8 @@
 
     <!-- 空状态 -->
     <div v-else-if="store.isEmpty" class="empty-state">
-      <p>暂无转账记录</p>
-      <button class="btn-add-first" @click="$emit('add')">添加第一笔转账</button>
+      <p>暂无资金明细</p>
+      <button class="btn-add-first" @click="$emit('add')">添加第一条记录</button>
     </div>
 
     <!-- 记录列表 -->

@@ -4,9 +4,10 @@
       <div class="record-date">{{ record.transferDate }}</div>
       <div class="record-details">
         <span class="record-type" :class="record.type">
-          {{ record.type === 'IN' ? '转入' : '转出' }}
+          {{ getTypeLabel(record.type) }}
         </span>
         <span class="record-amount">¥{{ formatAmount(record.amount) }}</span>
+        <span class="record-balance">余额: ¥{{ formatAmount(record.accountBalance) }}</span>
       </div>
     </div>
     <div class="record-actions">
@@ -34,8 +35,32 @@ defineEmits<{
   delete: [record: TransferRecord];
 }>();
 
-const formatAmount = (amount: number): string => {
-  return amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const formatAmount = (amount: number | undefined | null | string): string => {
+  // 处理空值、空字符串或非数字的情况
+  if (amount === undefined || amount === null || amount === '') {
+    return '0.00';
+  }
+  
+  const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+  
+  if (isNaN(numAmount)) {
+    return '0.00';
+  }
+  
+  return numAmount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+
+const getTypeLabel = (type: string): string => {
+  const labels: Record<string, string> = {
+    'IN': '转入',
+    'OUT': '转出',
+    'DIVIDEND': '股息',
+    'DIVIDEND_TAX': '股息扣税',
+    'STOCK_BUY': '股票买入',
+    'STOCK_SELL': '股票卖出',
+    'INTEREST': '利息',
+  };
+  return labels[type] || type;
 };
 </script>
 
@@ -88,12 +113,43 @@ const formatAmount = (amount: number): string => {
     background-color: #fee2e2;
     color: #991b1b;
   }
+
+  &.DIVIDEND {
+    background-color: #dbeafe;
+    color: #1e40af;
+  }
+
+  &.DIVIDEND_TAX {
+    background-color: #fef3c7;
+    color: #92400e;
+  }
+
+  &.STOCK_BUY {
+    background-color: #fce7f3;
+    color: #9f1239;
+  }
+
+  &.STOCK_SELL {
+    background-color: #dcfce7;
+    color: #166534;
+  }
+
+  &.INTEREST {
+    background-color: #e0e7ff;
+    color: #3730a3;
+  }
 }
 
 .record-amount {
   font-size: 16px;
   font-weight: 600;
   color: #111827;
+}
+
+.record-balance {
+  font-size: 13px;
+  color: #6b7280;
+  margin-left: auto;
 }
 
 .record-actions {

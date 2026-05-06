@@ -1,23 +1,28 @@
 <template>
   <Modal
     v-model="isVisible"
-    :title="isEdit ? '编辑转账记录' : '新增转账记录'"
+    :title="isEdit ? '编辑资金明细' : '新增资金明细'"
     :close-on-overlay-click="false"
     @close="handleClose"
   >
     <form @submit.prevent="handleSubmit" class="transfer-form">
-      <!-- 转账类型 -->
+      <!-- 资金类型 -->
       <div class="form-group">
-        <label for="type">转账类型</label>
+        <label for="type">资金类型</label>
         <select id="type" v-model="formData.type" required class="form-input">
           <option value="IN">转入</option>
           <option value="OUT">转出</option>
+          <option value="DIVIDEND">股息</option>
+          <option value="DIVIDEND_TAX">股息扣税</option>
+          <option value="STOCK_BUY">股票买入</option>
+          <option value="STOCK_SELL">股票卖出</option>
+          <option value="INTEREST">利息</option>
         </select>
       </div>
 
-      <!-- 转账金额 -->
+      <!-- 金额 -->
       <div class="form-group">
-        <label for="amount">转账金额（元）</label>
+        <label for="amount">金额（元）</label>
         <input
           id="amount"
           v-model.number="formData.amount"
@@ -31,9 +36,9 @@
         <span v-if="errors.amount" class="error-text">{{ errors.amount }}</span>
       </div>
 
-      <!-- 转账日期 -->
+      <!-- 日期 -->
       <div class="form-group">
-        <label for="date">转账日期</label>
+        <label for="date">日期</label>
         <input
           id="date"
           v-model="formData.transferDate"
@@ -42,6 +47,20 @@
           class="form-input"
         />
         <span v-if="errors.date" class="error-text">{{ errors.date }}</span>
+      </div>
+
+      <!-- 账户余额（仅编辑时显示） -->
+      <div v-if="isEdit" class="form-group">
+        <label for="accountBalance">账户余额（可选，留空则自动计算）</label>
+        <input
+          id="accountBalance"
+          v-model="formattedAccountBalance"
+          type="number"
+          step="0.01"
+          class="form-input"
+          placeholder="留空则自动计算"
+        />
+        <span class="helper-text">如果不填写，系统将根据上一条记录自动计算</span>
       </div>
     </form>
 
@@ -73,7 +92,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
-  save: [data: { transferDate: string; amount: number; type: 'IN' | 'OUT' }];
+  save: [data: { transferDate: string; amount: number; type: 'IN' | 'OUT' | 'DIVIDEND' | 'DIVIDEND_TAX' | 'STOCK_BUY' | 'STOCK_SELL' | 'INTEREST'; accountBalance?: number }];
 }>();
 
 const isVisible = computed({
@@ -87,7 +106,26 @@ const isEdit = computed(() => !!props.record);
 const formData = ref({
   transferDate: new Date().toISOString().split('T')[0],
   amount: 0,
-  type: 'IN' as 'IN' | 'OUT',
+  type: 'IN' as 'IN' | 'OUT' | 'DIVIDEND' | 'DIVIDEND_TAX' | 'STOCK_BUY' | 'STOCK_SELL' | 'INTEREST',
+  accountBalance: undefined as number | undefined,
+});
+
+// 格式化账户余额显示（保留2位小数）
+const formattedAccountBalance = computed({
+  get: () => {
+    if (formData.value.accountBalance === undefined || formData.value.accountBalance === null) {
+      return '';
+    }
+    return Number(formData.value.accountBalance).toFixed(2);
+  },
+  set: (value: string) => {
+    if (value === '' || value === null || value === undefined) {
+      formData.value.accountBalance = undefined;
+    } else {
+      const numValue = parseFloat(value);
+      formData.value.accountBalance = isNaN(numValue) ? undefined : numValue;
+    }
+  },
 });
 
 // 错误信息
@@ -107,6 +145,7 @@ watch(
         transferDate: newRecord.transferDate,
         amount: newRecord.amount,
         type: newRecord.type,
+        accountBalance: newRecord.accountBalance, // 填充当前余额供用户参考/修改
       };
     } else {
       // 重置为默认值
@@ -114,6 +153,7 @@ watch(
         transferDate: new Date().toISOString().split('T')[0],
         amount: 0,
         type: 'IN',
+        accountBalance: undefined,
       };
     }
     // 清除错误
@@ -150,7 +190,14 @@ const handleSubmit = async () => {
 
   try {
     isSubmitting.value = true;
-    await emit('save', { ...formData.value });
+    
+    // 确保账户余额保留2位小数
+    const submitData = { ...formData.value };
+    if (submitData.accountBalance !== undefined && submitData.accountBalance !== null) {
+      submitData.accountBalance = Number(submitData.accountBalance.toFixed(2));
+    }
+    
+    await emit('save', submitData);
     handleClose();
   } catch (error) {
     console.error('Submit error:', error);
@@ -167,6 +214,7 @@ const handleClose = () => {
     transferDate: new Date().toISOString().split('T')[0],
     amount: 0,
     type: 'IN',
+    accountBalance: undefined,
   };
   errors.value = { amount: '', date: '' };
 };

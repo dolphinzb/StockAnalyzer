@@ -19,6 +19,7 @@ import {
   updateStock,
   updateTradeRecord,
   getDb,
+  saveDatabase,
   type AddStockInput,
   type AddTradeInput,
   type UpdateStockInput,
@@ -409,6 +410,7 @@ ipcMain.handle('add-transfer-record', async (_event, record: { transferDate: str
       throw new Error('FundService not initialized');
     }
     const id = await fundService.addTransferRecord(record);
+    saveDatabase(); // 保存数据库
     return { id };
   } catch (error) {
     log.error('IPC add-transfer-record error:', error);
@@ -426,6 +428,7 @@ ipcMain.handle('update-transfer-record', async (_event, id: number, data: { tran
       throw new Error('FundService not initialized');
     }
     const success = await fundService.updateTransferRecord(id, data);
+    saveDatabase(); // 保存数据库
     return { success };
   } catch (error) {
     log.error('IPC update-transfer-record error:', error);
@@ -443,6 +446,7 @@ ipcMain.handle('delete-transfer-record', async (_event, id: number) => {
       throw new Error('FundService not initialized');
     }
     const success = await fundService.deleteTransferRecord(id);
+    saveDatabase(); // 保存数据库
     return { success };
   } catch (error) {
     log.error('IPC delete-transfer-record error:', error);

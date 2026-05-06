@@ -155,36 +155,36 @@ graph TD
 
 ### Database Layer
 
-- [x] T032a [US2] [P] 在electron/database.ts中添加initializeAccountConfigTable函数创建账户配置表（已存在）
-- [x] T032b [US2] 在electron/database.ts的initializeDatabase函数中调用initializeAccountConfigTable（已存在）
+- [x] T032a [US2] [P] 在electron/database.ts中添加initializeAccountConfigTable函数创建账户配置表（已删除，不再需要）
+- [x] T032b [US2] 在electron/database.ts的initializeDatabase函数中调用initializeAccountConfigTable（已删除，不再需要）
 
 ### Service Layer
 
-- [x] T032c [US2] [P] 在electron/services/fundService.ts中实现getAccountBalance方法（读取账户余额，已存在）
-- [x] T032d [US2] [P] 在electron/services/fundService.ts中实现updateAccountBalance方法（更新账户余额，已存在）
+- [x] T032c [US2] [P] 在electron/services/fundService.ts中实现getAccountBalance方法（从资金明细最后一条记录获取余额，已修改）
+- [x] T032d [US2] [P] 在electron/services/fundService.ts中实现updateAccountBalance方法（已删除，不再需要）
 
 ### IPC Handlers
 
 - [x] T032e [US2] 在electron/index.ts中注册'get-account-balance' IPC handler（已存在）
-- [x] T032f [US2] 在electron/index.ts中注册'update-account-balance' IPC handler（已存在）
+- [x] T032f [US2] 在electron/index.ts中注册'update-account-balance' IPC handler（已删除，不再需要）
 
 ### Preload API
 
-- [x] T032g [US2] 在shared/types/index.ts的FundManagementAPI接口中添加getAccountBalance和updateAccountBalance方法（已存在）
-- [x] T032h [US2] 在preload/index.ts中暴露getAccountBalance和updateAccountBalance API（已存在）
+- [x] T032g [US2] 在shared/types/index.ts的FundManagementAPI接口中添加getAccountBalance方法（已存在，updateAccountBalance已删除）
+- [x] T032h [US2] 在preload/index.ts中暴露getAccountBalance API（已存在，updateAccountBalance已删除）
 
 ### Store & Logic
 
 - [x] T038c [US2] 在src/stores/fundManagement.ts中添加accountBalance state（已存在）
 - [x] T038d [US2] 在src/stores/fundManagement.ts中实现fetchAccountBalance action（已存在）
-- [x] T038e [US2] 在src/stores/fundManagement.ts中实现updateAccountBalance action（保存到数据库，已存在）
+- [x] T038e [US2] 在src/stores/fundManagement.ts中实现updateAccountBalance action（已删除，不再需要）
 - [x] T038f [US2] 更新calculateProfit action使用store中的accountBalance（已存在）
 
 ### Components
 
-- [x] T037b [US2] 在ProfitStatistics.vue中添加账户余额显示/编辑切换功能（已存在）
-- [x] T037c [US2] 实现账户余额编辑模式（输入框+保存/取消按钮，已存在）
-- [x] T037d [US2] 实现账户余额保存逻辑（调用store.updateAccountBalance，已存在）
+- [x] T037b [US2] 在ProfitStatistics.vue中添加账户余额显示功能（已修改，移除编辑功能）
+- [x] T037c [US2] 实现账户余额编辑模式（已删除，不再需要）
+- [x] T037d [US2] 实现账户余额保存逻辑（已删除，不再需要）
 - [x] T037e [US2] 组件mounted时调用fetchAccountBalance加载余额（已存在）
 
 ### Store & Logic

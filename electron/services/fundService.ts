@@ -277,17 +277,18 @@ export class FundService {
   }
 
   /**
-   * 获取账户余额
+   * 获取账户余额（从资金明细表最后一条记录获取）
    * @returns 账户余额
    */
   async getAccountBalance(): Promise<number> {
     try {
+      // 从资金明细表中获取最近一条记录的账户余额
       const result = this.db.exec(
-        'SELECT account_balance FROM account_config WHERE id = 1'
+        'SELECT account_balance FROM transfer_records ORDER BY transfer_date DESC, id DESC LIMIT 1'
       );
 
       if (result.length === 0 || result[0].values.length === 0) {
-        log.warn('未找到账户配置记录，返回默认值0');
+        log.warn('未找到资金明细记录，返回默认值0');
         return 0;
       }
 
@@ -300,33 +301,7 @@ export class FundService {
     }
   }
 
-  /**
-   * 更新账户余额
-   * @param balance 新的账户余额
-   * @returns 是否成功
-   */
-  async updateAccountBalance(balance: number): Promise<boolean> {
-    try {
-      // 验证余额不能为负数
-      if (balance < 0) {
-        throw new Error('账户余额不能为负数');
-      }
 
-      this.db.run(
-        `UPDATE account_config 
-         SET account_balance = ?, 
-             updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now') 
-         WHERE id = 1`,
-        [balance]
-      );
-
-      log.info(`更新账户余额成功: ${balance}`);
-      return true;
-    } catch (error) {
-      log.error('updateAccountBalance error:', error);
-      throw error;
-    }
-  }
 
   /**
    * 计算给定记录的账户余额

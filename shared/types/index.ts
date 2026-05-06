@@ -501,10 +501,8 @@ export interface FundManagementAPI {
   }>;
   /** 获取当前持仓总市值 */
   getCurrentHoldingsTotal(): Promise<number>;
-  /** 获取账户余额 */
+  /** 获取账户余额（从资金明细最后一条记录获取） */
   getAccountBalance(): Promise<number>;
-  /** 更新账户余额 */
-  updateAccountBalance(balance: number): Promise<boolean>;
 }
 
 declare global {

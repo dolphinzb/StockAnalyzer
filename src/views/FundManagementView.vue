@@ -163,6 +163,8 @@ const confirmDelete = async () => {
 .tab-content {
   flex: 1;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .placeholder-content {

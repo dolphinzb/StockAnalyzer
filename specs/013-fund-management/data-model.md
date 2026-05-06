@@ -137,7 +137,7 @@ Fetch transfer records in range (DB query)
        ↓
 Calculate totalIn and totalOut (aggregation)
        ↓
-Fetch account balance from account_config table
+Fetch account balance from last transfer record
        ↓
 Fetch current holdings total (IPC to main process)
        ↓
@@ -296,7 +296,6 @@ export const useFundManagementStore = defineStore('fundManagement', {
     async deleteFundDetailRecord(id: number),
     async calculateProfit(startDate: string, endDate: string),
     async fetchAccountBalance(),
-    async updateAccountBalance(newBalance: number),
     resetError()
   }
 });

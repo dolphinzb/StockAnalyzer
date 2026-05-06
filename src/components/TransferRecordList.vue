@@ -20,7 +20,7 @@
     </div>
 
     <!-- 记录列表 -->
-    <div v-else class="records-container">
+    <div v-else ref="recordsContainerRef" class="records-container" @scroll="handleScroll">
       <TransferRecordItem
         v-for="record in store.transferRecords"
         :key="record.id"
@@ -29,11 +29,12 @@
         @delete="$emit('delete', $event)"
       />
       
-      <!-- 无限滚动哨兵元素 -->
-      <div ref="sentinelRef" class="scroll-sentinel">
-        <div v-if="store.isLoading" class="loading-more">
-          <p>加载更多...</p>
-        </div>
+      <!-- 加载更多提示 -->
+      <div v-if="isLoadingMore" class="loading-more">
+        <p>加载中...</p>
+      </div>
+      <div v-else-if="!store.hasMore" class="loading-more">
+        <p>已加载全部</p>
       </div>
     </div>
 
@@ -46,20 +47,50 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { onMounted, ref } from 'vue';
 import { useFundManagementStore } from '../stores/fundManagement';
-import { useInfiniteScroll } from '../composables/useInfiniteScroll';
 import TransferRecordItem from './TransferRecordItem.vue';
 import type { TransferRecord } from '../../shared/types';
 
 const store = useFundManagementStore();
 
-// 设置无限滚动
-const { sentinelRef } = useInfiniteScroll(
-  () => store.fetchTransferRecords(false),
-  () => store.hasMore,
-  () => store.isLoading
-);
+// 滚动容器引用
+const recordsContainerRef = ref<HTMLElement | null>(null);
+
+// 加载更多标志
+const isLoadingMore = ref(false);
+
+/**
+ * 处理滚动事件
+ * 当滚动到底部且还有更多数据时，自动加载下一页
+ */
+function handleScroll(event: Event) {
+  const container = event.target as HTMLElement;
+  if (!container || !store.hasMore || isLoadingMore.value || store.isLoading) {
+    return;
+  }
+
+  // 判断是否滚动到底部（距离底部不超过50px时触发加载）
+  const { scrollTop, scrollHeight, clientHeight } = container;
+  if (scrollHeight - scrollTop - clientHeight <= 50) {
+    console.log('Scroll reached bottom, loading more...');
+    loadMore();
+  }
+}
+
+/**
+ * 加载更多数据
+ */
+async function loadMore() {
+  if (isLoadingMore.value || !store.hasMore) return;
+  
+  isLoadingMore.value = true;
+  try {
+    await store.fetchTransferRecords(false);
+  } finally {
+    isLoadingMore.value = false;
+  }
+}
 
 // 组件挂载时加载初始数据
 onMounted(async () => {

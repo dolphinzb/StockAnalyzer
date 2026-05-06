@@ -470,38 +470,7 @@ ipcMain.handle('get-profit-statistics', async (_event, startDate: string, endDat
   }
 });
 
-/**
- * 获取账户余额
- */
-ipcMain.handle('get-account-balance', async () => {
-  log.debug('IPC: get-account-balance');
-  try {
-    if (!fundService) {
-      throw new Error('FundService not initialized');
-    }
-    return await fundService.getAccountBalance();
-  } catch (error) {
-    log.error('IPC get-account-balance error:', error);
-    throw error;
-  }
-});
 
-/**
- * 更新账户余额
- */
-ipcMain.handle('update-account-balance', async (_event, balance: number) => {
-  log.debug('IPC: update-account-balance', balance);
-  try {
-    if (!fundService) {
-      throw new Error('FundService not initialized');
-    }
-    const success = await fundService.updateAccountBalance(balance);
-    return success;
-  } catch (error) {
-    log.error('IPC update-account-balance error:', error);
-    throw error;
-  }
-});
 
 /**
  * 获取当前持仓总市值

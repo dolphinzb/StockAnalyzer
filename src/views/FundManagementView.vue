@@ -7,7 +7,7 @@
         :class="{ active: activeTab === 'transfers' }"
         @click="activeTab = 'transfers'"
       >
-        转账记录
+        资金明细
       </button>
       <button
         class="tab-button"
@@ -18,7 +18,7 @@
       </button>
     </div>
 
-    <!-- 转账记录标签页 -->
+    <!-- 资金明细标签页 -->
     <div v-if="activeTab === 'transfers'" class="tab-content">
       <TransferRecordList
         @add="handleAddTransfer"
@@ -32,7 +32,7 @@
       <ProfitStatistics />
     </div>
 
-    <!-- 转账编辑对话框 -->
+    <!-- 资金明细编辑对话框 -->
     <TransferEditor
       v-model="showEditor"
       :record="editingRecord"
@@ -45,7 +45,7 @@
       title="确认删除"
       :close-on-overlay-click="false"
     >
-      <p>确定要删除这条转账记录吗？此操作不可恢复。</p>
+      <p>确定要删除这条资金明细吗？此操作不可恢复。</p>
       <template #footer>
         <button class="btn-cancel" @click="showDeleteConfirm = false">
           取消
@@ -75,34 +75,35 @@ const deletingRecord = ref<TransferRecord | null>(null);
 
 const store = useFundManagementStore();
 
-// 新增转账
+// 新增资金明细
 const handleAddTransfer = () => {
   editingRecord.value = null;
   showEditor.value = true;
 };
 
-// 编辑转账
+// 编辑资金明细
 const handleEditTransfer = (record: TransferRecord) => {
   editingRecord.value = record;
   showEditor.value = true;
 };
 
-// 保存转账（新增或更新）
-const handleSaveTransfer = async (data: { transferDate: string; amount: number; type: 'IN' | 'OUT' }) => {
+// 保存资金明细（新增或更新）
+const handleSaveTransfer = async (data: { transferDate: string; amount: number; type: 'IN' | 'OUT' | 'DIVIDEND' | 'DIVIDEND_TAX' | 'STOCK_BUY' | 'STOCK_SELL' | 'INTEREST'; accountBalance?: number }) => {
   try {
     if (editingRecord.value) {
       // 更新
       await store.updateTransferRecord(editingRecord.value.id, data);
     } else {
       // 新增
-      await store.addTransferRecord(data);
+      const { accountBalance, ...newRecordData } = data;
+      await store.addTransferRecord(newRecordData as any);
     }
   } catch (error) {
     console.error('Save error:', error);
   }
 };
 
-// 删除转账
+// 删除资金明细
 const handleDeleteTransfer = (record: TransferRecord) => {
   deletingRecord.value = record;
   showDeleteConfirm.value = true;
@@ -162,6 +163,8 @@ const confirmDelete = async () => {
 .tab-content {
   flex: 1;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .placeholder-content {

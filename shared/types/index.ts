@@ -420,18 +420,20 @@ export interface GridStrategyAPI {
 }
 
 /**
- * 转账记录
- * 用于资金管理的转账记录实体
+ * 资金明细记录
+ * 用于资金管理的资金明细实体（原转账记录升级为资金明细）
  */
 export interface TransferRecord {
   /** 唯一标识符 */
   id: number;
-  /** 转账日期 (YYYY-MM-DD) */
+  /** 日期 (YYYY-MM-DD) */
   transferDate: string;
-  /** 转账金额（正数） */
+  /** 金额（正数） */
   amount: number;
-  /** 转账类型：IN(转入) 或 OUT(转出) */
-  type: 'IN' | 'OUT';
+  /** 资金类型：IN(转入)、OUT(转出)、DIVIDEND(股息)、DIVIDEND_TAX(股息扣税)、STOCK_BUY(股票买入)、STOCK_SELL(股票卖出)、INTEREST(利息) */
+  type: 'IN' | 'OUT' | 'DIVIDEND' | 'DIVIDEND_TAX' | 'STOCK_BUY' | 'STOCK_SELL' | 'INTEREST';
+  /** 账户余额（自动计算或手动设置） */
+  accountBalance: number;
   /** 创建时间 (ISO 8601) */
   createdAt?: string;
   /** 更新时间 (ISO 8601) */
@@ -460,21 +462,22 @@ export interface ProfitStatistics {
 }
 
 /**
- * 转账记录输入（新增时使用）
+ * 资金明细记录输入（新增时使用）
  */
 export interface TransferRecordInput {
   transferDate: string;
   amount: number;
-  type: 'IN' | 'OUT';
+  type: 'IN' | 'OUT' | 'DIVIDEND' | 'DIVIDEND_TAX' | 'STOCK_BUY' | 'STOCK_SELL' | 'INTEREST';
 }
 
 /**
- * 转账记录更新（修改时使用）
+ * 资金明细记录更新（修改时使用）
  */
 export interface TransferRecordUpdate {
   transferDate?: string;
   amount?: number;
-  type?: 'IN' | 'OUT';
+  type?: 'IN' | 'OUT' | 'DIVIDEND' | 'DIVIDEND_TAX' | 'STOCK_BUY' | 'STOCK_SELL' | 'INTEREST';
+  accountBalance?: number; // 允许手动修改账户余额
 }
 
 /**
@@ -498,10 +501,8 @@ export interface FundManagementAPI {
   }>;
   /** 获取当前持仓总市值 */
   getCurrentHoldingsTotal(): Promise<number>;
-  /** 获取账户余额 */
+  /** 获取账户余额（从资金明细最后一条记录获取） */
   getAccountBalance(): Promise<number>;
-  /** 更新账户余额 */
-  updateAccountBalance(balance: number): Promise<boolean>;
 }
 
 declare global {

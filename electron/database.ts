@@ -132,9 +132,6 @@ export async function initDatabase(): Promise<void> {
     // 初始化转账记录表
     initializeTransferRecordsTable();
 
-    // 初始化账户配置表
-    initializeAccountConfigTable();
-
     const result = db.exec("SELECT * FROM config WHERE key = 'app_config'");
     if (result.length === 0 || result[0].values.length === 0) {
       const defaultConfigJson = JSON.stringify(DEFAULT_CONFIG);
@@ -153,7 +150,7 @@ export async function initDatabase(): Promise<void> {
   }
 }
 
-function saveDatabase(): void {
+export function saveDatabase(): void {
   if (!db) {
     log.warn('saveDatabase: db is null');
     return;
@@ -623,42 +620,7 @@ export function getTradeRecordsByStockCode(stockCode: string): TradeRecord[] {
   return result[0].values.map(rowToTradeRecord);
 }
 
-/**
- * 初始化账户配置表
- * 创建 account_config 表用于存储账户余额等配置信息
- */
-export function initializeAccountConfigTable(): void {
-  const database = getDb();
-  
-  // 检查表是否已存在
-  const tableExists = database.exec(`
-    SELECT name FROM sqlite_master 
-    WHERE type='table' AND name='account_config'
-  `);
-  
-  if (tableExists.length === 0) {
-    log.info('创建 account_config 表');
-    
-    // 创建账户配置表
-    database.run(`
-      CREATE TABLE account_config (
-        id INTEGER PRIMARY KEY CHECK(id = 1),
-        account_balance REAL NOT NULL DEFAULT 0,
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
-      )
-    `);
-    
-    // 插入默认记录（id固定为1，只有一条记录）
-    database.run(`
-      INSERT INTO account_config (id, account_balance) VALUES (1, 0)
-    `);
-    
-    saveDatabase();
-    log.info('account_config 表及默认数据创建完成');
-  } else {
-    log.info('account_config 表已存在，跳过创建');
-  }
-}
+
 
 /**
  * 初始化转账记录表
@@ -676,13 +638,14 @@ export function initializeTransferRecordsTable(): void {
   if (tableExists.length === 0) {
     log.info('创建 transfer_records 表');
     
-    // 创建转账记录表
+    // 创建资金明细表（包含account_balance字段）
     database.run(`
       CREATE TABLE transfer_records (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         transfer_date TEXT NOT NULL,
         amount REAL NOT NULL CHECK(amount > 0),
-        type TEXT NOT NULL CHECK(type IN ('IN', 'OUT')),
+        type TEXT NOT NULL CHECK(type IN ('IN', 'OUT', 'DIVIDEND', 'DIVIDEND_TAX', 'STOCK_BUY', 'STOCK_SELL', 'INTEREST')),
+        account_balance REAL NOT NULL DEFAULT 0,
         created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
         updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
       )
@@ -695,5 +658,7 @@ export function initializeTransferRecordsTable(): void {
     log.info('transfer_records 表及索引创建完成');
   } else {
     log.info('transfer_records 表已存在，跳过创建');
+    // 注意：如果需要迁移，请手动执行: npm run migrate
+    // 详见: docs/数据库迁移指南.md
   }
 }

@@ -23,7 +23,26 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   // Actions
   
   /**
-   * 获取转账记录列表（支持分页）
+   * 计算账户余额（辅助方法）
+   * @param previousBalance 上一条记录的余额
+   * @param amount 当前记录金额
+   * @param type 资金类型
+   * @returns 计算后的余额
+   */
+  function calculateAccountBalance(previousBalance: number, amount: number, type: string): number {
+    // IN、DIVIDEND、STOCK_SELL、INTEREST 增加余额
+    if (type === 'IN' || type === 'DIVIDEND' || type === 'STOCK_SELL' || type === 'INTEREST') {
+      return previousBalance + amount;
+    } 
+    // OUT、DIVIDEND_TAX、STOCK_BUY 减少余额
+    else if (type === 'OUT' || type === 'DIVIDEND_TAX' || type === 'STOCK_BUY') {
+      return previousBalance - amount;
+    }
+    return previousBalance;
+  }
+
+  /**
+   * 获取资金明细记录列表（支持分页）
    */
   async function fetchTransferRecords(reset: boolean = false): Promise<void> {
     try {
@@ -36,11 +55,16 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
         hasMore.value = true;
       }
 
+      console.log('Fetching records:', { reset, currentPage: currentPage.value, pageSize: pageSize.value, hasMore: hasMore.value });
+
       const offset = currentPage.value * pageSize.value;
       const records = await window.fundManagementAPI.getTransferRecords(pageSize.value, offset);
 
+      console.log('Fetched records count:', records.length);
+
       if (records.length < pageSize.value) {
         hasMore.value = false;
+        console.log('No more records to load');
       }
 
       if (reset) {
@@ -51,6 +75,13 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
 
       totalRecords.value += records.length;
       currentPage.value++;
+      
+      console.log('Current state:', {
+        totalRecords: totalRecords.value,
+        currentPage: currentPage.value,
+        hasMore: hasMore.value,
+        recordsCount: transferRecords.value.length
+      });
     } catch (err) {
       error.value = err instanceof Error ? err.message : '获取转账记录失败';
       console.error('fetchTransferRecords error:', err);
@@ -60,9 +91,9 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   }
 
   /**
-   * 新增转账记录
+   * 新增资金明细记录
    */
-  async function addTransferRecord(record: { transferDate: string; amount: number; type: 'IN' | 'OUT' }): Promise<void> {
+  async function addTransferRecord(record: { transferDate: string; amount: number; type: 'IN' | 'OUT' | 'DIVIDEND' | 'DIVIDEND_TAX' | 'STOCK_BUY' | 'STOCK_SELL' | 'INTEREST' }): Promise<void> {
     try {
       isLoading.value = true;
       error.value = null;
@@ -81,9 +112,9 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   }
 
   /**
-   * 更新转账记录
+   * 更新资金明细记录
    */
-  async function updateTransferRecord(id: number, data: { transferDate?: string; amount?: number; type?: 'IN' | 'OUT' }): Promise<void> {
+  async function updateTransferRecord(id: number, data: { transferDate?: string; amount?: number; type?: 'IN' | 'OUT' | 'DIVIDEND' | 'DIVIDEND_TAX' | 'STOCK_BUY' | 'STOCK_SELL' | 'INTEREST'; accountBalance?: number }): Promise<void> {
     try {
       isLoading.value = true;
       error.value = null;
@@ -102,7 +133,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   }
 
   /**
-   * 删除转账记录
+   * 删除资金明细记录
    */
   async function deleteTransferRecord(id: number): Promise<void> {
     try {
@@ -126,7 +157,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   }
 
   /**
-   * 获取账户余额（从数据库）
+   * 获取账户余额（从资金明细最后一条记录）
    */
   async function fetchAccountBalance(): Promise<void> {
     try {
@@ -135,38 +166,6 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     } catch (err) {
       console.error('fetchAccountBalance error:', err);
       accountBalance.value = 0; // 出错时默认为0
-    }
-  }
-
-  /**
-   * 更新账户余额（保存到数据库）
-   */
-  async function updateAccountBalance(newBalance: number): Promise<void> {
-    try {
-      isLoading.value = true;
-      error.value = null;
-
-      if (newBalance < 0) {
-        throw new Error('账户余额不能为负数');
-      }
-
-      await window.fundManagementAPI.updateAccountBalance(newBalance);
-      accountBalance.value = newBalance;
-      
-      // 如果已有盈利统计数据，重新计算
-      if (profitStatistics.value) {
-        await calculateProfit(
-          profitStatistics.value.startDate,
-          profitStatistics.value.endDate,
-          newBalance
-        );
-      }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : '更新账户余额失败';
-      console.error('updateAccountBalance error:', err);
-      throw err;
-    } finally {
-      isLoading.value = false;
     }
   }
 
@@ -250,7 +249,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     deleteTransferRecord,
     calculateProfit,
     fetchAccountBalance,
-    updateAccountBalance,
+    calculateAccountBalance, // 导出辅助方法
     clearError,
   };
 });

@@ -1,25 +1,25 @@
 # Implementation Plan: 资金管理功能
 
-**Branch**: `013-fund-management` | **Date**: 2026-05-03 | **Spec**: [spec.md](./spec.md)
+**Branch**: `feature/fund-detail-upgrade` | **Date**: 2026-05-03 | **Updated**: 2026-05-06 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/013-fund-management/spec.md`
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
 
 ## Summary
 
-实现资金管理功能页面，包含两个标签页：转账记录管理和盈利统计。转账记录支持增删改查操作，采用无限滚动加载；盈利统计基于用户选择的时间段计算转出金额-转入金额+当前持仓金额的盈利情况。使用模态对话框进行编辑和删除确认，实时查询持仓系统获取最新数据。
+实现资金管理功能页面，包含两个标签页：资金明细管理和盈利统计。资金明细支持增删改查操作，采用无限滚动加载，系统自动计算每条记录的账户余额；盈利统计基于用户选择的时间段计算转出金额+账户余额+当前持仓金额-转入金额的盈利情况。使用模态对话框进行编辑和删除确认，实时查询持仓系统获取最新数据。
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.4.2, Vue 3.4.21  
 **Primary Dependencies**: Pinia 3.0.4 (状态管理), sql.js 1.14.1 (本地数据库), Electron 28.2.10 (桌面框架)  
-**Storage**: SQLite via sql.js (本地数据库存储转账记录)  
+**Storage**: SQLite via sql.js (本地数据库存储资金明细记录和账户配置)  
 **Testing**: 暂无测试框架 (NEEDS CLARIFICATION - 项目未配置测试框架)  
 **Target Platform**: Windows desktop (Electron应用)  
 **Project Type**: desktop-app (Electron + Vite + Vue3)  
-**Performance Goals**: 转账列表初始20条记录1秒内加载，后续每批20条0.5秒内加载；盈利统计1秒内计算完成  
+**Performance Goals**: 资金明细列表初始20条记录1秒内加载，后续每批20条0.5秒内加载；盈利统计1秒内计算完成；账户余额自动计算在100ms内完成  
 **Constraints**: <1秒响应时间，离线可用（本地数据库），中文界面  
-**Scale/Scope**: 支持最多1000+条转账记录，单用户桌面应用
+**Scale/Scope**: 支持最多1000+条资金明细记录，单用户桌面应用
 
 ## Constitution Check
 
@@ -63,27 +63,33 @@ src/
 ├── views/
 │   └── FundManagementView.vue    # 资金管理主页面（包含两个标签页）
 ├── components/
-│   ├── TransferRecordList.vue    # 转账记录列表组件（无限滚动）
-│   ├── TransferRecordItem.vue    # 转账记录单项组件
-│   ├── TransferEditor.vue        # 转账编辑模态对话框
+│   ├── TransferRecordList.vue    # 资金明细列表组件（无限滚动）- 需重命名为FundDetailList.vue
+│   ├── TransferRecordItem.vue    # 资金明细单项组件 - 需重命名为FundDetailItem.vue
+│   ├── TransferEditor.vue        # 资金明细编辑模态对话框 - 需重命名为FundDetailEditor.vue
 │   ├── ProfitStatistics.vue      # 盈利统计组件
 │   └── DateRangePicker.vue       # 日期范围选择器组件
 ├── stores/
 │   └── fundManagement.ts         # 资金管理Pinia store
 ├── composables/
 │   └── useFundManagement.ts      # 资金管理组合式函数
-└── types.ts                      # 扩展类型定义（TransferRecord等）
+└── types.ts                      # 扩展类型定义（TransferRecord/FundDetailRecord等）
 
 electron/
-├── database.ts                   # 扩展现有数据库操作（添加转账记录表）
+├── database.ts                   # 扩展现有数据库操作（添加account_balance字段到transfer_records表）
 └── services/
-    └── fundService.ts            # 资金管理Electron服务（IPC handlers）
+    └── fundService.ts            # 资金管理Electron服务（IPC handlers，增加账户余额自动计算逻辑）
 
 shared/types/
-└── index.ts                      # 扩展现有类型定义（TransferRecord接口）
+└── index.ts                      # 扩展现有类型定义（TransferRecord更名为FundDetailRecord，增加accountBalance字段，扩展type枚举）
 ```
 
 **Structure Decision**: 采用单项目结构（Option 1），遵循现有项目架构模式。前端使用Vue 3组件化开发，状态管理使用Pinia，后端使用Electron IPC通信，数据存储使用sql.js本地数据库。新增功能模块与现有代码结构保持一致。
+
+**Key Changes from Original Design**:
+1. 组件命名：建议将Transfer*组件重命名为FundDetail*以反映新功能
+2. 数据库变更：在transfer_records表中增加account_balance字段
+3. 业务逻辑：增加账户余额自动计算和级联更新逻辑
+4. 类型扩展：资金类型从2种扩展到4种（IN/OUT/DIVIDEND/DIVIDEND_TAX）
 
 ## Complexity Tracking
 

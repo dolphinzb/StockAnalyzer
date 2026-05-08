@@ -522,6 +522,79 @@ export interface FundManagementAPI {
   getOpeningBalance(date: string): Promise<number>;
 }
 
+/**
+ * K线数据记录
+ * 代表一只股票某一天的日K线数据
+ */
+export interface KlineData {
+  /** 唯一标识符 */
+  id: number;
+  /** 股票代码（纯数字，与自选股表一致） */
+  stockCode: string;
+  /** 交易日期 (YYYY-MM-DD) */
+  tradeDate: string;
+  /** 开盘价 */
+  open: number | null;
+  /** 收盘价 */
+  close: number | null;
+  /** 最高价 */
+  high: number | null;
+  /** 最低价 */
+  low: number | null;
+  /** 成交量 */
+  volume: number | null;
+  /** 成交额 */
+  amount: number | null;
+  /** 振幅(%) */
+  amplitude: number | null;
+  /** 涨跌幅(%) */
+  changePercent: number | null;
+  /** 涨跌额 */
+  changeAmount: number | null;
+  /** 换手率(%) */
+  turnoverRate: number | null;
+  /** 创建时间 (ISO 8601) */
+  createdAt: string;
+  /** 更新时间 (ISO 8601) */
+  updatedAt: string;
+}
+
+/**
+ * K线数据下载结果
+ * 代表一次K线数据下载操作的返回结果
+ */
+export interface KlineDownloadResult {
+  /** 是否成功 */
+  success: boolean;
+  /** 获取的数据条数 */
+  count?: number;
+  /** 失败原因 */
+  error?: string;
+}
+
+/**
+ * K线数据下载输入参数
+ * 手动下载K线数据时的请求参数
+ */
+export interface KlineDownloadInput {
+  /** 股票代码（纯数字，如 '000001'） */
+  stockCode: string;
+  /** 开始日期 (YYYYMMDD) */
+  startDate: string;
+  /** 结束日期 (YYYYMMDD) */
+  endDate: string;
+}
+
+/**
+ * K线数据API类型 - 通过 preload contextBridge 暴露给渲染进程
+ */
+export interface KlineAPI {
+  /** 下载指定股票的K线数据 */
+  downloadKline(input: KlineDownloadInput): Promise<KlineDownloadResult>;
+  /** 获取指定股票的K线数据 */
+  getKlineData(stockCode: string, startDate?: string, endDate?: string): Promise<KlineData[]>;
+}
+
 declare global {
   interface Window {
     electronAPI: WindowAPI;
@@ -533,6 +606,7 @@ declare global {
     stockWatcherAPI: StockWatcherAPI;
     gridStrategyAPI: GridStrategyAPI;
     fundManagementAPI: FundManagementAPI;
+    klineAPI: KlineAPI;
   }
 }
 

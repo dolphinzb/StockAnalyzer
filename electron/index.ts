@@ -7,6 +7,7 @@ import {
   addStock,
   closeDatabase,
   addTradeRecord as dbAddTradeRecord,
+  getKlineData as dbGetKlineData,
   deleteStock,
   deleteTradeRecord,
   getDb,
@@ -38,6 +39,12 @@ import {
   getAllHistoricalTrades,
   getCycleDetails
 } from './services/historicalTradeService';
+import {
+  downloadKline,
+  startKlineDownloadScheduler,
+  stopKlineDownloadScheduler,
+  validateDownloadInput
+} from './services/klineDownloadService';
 import {
   fetchStockName,
   fetchStockPrices,
@@ -652,6 +659,36 @@ ipcMain.handle('backup:manual', async () => {
   }
 });
 
+/**
+ * 下载K线数据
+ */
+ipcMain.handle('kline:download', async (_event, input: { stockCode: string; startDate: string; endDate: string }) => {
+  log.info('IPC: kline:download', JSON.stringify(input));
+  try {
+    validateDownloadInput(input.stockCode, input.startDate, input.endDate);
+    return await downloadKline(input.stockCode, input.startDate, input.endDate);
+  } catch (error) {
+    log.error('IPC kline:download error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '未知错误',
+    };
+  }
+});
+
+/**
+ * 获取K线数据
+ */
+ipcMain.handle('kline:get-data', async (_event, stockCode: string, startDate?: string, endDate?: string) => {
+  log.debug('IPC: kline:get-data', stockCode, startDate, endDate);
+  try {
+    return dbGetKlineData(stockCode, startDate, endDate);
+  } catch (error) {
+    log.error('IPC kline:get-data error:', error);
+    throw error;
+  }
+});
+
 app.whenReady().then(async () => {
   log.info('App ready');
   app.applicationMenu = null;
@@ -664,6 +701,7 @@ app.whenReady().then(async () => {
   isQuitting = false;
   startScheduler(getEnabledStocks);
   startBackupScheduler(); // 启动数据库备份调度器
+  startKlineDownloadScheduler(); // 启动K线数据自动下载调度器
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -684,5 +722,6 @@ app.on('before-quit', () => {
   isQuitting = true;
   stopScheduler();
   stopBackupScheduler(); // 停止数据库备份调度器
+  stopKlineDownloadScheduler(); // 停止K线数据自动下载调度器
   closeDatabase();
 });

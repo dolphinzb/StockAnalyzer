@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AddTradeResult, CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategyAPI, IndexData, OpenResult, PositionResult, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
+import type { AddTradeResult, CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategyAPI, IndexData, KlineAPI, KlineDownloadInput, OpenResult, PositionResult, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
 
 // LogAPI 本地定义
 interface LogReadResult {
@@ -278,6 +278,14 @@ const fundManagementAPI: FundManagementAPI = {
     ipcRenderer.invoke('get-opening-balance', date),
 };
 
+// K线数据 API
+const klineAPI: KlineAPI = {
+  downloadKline: (input: KlineDownloadInput) =>
+    ipcRenderer.invoke('kline:download', input),
+  getKlineData: (stockCode: string, startDate?: string, endDate?: string) =>
+    ipcRenderer.invoke('kline:get-data', stockCode, startDate, endDate),
+};
+
 // 暴露所有 API 到渲染进程
 contextBridge.exposeInMainWorld('electronAPI', windowAPI);
 contextBridge.exposeInMainWorld('configAPI', configAPI);
@@ -289,3 +297,4 @@ contextBridge.exposeInMainWorld('backupApi', backupAPI);
 contextBridge.exposeInMainWorld('historicalTradeAPI', historicalTradeAPI);
 contextBridge.exposeInMainWorld('gridStrategyAPI', gridStrategyAPI);
 contextBridge.exposeInMainWorld('fundManagementAPI', fundManagementAPI);
+contextBridge.exposeInMainWorld('klineAPI', klineAPI);

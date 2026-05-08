@@ -10,6 +10,7 @@ const emit = defineEmits<{
   edit: [stockId: number];
   delete: [stockId: number];
   toggleMonitor: [stockId: number, enabled: boolean];
+  'download-kline': [stockCode: string];
 }>();
 
 function handleEdit(stockId: number) {
@@ -22,6 +23,11 @@ function handleDelete(stockId: number) {
 
 function handleToggleMonitor(stockId: number, enabled: boolean) {
   emit('toggleMonitor', stockId, enabled);
+}
+
+/** 处理下载K线事件 */
+function handleDownloadKline(stockCode: string) {
+  emit('download-kline', stockCode);
 }
 </script>
 
@@ -49,6 +55,7 @@ function handleToggleMonitor(stockId: number, enabled: boolean) {
         @edit="handleEdit"
         @delete="handleDelete"
         @toggle-monitor="handleToggleMonitor"
+        @download-kline="handleDownloadKline"
       />
     </div>
   </div>
@@ -66,7 +73,7 @@ function handleToggleMonitor(stockId: number, enabled: boolean) {
 
 .stock-list-header {
   display: grid;
-  grid-template-columns: 60px 60px 80px 80px 80px 80px 80px 90px 90px 90px 80px 120px;
+  grid-template-columns: 50px 50px 80px 80px 80px 80px 80px 90px 90px 90px 60px 180px;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   background-color: var(--bg-secondary);

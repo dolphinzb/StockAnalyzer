@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategy, GridStrategyAPI, IndexData, OpenResult, PositionResult, ProfitStatistics, StrategyApplication, TransferRecord, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
+import type { AddTradeResult, CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategyAPI, IndexData, OpenResult, PositionResult, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
 
 // LogAPI 本地定义
 interface LogReadResult {
@@ -100,7 +100,7 @@ interface PaginatedTradeRecords {
 interface PositionAPI {
   getPositions(): Promise<any[]>;
   getTradeRecords(stockCode: string, page?: number, pageSize?: number): Promise<PaginatedTradeRecords>;
-  addTradeRecord(trade: AddTradeInput): Promise<any>;
+  addTradeRecord(trade: AddTradeInput): Promise<AddTradeResult>;
   updateTradeRecord(trade: UpdateTradeInput): Promise<any>;
   deleteTradeRecord(id: number): Promise<boolean>;
   fetchPrices(stockCodes: string[]): Promise<{ stockCode: string; price: number; success: boolean; error?: string }[]>;
@@ -180,9 +180,9 @@ const positionAPI: PositionAPI = {
 
 // 网格交易 API
 const gridAPI: GridAPI = {
-  calculatePosition: (input: CalculatePositionInput): Promise<PositionResult> => 
+  calculatePosition: (input: CalculatePositionInput): Promise<PositionResult> =>
     ipcRenderer.invoke('grid:calculatePosition', input),
-  calculateOpen: (input: CalculateOpenInput): Promise<OpenResult> => 
+  calculateOpen: (input: CalculateOpenInput): Promise<OpenResult> =>
     ipcRenderer.invoke('grid:calculateOpen', input),
 };
 
@@ -260,20 +260,22 @@ const gridStrategyAPI: GridStrategyAPI = {
 
 // 资金管理 API
 const fundManagementAPI: FundManagementAPI = {
-  getTransferRecords: (limit: number, offset: number) => 
+  getTransferRecords: (limit: number, offset: number) =>
     ipcRenderer.invoke('get-transfer-records', limit, offset),
-  addTransferRecord: (record: TransferRecordInput) => 
+  addTransferRecord: (record: TransferRecordInput) =>
     ipcRenderer.invoke('add-transfer-record', record),
-  updateTransferRecord: (id: number, data: TransferRecordUpdate) => 
+  updateTransferRecord: (id: number, data: TransferRecordUpdate) =>
     ipcRenderer.invoke('update-transfer-record', id, data),
-  deleteTransferRecord: (id: number) => 
+  deleteTransferRecord: (id: number) =>
     ipcRenderer.invoke('delete-transfer-record', id),
-  getProfitStatistics: (startDate: string, endDate: string) => 
+  getProfitStatistics: (startDate: string, endDate: string) =>
     ipcRenderer.invoke('get-profit-statistics', startDate, endDate),
-  getCurrentHoldingsTotal: () => 
+  getCurrentHoldingsTotal: () =>
     ipcRenderer.invoke('get-current-holdings-total'),
-  getAccountBalance: () => 
+  getAccountBalance: () =>
     ipcRenderer.invoke('get-account-balance'),
+  getOpeningBalance: (date: string) =>
+    ipcRenderer.invoke('get-opening-balance', date),
 };
 
 // 暴露所有 API 到渲染进程

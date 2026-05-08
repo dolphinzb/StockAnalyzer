@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
-import type { TransferRecord, ProfitStatistics } from '../../shared/types';
+import { computed, ref } from 'vue';
+import type { ProfitStatistics, TransferRecord } from '../../shared/types';
 
 export const useFundManagementStore = defineStore('fundManagement', () => {
   // State
@@ -9,7 +9,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   const accountBalance = ref<number>(0); // 账户余额（从数据库加载）
   const isLoading = ref(false);
   const error = ref<string | null>(null);
-  
+
   // 分页相关状态
   const currentPage = ref(0);
   const pageSize = ref(20);
@@ -21,7 +21,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   const isEmpty = computed(() => transferRecords.value.length === 0);
 
   // Actions
-  
+
   /**
    * 计算账户余额（辅助方法）
    * @param previousBalance 上一条记录的余额
@@ -33,7 +33,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     // IN、DIVIDEND、STOCK_SELL、INTEREST 增加余额
     if (type === 'IN' || type === 'DIVIDEND' || type === 'STOCK_SELL' || type === 'INTEREST') {
       return previousBalance + amount;
-    } 
+    }
     // OUT、DIVIDEND_TAX、STOCK_BUY 减少余额
     else if (type === 'OUT' || type === 'DIVIDEND_TAX' || type === 'STOCK_BUY') {
       return previousBalance - amount;
@@ -75,7 +75,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
 
       totalRecords.value += records.length;
       currentPage.value++;
-      
+
       console.log('Current state:', {
         totalRecords: totalRecords.value,
         currentPage: currentPage.value,
@@ -99,7 +99,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
       error.value = null;
 
       await window.fundManagementAPI.addTransferRecord(record);
-      
+
       // 刷新列表（重置到第一页）
       await fetchTransferRecords(true);
     } catch (err) {
@@ -120,7 +120,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
       error.value = null;
 
       await window.fundManagementAPI.updateTransferRecord(id, data);
-      
+
       // 刷新列表
       await fetchTransferRecords(true);
     } catch (err) {
@@ -141,7 +141,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
       error.value = null;
 
       await window.fundManagementAPI.deleteTransferRecord(id);
-      
+
       // 从本地列表中移除
       const index = transferRecords.value.findIndex(r => r.id === id);
       if (index !== -1) {
@@ -190,6 +190,14 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
       // 获取转账统计
       const stats = await window.fundManagementAPI.getProfitStatistics(start, end);
 
+      // 获取期初余额（开始日期之前的最后一条记录的账户余额）
+      let openingBalance = 0;
+      try {
+        openingBalance = await window.fundManagementAPI.getOpeningBalance(start);
+      } catch (err) {
+        console.warn('获取期初余额失败:', err);
+      }
+
       // 获取当前持仓总市值
       let currentHoldings = 0;
       try {
@@ -199,12 +207,13 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
         // 持仓数据获取失败不影响显示，设为0
       }
 
-      // 计算盈利：转出金额 + 账户余额 + 当前持仓金额 - 转入金额
-      const profit = stats.totalOut + currentBalance + currentHoldings - stats.totalIn;
+      // 计算盈利：账户余额 + 当前持仓市值 - 期初余额 - (转入金额 - 转出金额)
+      const profit = currentBalance + currentHoldings - openingBalance - (stats.totalIn - stats.totalOut);
 
       profitStatistics.value = {
         startDate: start,
         endDate: end,
+        openingBalance,
         totalIn: stats.totalIn,
         totalOut: stats.totalOut,
         accountBalance: currentBalance,
@@ -237,11 +246,11 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     pageSize,
     hasMore,
     totalRecords,
-    
+
     // Getters
     recordsCount,
     isEmpty,
-    
+
     // Actions
     fetchTransferRecords,
     addTransferRecord,

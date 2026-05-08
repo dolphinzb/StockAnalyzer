@@ -90,7 +90,11 @@ async function handleSaveTrade(data: any) {
     if (data.id) {
       await window.positionApi.updateTradeRecord(data);
     } else {
-      await window.positionApi.addTradeRecord(data);
+      const result = await window.positionApi.addTradeRecord(data);
+      // 检查资金明细同步是否失败，显示Toast通知
+      if (!result.fundSyncSuccess) {
+        showToast(`资金明细同步失败：${result.fundSyncError || '未知错误'}，请手动补录`, 'warning');
+      }
     }
     handleCloseEditor();
     await loadPositions();
@@ -99,6 +103,30 @@ async function handleSaveTrade(data: any) {
     console.error('Failed to save trade:', error);
     throw error;
   }
+}
+
+/** Toast通知相关状态 */
+const toastMessage = ref('');
+const toastType = ref<'info' | 'warning' | 'error'>('info');
+const toastVisible = ref(false);
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * 显示Toast通知
+ * @param message 通知消息
+ * @param type 通知类型
+ * @param duration 显示时长（毫秒），默认3000
+ */
+function showToast(message: string, type: 'info' | 'warning' | 'error' = 'info', duration: number = 3000) {
+  toastMessage.value = message;
+  toastType.value = type;
+  toastVisible.value = true;
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+  }
+  toastTimer = setTimeout(() => {
+    toastVisible.value = false;
+  }, duration);
 }
 </script>
 
@@ -129,6 +157,13 @@ async function handleSaveTrade(data: any) {
       @save="handleSaveTrade"
       @close="handleCloseEditor"
     />
+
+    <!-- Toast通知组件，用于显示资金明细同步失败等非阻塞提示 -->
+    <Transition name="toast">
+      <div v-if="toastVisible" class="toast" :class="`toast-${toastType}`">
+        {{ toastMessage }}
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -171,5 +206,48 @@ async function handleSaveTrade(data: any) {
   padding: 2rem;
   text-align: center;
   color: var(--text-secondary);
+}
+
+/* Toast通知样式 */
+.toast {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  z-index: 9999;
+  max-width: 400px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.toast-warning {
+  background-color: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffb74d;
+}
+
+.toast-error {
+  background-color: #ffebee;
+  color: #c62828;
+  border: 1px solid #ef9a9a;
+}
+
+.toast-info {
+  background-color: #e3f2fd;
+  color: #1565c0;
+  border: 1px solid #90caf9;
+}
+
+/* Toast过渡动画 */
+.toast-enter-active,
+.toast-leave-active {
+  transition: all 0.3s ease;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(100%);
 }
 </style>

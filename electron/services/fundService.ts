@@ -1,12 +1,12 @@
-import { Database } from 'sql.js';
 import log from 'electron-log';
+import { Database } from 'sql.js';
 
 /**
  * 资金管理服务
  * 提供转账记录的CRUD操作和盈利统计功能
  */
 export class FundService {
-  constructor(private db: Database) {}
+  constructor(private db: Database) { }
 
   /**
    * 获取分页的资金明细记录列表（按日期倒序）
@@ -86,7 +86,7 @@ export class FundService {
 
       // 计算新记录的账户余额
       const newBalance = this.calculateBalance(previousBalance, record.amount, record.type);
-      
+
       // 确保保存前消除 -0
       const normalizedBalance = newBalance === 0 ? 0 : newBalance;
 
@@ -102,10 +102,10 @@ export class FundService {
       const newId = result[0].values[0][0] as number;
 
       log.info(`新增资金明细记录成功，ID: ${newId}, 余额: ${newBalance}`);
-      
+
       // 重新计算该日期之后的所有记录的余额
       this.recalculateBalancesAfterDate(record.transferDate);
-      
+
       return newId;
     } catch (error) {
       log.error('addTransferRecord error:', error);
@@ -122,7 +122,7 @@ export class FundService {
   async updateTransferRecord(id: number, data: { transferDate?: string; amount?: number; type?: string; accountBalance?: number | string | null }): Promise<boolean> {
     try {
       log.info(`updateTransferRecord called with data:`, JSON.stringify(data));
-      
+
       // 验证金额如果提供则必须为正数
       if (data.amount !== undefined && data.amount <= 0) {
         throw new Error('金额必须为正数');
@@ -139,14 +139,14 @@ export class FundService {
         `SELECT transfer_date FROM transfer_records WHERE id = ?`,
         [id]
       );
-      
+
       if (originalRecord.length === 0 || originalRecord[0].values.length === 0) {
         throw new Error('记录不存在');
       }
-      
+
       const originalDate = originalRecord[0].values[0][0] as string;
       const updateDate = data.transferDate || originalDate;
-      
+
       // 确定重算起点：使用原日期和更新日期中较早的那个
       const recalcStartDate = originalDate < updateDate ? originalDate : updateDate;
 
@@ -166,13 +166,13 @@ export class FundService {
         updates.push('type = ?');
         values.push(data.type);
       }
-      
+
       // 判断用户是否手动设置了账户余额（排除空值、空字符串、NaN）
-      const hasManualBalance = data.accountBalance !== undefined && 
-                               data.accountBalance !== null && 
-                               data.accountBalance !== '' && 
-                               !isNaN(Number(data.accountBalance));
-      
+      const hasManualBalance = data.accountBalance !== undefined &&
+        data.accountBalance !== null &&
+        data.accountBalance !== '' &&
+        !isNaN(Number(data.accountBalance));
+
       // 如果用户手动设置了账户余额，直接更新
       if (hasManualBalance) {
         updates.push('account_balance = ?');
@@ -202,7 +202,7 @@ export class FundService {
         log.info(`使用手动余额 ${data.accountBalance}，只重算后续记录`);
         this.recalculateBalancesAfterDate(originalDate);
       }
-      
+
       log.info(`更新资金明细记录成功，ID: ${id}`);
       return true;
     } catch (error) {
@@ -223,20 +223,20 @@ export class FundService {
         `SELECT transfer_date FROM transfer_records WHERE id = ?`,
         [id]
       );
-      
+
       let deleteDate = '';
       if (record.length > 0 && record[0].values.length > 0) {
         deleteDate = record[0].values[0][0] as string;
       }
-      
+
       // 删除记录
       this.db.run('DELETE FROM transfer_records WHERE id = ?', [id]);
-      
+
       // 如果获取到了日期，重新计算后续记录的余额
       if (deleteDate) {
         this.recalculateBalancesAfterDate(deleteDate);
       }
-      
+
       log.info(`删除资金明细记录成功，ID: ${id}`);
       return true;
     } catch (error) {
@@ -272,6 +272,30 @@ export class FundService {
       };
     } catch (error) {
       log.error('getTransferStatsInRange error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取指定日期之前的账户余额（期初余额）
+   * 即开始日期之前最后一条记录的account_balance
+   * @param date 日期字符串 (YYYY-MM-DD)
+   * @returns 期初余额，如果没有记录则返回0
+   */
+  async getOpeningBalance(date: string): Promise<number> {
+    try {
+      const result = this.db.exec(
+        `SELECT account_balance FROM transfer_records WHERE transfer_date < ? ORDER BY transfer_date DESC, id DESC LIMIT 1`,
+        [date]
+      );
+
+      if (result.length === 0 || result[0].values.length === 0) {
+        return 0;
+      }
+
+      return result[0].values[0][0] as number;
+    } catch (error) {
+      log.error('getOpeningBalance error:', error);
       throw error;
     }
   }
@@ -314,23 +338,23 @@ export class FundService {
     // 将金额转换为分（整数）进行计算，避免浮点数精度问题
     const previousCents = Math.round(previousBalance * 100);
     const amountCents = Math.round(amount * 100);
-    
+
     let resultCents: number;
-    
+
     // IN、DIVIDEND、STOCK_SELL、INTEREST 增加余额
     if (type === 'IN' || type === 'DIVIDEND' || type === 'STOCK_SELL' || type === 'INTEREST') {
       resultCents = previousCents + amountCents;
-    } 
+    }
     // OUT、DIVIDEND_TAX、STOCK_BUY 减少余额
     else if (type === 'OUT' || type === 'DIVIDEND_TAX' || type === 'STOCK_BUY') {
       resultCents = previousCents - amountCents;
     } else {
       resultCents = previousCents;
     }
-    
+
     // 转换回元，并保留2位小数
     const result = resultCents / 100;
-    
+
     // 消除 -0
     return result === 0 ? 0 : Number(result.toFixed(2));
   }
@@ -377,7 +401,7 @@ export class FundService {
         const type = row[2] as string;
 
         currentBalance = this.calculateBalance(currentBalance, amount, type);
-        
+
         // 确保保存前消除 -0
         const normalizedBalance = currentBalance === 0 ? 0 : currentBalance;
 
@@ -418,7 +442,7 @@ export class FundService {
         const type = row[2] as string;
 
         currentBalance = this.calculateBalance(currentBalance, amount, type);
-        
+
         // 确保保存前消除 -0
         const normalizedBalance = currentBalance === 0 ? 0 : currentBalance;
 

@@ -342,6 +342,14 @@ async function downloadWithRetry(stockCode: string, startDate: string, endDate: 
 - 修改 StockList.vue 增加列头
 - 在 watchlist store 中管理下载状态
 
+### 5. 与K线弹窗集成
+- 新增 KlineChartDialog.vue 组件，复用 Modal.vue
+- 新增 useKlineChart.ts composable 封装 Canvas 渲染逻辑
+- 修改 StockItem.vue 使股票名称可点击，触发K线弹窗
+- 新增 kline:get-chart-data IPC 通道（获取前复权/不复权K线数据）
+- 新增 kline:get-trade-records IPC 通道（复用已有 getTradeRecordsByStockCode 获取交易记录）
+- 在 preload 中扩展 KlineAPI 暴露 getChartData、getTradeRecords 方法
+
 ## Risk Assessment
 
 ### Low Risk
@@ -353,12 +361,176 @@ async function downloadWithRetry(stockCode: string, startDate: string, endDate: 
 - 交易日历API可用性：getTradingCalendar 可能返回大量数据，需要缓存策略
 - 自动下载定时任务：需确保Electron主进程持续运行
 - StockItem列宽调整：增加按钮后可能需要调整整体布局
+- Canvas拖动性能：大量K线数据时需确保60fps流畅拖动
+- 交易标注重叠：同一天多笔交易需合理排列
 
 ### Mitigation Strategies
 - 交易日历缓存：每天最多请求一次，API不可用时回退到周末排除
 - 定时任务可靠性：参考已有backupService的成熟模式
 - 布局调整：使用更紧凑的按钮样式，必要时调整grid列宽
+- Canvas性能优化：使用 requestAnimationFrame 节流重绘，仅绘制可视区域内的K线
+- 标注重叠处理：同一天多笔标注垂直排列，限制最大标注数量
 
 ## Open Questions (Resolved)
 
 ✅ All NEEDS CLARIFICATION items from Technical Context have been resolved through this research phase.
+
+---
+
+### 9. K线图渲染技术选型
+
+**Decision**: 使用 Canvas 2D API 渲染K线图，通过 Vue 3 composable (`useKlineChart.ts`) 封装渲染逻辑
+
+**Rationale**:
+- Canvas 渲染性能优于 SVG，适合大量K线数据的实时绘制（FR-017要求60fps拖动）
+- 项目为 Electron 桌面应用，Canvas 兼容性无问题
+- 使用 composable 封装，与 Vue 3 响应式系统良好集成
+- 拖动交互通过 Canvas mousedown/mousemove/mouseup 事件实现，性能可控
+
+**Implementation approach**:
+```typescript
+// useKlineChart.ts composable
+export function useKlineChart(canvas: Ref<HTMLCanvasElement | null>) {
+  const offsetX = ref(0); // 拖动偏移量
+  
+  // 绘制K线图
+  function drawChart(klines: KlineData[], markers: TradeMarker[]) {
+    const ctx = canvas.value?.getContext('2d');
+    if (!ctx) return;
+    
+    // 清空画布
+    ctx.clearRect(0, 0, width, height);
+    
+    // 绘制蜡烛图区域（上方70%）
+    drawCandles(ctx, klines, offsetX.value);
+    
+    // 绘制成交量区域（下方30%）
+    drawVolume(ctx, klines, offsetX.value);
+    
+    // 绘制交易标注
+    drawTradeMarkers(ctx, klines, markers, offsetX.value);
+    
+    // 绘制坐标轴
+    drawAxis(ctx, klines, offsetX.value);
+  }
+  
+  // 拖动交互
+  function onDrag(deltaX: number) {
+    offsetX.value += deltaX;
+    drawChart(klines, markers); // 重绘
+  }
+}
+```
+
+**Alternatives considered**:
+- SVG渲染：大量DOM节点影响性能，不适合拖动交互
+- 第三方K线图库（如 klinecharts）：增加依赖，且需要适配项目数据格式
+- WebGL渲染：过度设计，Canvas 2D已满足性能需求
+
+---
+
+### 10. 交易标注实现方案
+
+**Decision**: 复用已有的 `TradeRecord` 实体和 `getTradeRecordsByStockCode` 数据库函数，新增 `kline:get-trade-records` IPC 通道，在 Canvas 上叠加绘制 B/S/D 标记
+
+**Rationale**:
+- 已有 `TradeRecord` 实体包含K线标注所需的全部字段（tradeDate、tradeType、tradePrice、tradeCount、holdingCount）
+- 已有 `getTradeRecordsByStockCode` 函数可按股票代码查询所有交易记录，无需新增数据库函数
+- 避免创建冗余的 TradeMarker 类型，减少代码维护成本
+- trade_record 表已有 BUY/SELL/DIVIDEND 三种类型，直接映射为 B/S/D
+- 在 Canvas 上绘制标注文字，与K线图在同一渲染层，避免 DOM 叠加的复杂性
+- 悬停显示详情通过 Canvas mousemove 事件检测标注区域实现
+
+**Why not reuse `positionApi.getTradeRecords`**:
+- 已有 `positionApi.getTradeRecords(stockCode, page, pageSize)` 映射到 `position:get-records` IPC
+- 但该接口使用**分页**且仅返回**当前持仓周期**（lastZero之后）的记录
+- K线图需要**全部历史交易记录**（包括已清仓的周期），语义不同
+- 因此需要新增 `kline:get-trade-records` IPC，调用 `getTradeRecordsByStockCode` 返回全部记录
+
+**Implementation approach**:
+```typescript
+// 复用已有函数获取交易记录
+const tradeRecords = getTradeRecordsByStockCode(stockCode);
+
+// 交易标注绘制
+function drawTradeMarkers(ctx, klines, tradeRecords, offsetX) {
+  for (const record of tradeRecords) {
+    const klineIndex = klines.findIndex(k => k.tradeDate === record.tradeDate);
+    if (klineIndex === -1) continue; // 日期不在K线数据范围内
+    
+    const x = (klineIndex + offsetX) * candleWidth;
+    const y = record.tradeType === 'BUY' ? getBuyY(klines[klineIndex]) : getSellY(klines[klineIndex]);
+    
+    // 绘制标注文字
+    ctx.fillStyle = record.tradeType === 'BUY' ? '#22c55e' : 
+                    record.tradeType === 'SELL' ? '#ef4444' : '#3b82f6';
+    const label = record.tradeType === 'BUY' ? 'B' : 
+                  record.tradeType === 'SELL' ? 'S' : 'D';
+    ctx.fillText(label, x, y);
+  }
+}
+```
+
+**Alternatives considered**:
+- HTML元素叠加：拖动时需要同步移动，性能差
+- 使用第三方标注库：增加依赖，Canvas直接绘制更灵活
+
+---
+
+### 11. 复权方式切换实现
+
+**Decision**: 切换复权方式时通过 IPC 调用主进程，使用 stock-sdk 的 adjust 参数重新获取对应复权类型的K线数据
+
+**Rationale**:
+- stock-sdk 的 getHistoryKline 支持 `adjust: 'qfq'`（前复权）和 `adjust: ''`（不复权）
+- 前复权计算由 stock-sdk 在服务端完成，客户端无需实现复权算法
+- 切换时重新获取数据并重新渲染，确保数据准确性
+- 默认展示前复权（FR-016要求），不复权为可选切换
+
+**Implementation approach**:
+```typescript
+// 主进程：获取K线图展示数据
+ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjust: 'qfq' | '') => {
+  const klines = await sdk.getHistoryKline(stockCode, {
+    period: 'daily',
+    adjust,  // 'qfq' 前复权 | '' 不复权
+  });
+  return klines;
+});
+
+// 渲染进程：切换复权方式
+async function switchAdjustType(adjust: 'qfq' | '') {
+  const klines = await window.klineAPI.getChartData(stockCode, adjust);
+  drawChart(klines, tradeMarkers);
+}
+```
+
+**Alternatives considered**:
+- 客户端自行计算前复权：算法复杂，需获取除权除息数据，stock-sdk已封装
+- 缓存两种复权数据：内存占用翻倍，切换频率低，实时获取即可
+- 仅使用数据库中已下载的不复权数据：无法展示前复权，不满足需求
+
+---
+
+### 12. 可复用组件和函数清单
+
+**Decision**: K线弹窗展示功能最大化复用已有代码，减少新增代码量
+
+**完整复用清单**:
+
+| 复用项 | 位置 | 复用方式 | 说明 |
+|--------|------|----------|------|
+| `Modal.vue` | `src/components/Modal.vue` | KlineChartDialog 直接包裹 | 支持 v-model、title、closeOnOverlayClick、过渡动画 |
+| `useToast` | `src/composables/useToast.ts` | 通知提示 | success/error/info 三种类型 |
+| `DateRangePicker.vue` | `src/components/DateRangePicker.vue` | KlineDownloadDialog 已复用 | 日期选择+验证 |
+| `TradeRecord` 类型 | `shared/types/index.ts` | 交易标注复用 | 含 tradeDate、tradeType、tradePrice、tradeCount、holdingCount |
+| `getTradeRecordsByStockCode` | `electron/database.ts` | 查询全部交易记录 | 返回 TradeRecord[]，按 trade_date ASC 排序 |
+| `StockItem.vue` 的 `col-name` | `src/components/StockItem.vue` | 添加 click 事件 | 仅需加 @click 和 cursor:pointer 样式 |
+| `watchlist store` | `src/stores/watchlist.ts` | 扩展弹窗状态 | 已有 downloadKline/isDownloading 方法 |
+
+**不可复用项及原因**:
+
+| 不可复用项 | 位置 | 原因 |
+|------------|------|------|
+| `positionApi.getTradeRecords` | `preload/index.ts` | 分页返回 + 仅返回当前持仓周期（lastZero之后）的记录，K线图需要全部历史交易记录 |
+| `position:get-records` IPC | `electron/index.ts` | 同上，底层调用 getTradeRecords（分页版），非 getTradeRecordsByStockCode（全量版） |

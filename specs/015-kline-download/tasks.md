@@ -1,4 +1,4 @@
-# Tasks: 自选股K线数据下载功能
+# Tasks: 自选股K线数据下载与展示功能
 
 **Feature**: 015-kline-download  
 **Branch**: `015-kline-download`  
@@ -16,12 +16,15 @@ graph TD
     C --> E[Phase 5: US3 - 下载进度与结果反馈 P2]
     D --> E
     E --> F[Phase 6: Polish]
+    B --> G[Phase 7: US4 - K线弹窗展示 P1]
+    F --> G
 ```
 
 **User Story Completion Order**:
 1. **US1 (P1)**: 手动下载历史K线数据 - 基础下载逻辑和UI交互，可独立测试
 2. **US2 (P1)**: 自动下载当日K线数据 - 依赖下载服务，可独立测试
 3. **US3 (P2)**: 下载进度与结果反馈 - 增强用户体验，依赖US1/US2
+4. **US4 (P1)**: K线弹窗展示 - 依赖数据库和下载服务，点击股票名称展示K线图
 
 **Parallel Execution Opportunities**:
 - Phase 1中类型定义和npm安装可并行
@@ -40,7 +43,8 @@ graph TD
 1. MVP: 手动下载K线数据（US1）
 2. Add: 自动下载当日K线数据（US2）
 3. Add: 下载进度与结果反馈优化（US3）
-4. Polish: 边界情况处理和用户体验优化
+4. Add: K线弹窗展示（US4）
+5. Polish: 边界情况处理和用户体验优化
 
 ---
 
@@ -142,6 +146,33 @@ graph TD
 
 ---
 
+## Phase 7: User Story 4 - K线弹窗展示 (Priority: P1)
+
+**Goal**: 用户点击自选股列表中的股票名称，弹出K线弹窗展示日K线图，默认前复权模式，支持不复权/前复权切换，支持鼠标拖动查看不同日期范围，标注买入(B)、卖出(S)、分红(D)交易点
+
+**Independent Test**: 在自选股列表中点击一只已有K线数据和交易记录的股票名称，验证K线弹窗是否正确展示，复权切换是否生效，拖动是否流畅，交易点标注是否准确
+
+**复用清单**:
+- ✅ `Modal.vue` - K线弹窗复用已有模态框组件
+- ✅ `TradeRecord` 类型 - 交易标注复用已有实体，无需新建 TradeMarker
+- ✅ `getTradeRecordsByStockCode` - 数据库函数复用，返回全部交易记录
+- ✅ `useToast` - 通知提示复用
+- ✅ `StockItem.vue` 的 `col-name` - 仅需添加 click 事件和 hover 样式
+- ⚠️ `positionApi.getTradeRecords` - **不可直接复用**，因其使用分页+仅返回当前周期（lastZero之后）的记录，K线图需要全部历史交易记录
+
+- [x] T041 [US4] 在shared/types/index.ts中扩展KlineAPI接口添加getChartData(stockCode, adjust)和getTradeRecords(stockCode)方法（复用已有TradeRecord实体，无需新建TradeMarker类型）；在preload/index.ts中扩展klineAPI对象，添加getChartData和getTradeRecords方法，映射到kline:get-chart-data和kline:get-trade-records IPC通道
+- [x] T042 [US4] 在electron/index.ts中注册kline:get-chart-data IPC handler（调用getChartData获取K线图展示数据）和kline:get-trade-records IPC handler（复用已有getTradeRecordsByStockCode函数查询trade_record表全部交易记录，返回TradeRecord数组。注意：不能复用position:get-records，因为其使用分页且仅返回当前持仓周期的记录）
+- [x] T043 [US4] 在electron/services/klineDownloadService.ts中添加getChartData函数（接收stockCode和adjust参数，调用sdk.getHistoryKline获取对应复权类型的K线数据，adjust为'qfq'时获取前复权数据，adjust为''时获取不复权数据，返回KlineData数组）
+- [x] T044 [US4] 创建src/composables/useKlineChart.ts，实现K线图Canvas渲染逻辑（包含：canvas引用绑定、offsetX拖动偏移量管理、drawChart主绘制函数、drawCandles蜡烛图绘制、drawVolume成交量柱状图绘制、drawAxis坐标轴绘制、drawTradeMarkers交易标注绘制（使用TradeRecord类型）、onMouseDown/onMouseMove/onMouseUp拖动事件处理、onMouseMoveTooltip悬停检测，使用requestAnimationFrame节流重绘）
+- [x] T045 [US4] 创建src/components/KlineChartDialog.vue组件（复用已有Modal组件包裹，顶部显示股票名称和复权方式切换控件"前复权/不复权"默认前复权，中间区域放置Canvas元素，底部显示"暂无K线数据，请先下载"空状态提示，弹窗关闭时释放Canvas资源）
+- [x] T046 [US4] 修改src/components/StockItem.vue，使股票名称可点击（在已有col-name的span上添加click事件，触发show-kline-chart事件传递stockCode和stockName，名称样式添加cursor:pointer和hover效果）
+- [x] T047 [US4] 修改src/stores/watchlist.ts，添加klineChartDialog状态（包含visible、stockCode、stockName字段），添加openKlineChart和closeKlineChart方法
+- [x] T048 [US4] 修改src/views/WatchlistView.vue，集成KlineChartDialog组件（监听show-kline-chart事件调用store.openKlineChart，弹窗打开时通过klineAPI.getChartData获取前复权K线数据，通过klineAPI.getTradeRecords获取交易记录，调用useKlineChart的drawChart渲染，复权切换时重新获取数据并渲染，弹窗关闭时调用closeKlineChart）
+
+**Checkpoint**: US4完成 - K线弹窗展示功能可用，默认前复权，复权切换正常，拖动流畅，交易标注准确
+
+---
+
 ## Summary
 
 | Phase | Tasks | Story | Description |
@@ -152,12 +183,14 @@ graph TD
 | Phase 4: US2 | T025-T031 (7) | US2 | 自动下载当日K线 |
 | Phase 5: US3 | T032-T034 (3) | US3 | 下载进度与结果反馈 |
 | Phase 6: Polish | T035-T040 (6) | - | 边界情况与优化 |
-| **Total** | **40** | | |
+| Phase 7: US4 | T041-T048 (8) | US4 | K线弹窗展示 |
+| **Total** | **48** | | |
 
 **Task Count per User Story**:
 - US1 (手动下载): 6 tasks
 - US2 (自动下载): 7 tasks
 - US3 (进度反馈): 3 tasks
+- US4 (K线弹窗展示): 8 tasks
 - Shared (Setup + Foundational + Polish): 24 tasks
 
 **Parallel Opportunities**:

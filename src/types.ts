@@ -43,18 +43,6 @@ export interface PriceUpdate {
   timestamp: string;
 }
 
-export interface TradeRecord {
-  id: number;
-  stockCode: string;
-  stockName: string;
-  tradeDate: string;
-  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
-  tradePrice: number;
-  tradeCount: number;
-  holdingCount: number;
-  holdingPrice: number;
-}
-
 export interface Position {
   stockCode: string;
   stockName: string;
@@ -110,6 +98,7 @@ export type {
   PositionAPI,
   PositionResult,
   StockWatcherAPI,
-  TradeDetail
+  TradeDetail,
+  TradeRecord
 } from '../shared/types';
 

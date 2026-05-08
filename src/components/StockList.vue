@@ -11,6 +11,7 @@ const emit = defineEmits<{
   delete: [stockId: number];
   toggleMonitor: [stockId: number, enabled: boolean];
   'download-kline': [stockCode: string];
+  'show-kline-chart': [stockCode: string, stockName: string];
 }>();
 
 function handleEdit(stockId: number) {
@@ -28,6 +29,11 @@ function handleToggleMonitor(stockId: number, enabled: boolean) {
 /** 处理下载K线事件 */
 function handleDownloadKline(stockCode: string) {
   emit('download-kline', stockCode);
+}
+
+/** 处理股票名称点击，弹出K线图 */
+function handleShowKlineChart(stockCode: string, stockName: string) {
+  emit('show-kline-chart', stockCode, stockName);
 }
 </script>
 
@@ -56,6 +62,7 @@ function handleDownloadKline(stockCode: string) {
         @delete="handleDelete"
         @toggle-monitor="handleToggleMonitor"
         @download-kline="handleDownloadKline"
+        @show-kline-chart="handleShowKlineChart"
       />
     </div>
   </div>

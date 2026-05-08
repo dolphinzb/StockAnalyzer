@@ -11,7 +11,7 @@
 
 import log from 'electron-log';
 import { StockSDK } from 'stock-sdk';
-import type { KlineDownloadResult } from '../../shared/types';
+import type { KlineData, KlineDownloadResult } from '../../shared/types';
 import { getWatchlist, saveKlineData } from '../database';
 
 // StockSDK 模块级单例
@@ -265,5 +265,49 @@ export function stopKlineDownloadScheduler(): void {
     clearTimeout(downloadTimeout);
     downloadTimeout = null;
     log.info('⏹️  K线数据自动下载调度器已停止');
+  }
+}
+
+/**
+ * 获取K线图展示数据（支持前复权/不复权）
+ * 通过 stock-sdk 的 adjust 参数获取对应复权类型的K线数据
+ * @param stockCode 股票代码（纯数字）
+ * @param adjust 复权方式：'qfq' 前复权 | '' 不复权
+ * @returns K线数据数组
+ */
+export async function getChartData(stockCode: string, adjust: 'qfq' | ''): Promise<KlineData[]> {
+  try {
+    log.info(`获取K线图展示数据: ${stockCode}, 复权方式: ${adjust || '不复权'}`);
+
+    // 调用 stock-sdk 获取对应复权类型的K线数据
+    const klines = await sdk.getHistoryKline(stockCode, {
+      period: 'daily',
+      adjust,  // 'qfq' 前复权 | '' 不复权
+    });
+
+    // 转换为 KlineData 格式
+    const result: KlineData[] = klines.map(kline => ({
+      id: 0, // 临时ID，展示数据不需要数据库ID
+      stockCode: kline.code.replace(/^[a-z]+/, ''), // 去除前缀（如 sh.600000 → 600000）
+      tradeDate: kline.date,
+      open: kline.open ?? null,
+      close: kline.close ?? null,
+      high: kline.high ?? null,
+      low: kline.low ?? null,
+      volume: kline.volume ?? null,
+      amount: kline.amount ?? null,
+      amplitude: kline.amplitude ?? null,
+      changePercent: kline.changePercent ?? null,
+      changeAmount: kline.change ?? null,
+      turnoverRate: kline.turnoverRate ?? null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+
+    log.info(`K线图展示数据获取成功: ${stockCode}, 共 ${result.length} 条`);
+    return result;
+  } catch (error) {
+    log.error(`获取K线图展示数据失败: ${stockCode}`, error instanceof Error ? error.message : String(error));
+    throw error;
   }
 }

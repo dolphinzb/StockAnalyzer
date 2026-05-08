@@ -13,6 +13,17 @@ export const useWatchlistStore = defineStore('watchlist', () => {
   // K线下载状态管理
   const downloadStatusMap = ref<Map<string, { isDownloading: boolean; result?: { success: boolean; count?: number; error?: string } | null }>>(new Map());
 
+  // K线弹窗状态
+  const klineChartDialog = ref<{
+    visible: boolean;
+    stockCode: string;
+    stockName: string;
+  }>({
+    visible: false,
+    stockCode: '',
+    stockName: '',
+  });
+
   // 指数数据状态
   const indexDataState = ref<IndexDataState>({
     indices: [],
@@ -120,6 +131,30 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     return downloadStatusMap.value.get(stockCode)?.isDownloading ?? false;
   }
 
+  /**
+   * 打开K线弹窗
+   * @param stockCode 股票代码
+   * @param stockName 股票名称
+   */
+  function openKlineChart(stockCode: string, stockName: string): void {
+    klineChartDialog.value = {
+      visible: true,
+      stockCode,
+      stockName,
+    };
+  }
+
+  /**
+   * 关闭K线弹窗
+   */
+  function closeKlineChart(): void {
+    klineChartDialog.value = {
+      visible: false,
+      stockCode: '',
+      stockName: '',
+    };
+  }
+
   function handlePriceUpdate(prices: PriceUpdate[]): void {
     prices.forEach(update => {
       priceMap.value.set(update.stockCode, update);
@@ -172,6 +207,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     downloadStatusMap,
     enabledStocks,
     sortedStocks,
+    klineChartDialog,
     getCurrentPrice,
     getStockPrice,
     fetchStocks,
@@ -181,6 +217,8 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     refreshPrices,
     downloadKline,
     isDownloading,
+    openKlineChart,
+    closeKlineChart,
     handlePriceUpdate,
     handleAlert,
     handleRefreshTimeUpdate,

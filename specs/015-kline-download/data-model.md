@@ -132,6 +132,23 @@ ON kline_data(stock_code, trade_date);
 
 ---
 
+### 7. KlineChartData (K线图数据 - 运行时，不持久化)
+
+**Description**: K线弹窗展示用的完整数据集，包含K线数据和交易记录。
+
+**Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| stockCode | string | 股票代码 |
+| stockName | string | 股票名称 |
+| adjustType | 'qfq' \| '' | 复权方式，默认'qfq'前复权 |
+| klines | KlineData[] | K线数据列表 |
+| tradeRecords | TradeRecord[] | 交易记录列表（复用已有实体） |
+
+**Note**: 交易标注直接复用已有的 `TradeRecord` 实体（来自 trade_record 表），无需新建 TradeMarker 类型。TradeRecord 中已包含K线标注所需的全部字段：tradeDate（日期匹配）、tradeType（BUY→B, SELL→S, DIVIDEND→D）、tradePrice/tradeCount/holdingCount（tooltip详情展示）。数据库查询复用已有的 `getTradeRecordsByStockCode` 函数。
+
+---
+
 ## Data Flow
 
 ### 1. 手动下载K线数据流程
@@ -230,6 +247,60 @@ API不可用 → 回退到周末排除规则
 
 ---
 
+### 4. K线弹窗展示流程
+
+```
+用户点击股票名称
+       ↓
+IPC调用 kline:get-chart-data { stockCode, adjust: 'qfq' }
+       ↓
+主进程调用 stock-sdk getHistoryKline(symbol, { adjust: 'qfq', startDate, endDate })
+       ↓
+获取前复权K线数据
+       ↓
+IPC调用 kline:get-trade-records { stockCode }
+       ↓
+主进程调用已有 getTradeRecordsByStockCode 查询 trade_record 表
+       ↓
+返回 TradeRecord[] (BUY→B, SELL→S, DIVIDEND→D)
+       ↓
+前端渲染K线图：
+  - Canvas绘制蜡烛图（开高低收）
+  - Canvas绘制成交量柱状图
+  - 在对应日期位置叠加绘制交易标注（B/S/D）
+       ↓
+用户交互：
+  - 切换复权方式 → 重新获取数据并渲染
+  - 鼠标拖动 → 更新偏移量并重绘
+  - 悬停交易标注 → 显示交易详情tooltip
+```
+
+**交易标注与K线数据匹配逻辑**:
+```
+TradeRecord.tradeDate === KlineData.tradeDate
+       ↓
+匹配成功 → 在该K线蜡烛图上方/下方绘制标注
+       ↓
+BUY → 绿色"B"标注在蜡烛图下方
+SELL → 红色"S"标注在蜡烛图上方
+DIVIDEND → 蓝色"D"标注在蜡烛图上方
+       ↓
+同一天多笔交易 → 标注垂直排列，避免重叠
+```
+
+**复权切换数据流**:
+```
+用户选择"不复权"
+       ↓
+IPC调用 kline:get-chart-data { stockCode, adjust: '' }
+       ↓
+主进程调用 stock-sdk getHistoryKline(symbol, { adjust: '' })
+       ↓
+返回不复权原始数据 → 重新渲染K线图
+```
+
+---
+
 ## Type Definitions
 
 ### New TypeScript Interfaces
@@ -297,6 +368,10 @@ export interface KlineAPI {
   downloadKline(input: KlineDownloadInput): Promise<KlineDownloadResult>;
   /** 获取指定股票的K线数据 */
   getKlineData(stockCode: string, startDate?: string, endDate?: string): Promise<KlineData[]>;
+  /** 获取K线图展示数据（含前复权/不复权） */
+  getChartData(stockCode: string, adjust: 'qfq' | ''): Promise<KlineData[]>;
+  /** 获取交易记录数据（复用已有TradeRecord实体） */
+  getTradeRecords(stockCode: string): Promise<TradeRecord[]>;
 }
 ```
 
@@ -320,3 +395,10 @@ export interface KlineAPI {
 - 非交易日跳过并记录日志
 - 自选股列表为空时跳过并记录日志
 - 失败时自动重试1次
+
+### K线弹窗验证
+- 默认展示前复权数据
+- 无K线数据时显示"暂无K线数据，请先下载"
+- 交易标注日期必须与K线数据日期匹配
+- 同一天多笔交易标注需垂直排列避免重叠
+- 交易日期在K线数据范围之外时不标注

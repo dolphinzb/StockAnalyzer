@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import IndexStatusBar from '../components/IndexStatusBar.vue';
+import KlineChartDialog from '../components/KlineChartDialog.vue';
 import KlineDownloadDialog from '../components/KlineDownloadDialog.vue';
 import RefreshButton from '../components/RefreshButton.vue';
 import StockEditor from '../components/StockEditor.vue';
@@ -89,6 +90,16 @@ async function handleKlineDownload(payload: { stockCode: string; startDate: stri
     showToast(`下载失败：${result.error}`, 'error', 0);
   }
 }
+
+/** 处理股票名称点击，打开K线弹窗 */
+function handleShowKlineChart(stockCode: string, stockName: string) {
+  store.openKlineChart(stockCode, stockName);
+}
+
+/** 处理K线弹窗关闭 */
+function handleCloseKlineChart() {
+  store.closeKlineChart();
+}
 </script>
 
 <template>
@@ -110,6 +121,7 @@ async function handleKlineDownload(payload: { stockCode: string; startDate: stri
       @delete="handleDeleteStock"
       @toggle-monitor="handleToggleMonitor"
       @download-kline="handleDownloadKline"
+      @show-kline-chart="handleShowKlineChart"
     />
 
     <StockEditor
@@ -125,6 +137,13 @@ async function handleKlineDownload(payload: { stockCode: string; startDate: stri
       :stock-code="klineDownloadStock.stockCode"
       :stock-name="klineDownloadStock.stockName"
       @download="handleKlineDownload"
+    />
+
+    <KlineChartDialog
+      v-model="store.klineChartDialog.visible"
+      :stock-code="store.klineChartDialog.stockCode"
+      :stock-name="store.klineChartDialog.stockName"
+      @update:model-value="handleCloseKlineChart"
     />
 
     <div v-if="sortedStocks.length === 0 && !store.isLoading" class="empty-state">

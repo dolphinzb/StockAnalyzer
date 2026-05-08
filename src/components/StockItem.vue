@@ -14,6 +14,7 @@ const emit = defineEmits<{
   delete: [stockId: number];
   toggleMonitor: [stockId: number, enabled: boolean];
   'download-kline': [stockCode: string];
+  'show-kline-chart': [stockCode: string, stockName: string];
 }>();
 
 function handleEdit() {
@@ -32,6 +33,11 @@ function handleToggleMonitor(event: Event) {
 /** 处理下载K线按钮点击 */
 function handleDownloadKline() {
   emit('download-kline', props.stock.stockCode);
+}
+
+/** 处理股票名称点击，弹出K线图 */
+function handleShowKlineChart() {
+  emit('show-kline-chart', props.stock.stockCode, props.stock.stockName);
 }
 
 const stockPrice = computed<PriceUpdate | null>(() => store.getStockPrice(props.stock.stockCode));
@@ -90,7 +96,7 @@ function getChangeColorClass(value: number | null): string {
 <template>
   <div class="stock-item" :class="{ 'monitor-enabled': stock.monitorEnabled }">
     <span class="col-code">{{ stock.stockCode }}</span>
-    <span class="col-name">{{ stock.stockName }}</span>
+    <span class="col-name col-name-clickable" @click="handleShowKlineChart">{{ stock.stockName }}</span>
     <span class="col-price">{{ formatPrice(openPrice) }}</span>
     <span class="col-price">{{ formatPrice(highPrice) }}</span>
     <span class="col-price">{{ formatPrice(lowPrice) }}</span>
@@ -147,6 +153,17 @@ function getChangeColorClass(value: number | null): string {
 .stock-item > span {
   text-align: center;
   font-family: monospace;
+}
+
+/* 股票名称可点击样式 */
+.col-name-clickable {
+  cursor: pointer;
+  transition: color 0.2s;
+
+  &:hover {
+    color: #3b82f6;
+    text-decoration: underline;
+  }
 }
 
 .price-sell {

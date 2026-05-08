@@ -14,6 +14,7 @@ import {
   getEnabledStocks,
   getPositions,
   getTradeRecords,
+  getTradeRecordsByStockCode,
   getWatchlist,
   initDatabase,
   loadConfig,
@@ -41,6 +42,7 @@ import {
 } from './services/historicalTradeService';
 import {
   downloadKline,
+  getChartData,
   startKlineDownloadScheduler,
   stopKlineDownloadScheduler,
   validateDownloadInput
@@ -685,6 +687,33 @@ ipcMain.handle('kline:get-data', async (_event, stockCode: string, startDate?: s
     return dbGetKlineData(stockCode, startDate, endDate);
   } catch (error) {
     log.error('IPC kline:get-data error:', error);
+    throw error;
+  }
+});
+
+/**
+ * 获取K线图展示数据（支持前复权/不复权）
+ */
+ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjust: 'qfq' | '') => {
+  log.info('IPC: kline:get-chart-data', stockCode, adjust);
+  try {
+    return await getChartData(stockCode, adjust);
+  } catch (error) {
+    log.error('IPC kline:get-chart-data error:', error);
+    throw error;
+  }
+});
+
+/**
+ * 获取交易记录数据（K线图标注用，查询全部历史记录）
+ * 复用 getTradeRecordsByStockCode 函数，返回全部交易记录（非分页）
+ */
+ipcMain.handle('kline:get-trade-records', async (_event, stockCode: string) => {
+  log.debug('IPC: kline:get-trade-records', stockCode);
+  try {
+    return getTradeRecordsByStockCode(stockCode);
+  } catch (error) {
+    log.error('IPC kline:get-trade-records error:', error);
     throw error;
   }
 });

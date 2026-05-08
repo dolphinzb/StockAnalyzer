@@ -523,6 +523,31 @@ export interface FundManagementAPI {
 }
 
 /**
+ * 交易记录
+ * 代表一笔股票交易记录（买入/卖出/分红）
+ */
+export interface TradeRecord {
+  /** 唯一标识符 */
+  id: number;
+  /** 股票代码 */
+  stockCode: string;
+  /** 股票名称 */
+  stockName: string;
+  /** 交易日期 (YYYY-MM-DD) */
+  tradeDate: string;
+  /** 交易类型 */
+  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
+  /** 交易价格 */
+  tradePrice: number;
+  /** 交易数量 */
+  tradeCount: number;
+  /** 持仓数量 */
+  holdingCount: number;
+  /** 持仓均价 */
+  holdingPrice: number;
+}
+
+/**
  * K线数据记录
  * 代表一只股票某一天的日K线数据
  */
@@ -593,6 +618,10 @@ export interface KlineAPI {
   downloadKline(input: KlineDownloadInput): Promise<KlineDownloadResult>;
   /** 获取指定股票的K线数据 */
   getKlineData(stockCode: string, startDate?: string, endDate?: string): Promise<KlineData[]>;
+  /** 获取K线图展示数据（支持前复权/不复权） */
+  getChartData(stockCode: string, adjust: 'qfq' | ''): Promise<KlineData[]>;
+  /** 获取交易记录数据（复用已有TradeRecord实体，查询全部历史记录） */
+  getTradeRecords(stockCode: string): Promise<TradeRecord[]>;
 }
 
 declare global {

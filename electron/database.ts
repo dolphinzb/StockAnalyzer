@@ -3,7 +3,7 @@ import log from 'electron-log';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import initSqlJs, { Database } from 'sql.js';
-import type { AppConfig } from '../shared/types';
+import type { AddTradeResult, AppConfig } from '../shared/types';
 import { calcHoldingPrice, type CalcResult } from './services/tradeService';
 
 /**
@@ -506,7 +506,7 @@ export function getTradeRecords(stockCode: string, page: number = 1, pageSize: n
   if (lastZero) {
     // 找到清仓后的第一笔买入记录
     const firstOpenAfterZero = getFirstOpenAfterZero(stockCode, lastZero.tradeDate);
-    
+
     if (firstOpenAfterZero) {
       // 如果有新的开仓记录，从该记录开始查询
       countQuery = `SELECT COUNT(*) as total FROM trade_record WHERE stock_code = ? AND trade_date >= ?`;
@@ -551,7 +551,7 @@ export function getTradeRecords(stockCode: string, page: number = 1, pageSize: n
   return { records, total, hasMore };
 }
 
-export function addTradeRecord(input: AddTradeInput): TradeRecord {
+export function addTradeRecord(input: AddTradeInput): AddTradeResult {
   const database = getDb();
   // 获取最新交易记录用于计算持仓，只需第一页第一条
   const paginatedResult = getTradeRecords(input.stockCode, 1, 1);
@@ -580,7 +580,8 @@ export function addTradeRecord(input: AddTradeInput): TradeRecord {
   if (result.length === 0 || result[0].values.length === 0) {
     throw new Error('添加交易记录失败');
   }
-  return rowToTradeRecord(result[0].values[0]);
+  const record = rowToTradeRecord(result[0].values[0]);
+  return { record, fundSyncSuccess: true };
 }
 
 /**
@@ -628,16 +629,16 @@ export function getTradeRecordsByStockCode(stockCode: string): TradeRecord[] {
  */
 export function initializeTransferRecordsTable(): void {
   const database = getDb();
-  
+
   // 检查表是否已存在
   const tableExists = database.exec(`
     SELECT name FROM sqlite_master 
     WHERE type='table' AND name='transfer_records'
   `);
-  
+
   if (tableExists.length === 0) {
     log.info('创建 transfer_records 表');
-    
+
     // 创建资金明细表（包含account_balance字段）
     database.run(`
       CREATE TABLE transfer_records (
@@ -650,11 +651,11 @@ export function initializeTransferRecordsTable(): void {
         updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
       )
     `);
-    
+
     // 创建索引优化查询性能
     database.run(`CREATE INDEX idx_transfer_date_desc ON transfer_records(transfer_date DESC)`);
     database.run(`CREATE INDEX idx_transfer_type_date ON transfer_records(type, transfer_date)`);
-    
+
     log.info('transfer_records 表及索引创建完成');
   } else {
     log.info('transfer_records 表已存在，跳过创建');

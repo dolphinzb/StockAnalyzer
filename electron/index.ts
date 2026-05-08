@@ -9,6 +9,7 @@ import {
   addTradeRecord as dbAddTradeRecord,
   deleteStock,
   deleteTradeRecord,
+  getDb,
   getEnabledStocks,
   getPositions,
   getTradeRecords,
@@ -16,24 +17,23 @@ import {
   initDatabase,
   loadConfig,
   saveConfig,
+  saveDatabase,
   updateStock,
   updateTradeRecord,
-  getDb,
-  saveDatabase,
   type AddStockInput,
   type AddTradeInput,
   type UpdateStockInput,
-  type UpdateTradeInput,
-  type Position
+  type UpdateTradeInput
 } from './database';
-import {
-  calculateOpen,
-  calculatePosition
-} from './services/gridService';
 import {
   startBackupScheduler,
   stopBackupScheduler
 } from './services/backupService';
+import { FundService } from './services/fundService';
+import {
+  calculateOpen,
+  calculatePosition
+} from './services/gridService';
 import {
   getAllHistoricalTrades,
   getCycleDetails
@@ -46,7 +46,6 @@ import {
   startScheduler,
   stopScheduler
 } from './services/priceFetcher';
-import { FundService } from './services/fundService';
 
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
@@ -306,10 +305,66 @@ ipcMain.handle('position:get-records', (_event, stockCode: string, page?: number
   }
 });
 
-ipcMain.handle('position:add-record', (_event, input: AddTradeInput) => {
+ipcMain.handle('position:add-record', async (_event, input: AddTradeInput) => {
   log.info('IPC: position:add-record', JSON.stringify(input));
   try {
-    return dbAddTradeRecord(input);
+    const result = dbAddTradeRecord(input);
+
+    // 交易记录保存成功后，自动同步到资金明细
+    try {
+      if (!fundService) {
+        throw new Error('fundService未初始化');
+      }
+
+      if (input.tradeType === 'BUY') {
+        // 买入：创建STOCK_BUY记录，金额=买入金额+手续费
+        const { calcStockBuyAmount } = await import('./services/tradeService');
+        const buyAmount = calcStockBuyAmount(input.tradePrice, input.tradeCount, input.stockCode);
+        await fundService.addTransferRecord({
+          transferDate: input.tradeDate,
+          amount: buyAmount,
+          type: 'STOCK_BUY',
+        });
+      } else if (input.tradeType === 'SELL') {
+        // 卖出：创建STOCK_SELL记录，金额=卖出金额-手续费-印花税
+        const { calcStockSellAmount, calcDividendTax, getNextDay } = await import('./services/tradeService');
+        const sellAmount = calcStockSellAmount(input.tradePrice, input.tradeCount, input.stockCode);
+        await fundService.addTransferRecord({
+          transferDate: input.tradeDate,
+          amount: sellAmount,
+          type: 'STOCK_SELL',
+        });
+
+        // 计算FIFO股息税，如果金额>0则创建DIVIDEND_TAX记录
+        const { getTradeRecordsByStockCode } = await import('./database');
+        const allTrades = getTradeRecordsByStockCode(input.stockCode);
+        const dividendTax = calcDividendTax(input.stockCode, input.tradeDate, input.tradeCount, allTrades);
+        if (dividendTax > 0) {
+          await fundService.addTransferRecord({
+            transferDate: getNextDay(input.tradeDate),
+            amount: dividendTax,
+            type: 'DIVIDEND_TAX',
+          });
+        }
+      } else if (input.tradeType === 'DIVIDEND') {
+        // 股息：创建DIVIDEND记录，金额=每股股息×持股数量
+        const dividendAmount = input.tradePrice * result.record.holdingCount;
+        if (dividendAmount > 0) {
+          await fundService.addTransferRecord({
+            transferDate: input.tradeDate,
+            amount: dividendAmount,
+            type: 'DIVIDEND',
+          });
+        }
+      }
+    } catch (syncError) {
+      // 同步失败不阻止交易记录保存，但记录错误信息
+      log.error('同步资金明细失败:', syncError);
+      result.fundSyncSuccess = false;
+      result.fundSyncError = syncError instanceof Error ? syncError.message : '未知错误';
+    }
+
+    return result;
   } catch (error) {
     log.error('IPC position:add-record error:', error);
     throw error;
@@ -479,11 +534,11 @@ ipcMain.handle('get-current-holdings-total', async () => {
   log.debug('IPC: get-current-holdings-total');
   try {
     const positions = getPositions();
-    
+
     if (positions.length === 0) {
       return 0;
     }
-    
+
     // 获取所有持仓股票的代码（添加市场前缀）
     const stockCodesWithPrefix = positions.map(p => {
       // 如果股票代码已经包含前缀，直接使用；否则根据代码规则添加
@@ -498,11 +553,11 @@ ipcMain.handle('get-current-holdings-total', async () => {
       }
       return p.stockCode; // 其他情况保持原样
     });
-    
+
     // 从价格服务获取实时价格（需要config参数）
     const config = currentConfig || loadConfig();
     const priceResults = await fetchStockPrices(stockCodesWithPrefix, config);
-    
+
     // 创建股票代码到价格的映射（使用不带前缀的代码作为key，与持仓数据匹配）
     const priceMap = new Map<string, number>();
     priceResults.forEach(result => {
@@ -512,7 +567,7 @@ ipcMain.handle('get-current-holdings-total', async () => {
         priceMap.set(codeWithoutPrefix, result.price);
       }
     });
-    
+
     // 计算总市值 = Σ(持仓数量 × 当前价格)
     const totalValue = positions.reduce((sum, position) => {
       const currentPrice = priceMap.get(position.stockCode);
@@ -521,10 +576,26 @@ ipcMain.handle('get-current-holdings-total', async () => {
       }
       return sum;
     }, 0);
-    
+
     return totalValue;
   } catch (error) {
     log.error('IPC get-current-holdings-total error:', error);
+    throw error;
+  }
+});
+
+/**
+ * 获取期初余额
+ */
+ipcMain.handle('get-opening-balance', async (_event, date: string) => {
+  log.debug('IPC: get-opening-balance', date);
+  try {
+    if (!fundService) {
+      throw new Error('FundService not initialized');
+    }
+    return await fundService.getOpeningBalance(date);
+  } catch (error) {
+    log.error('IPC get-opening-balance error:', error);
     throw error;
   }
 });

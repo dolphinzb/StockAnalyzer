@@ -28,6 +28,174 @@ export interface CalcResult {
   holdingPrice: number;
 }
 
+/**
+ * FIFO买入批次
+ * 用于股息税FIFO逐批计算
+ */
+export interface BuyBatch {
+  /** 批次剩余股数 */
+  remainingCount: number;
+  /** 买入日期 (YYYY-MM-DD) */
+  purchaseDate: string;
+}
+
+/**
+ * 计算买入交易的资金流出金额（买入金额+手续费）
+ * 复用现有手续费常量，与calcHoldingPrice中的手续费计算逻辑保持一致
+ * @param tradePrice 交易单价
+ * @param tradeCount 交易数量
+ * @param stockCode 股票代码（用于判断交易所）
+ * @returns 买入金额+手续费
+ */
+export function calcStockBuyAmount(tradePrice: number, tradeCount: number, stockCode: string): number {
+  const absCount = Math.abs(tradeCount);
+  const exchange = getExchange(stockCode);
+  const tradeFee = Math.max(absCount * tradePrice * TRADE_FEE_RATE, MIN_FEE);
+  const huaTaiFee = absCount * tradePrice * HUATAI_OTHER_FEE_RATE;
+  const tradeAmount = absCount * tradePrice;
+
+  let totalFee = tradeFee;
+  if (exchange === 'SHENZHEN') {
+    totalFee += huaTaiFee;
+  }
+  return tradeAmount + totalFee;
+}
+
+/**
+ * 计算卖出交易的资金流入金额（卖出金额-手续费-印花税）
+ * 复用现有手续费常量，与calcHoldingPrice中的手续费计算逻辑保持一致
+ * @param tradePrice 交易单价
+ * @param tradeCount 交易数量
+ * @param stockCode 股票代码（用于判断交易所）
+ * @returns 卖出金额-手续费-印花税
+ */
+export function calcStockSellAmount(tradePrice: number, tradeCount: number, stockCode: string): number {
+  const absCount = Math.abs(tradeCount);
+  const exchange = getExchange(stockCode);
+  const tradeFee = Math.max(absCount * tradePrice * TRADE_FEE_RATE, MIN_FEE);
+  const huaTaiFee = absCount * tradePrice * HUATAI_OTHER_FEE_RATE;
+  const tradeAmount = absCount * tradePrice;
+  const stampTax = tradeAmount * (exchange === 'BEIJING' ? 0 : SHANGHAI_STAMP_TAX_RATE);
+
+  let totalFee = tradeFee + stampTax;
+  if (exchange === 'SHENZHEN') {
+    totalFee += huaTaiFee;
+  } else if (exchange === 'SHANGHAI') {
+    totalFee += huaTaiFee;
+  }
+  return tradeAmount - totalFee;
+}
+
+/**
+ * 计算指定日期的次日日期
+ * 简单+1天，不考虑交易日历
+ * @param dateStr 日期字符串 (YYYY-MM-DD)
+ * @returns 次日日期字符串 (YYYY-MM-DD)
+ */
+export function getNextDay(dateStr: string): string {
+  const date = new Date(dateStr);
+  date.setDate(date.getDate() + 1);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * 计算两个日期之间的天数差
+ * @param startDateStr 开始日期 (YYYY-MM-DD)
+ * @param endDateStr 结束日期 (YYYY-MM-DD)
+ * @returns 天数差（endDate - startDate）
+ */
+export function calcDaysBetween(startDateStr: string, endDateStr: string): number {
+  const start = new Date(startDateStr);
+  const end = new Date(endDateStr);
+  const diffMs = end.getTime() - start.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * 根据持股天数判断股息红利税税率
+ * 持股期限 ≤ 1个月：税率10%
+ * 1个月 < 持股期限 ≤ 1年：税率5%
+ * 持股期限 > 1年：税率0%（免税）
+ * @param days 持股天数
+ * @returns 税率（0~0.1）
+ */
+export function getDividendTaxRate(days: number): number {
+  if (days <= 30) {
+    return 0.10;
+  } else if (days <= 365) {
+    return 0.05;
+  }
+  return 0;
+}
+
+/**
+ * 使用FIFO方法计算卖出时的股息税
+ * 根据买入批次和持股天数，逐批计算应扣股息税
+ * @param stockCode 股票代码
+ * @param sellDate 卖出日期 (YYYY-MM-DD)
+ * @param sellCount 卖出数量
+ * @param allTrades 该股票的所有交易记录（按日期升序排列）
+ * @returns 股息税金额（四舍五入到分）
+ */
+export function calcDividendTax(
+  stockCode: string,
+  sellDate: string,
+  sellCount: number,
+  allTrades: TradeRecord[]
+): number {
+  const absSellCount = Math.abs(sellCount);
+  // 构建FIFO买入批次列表：只取卖出日期之前的买入记录
+  const batches: BuyBatch[] = [];
+  for (const trade of allTrades) {
+    // 只处理卖出日期之前的交易
+    if (trade.tradeDate > sellDate) {
+      continue;
+    }
+    if (trade.tradeType === 'BUY') {
+      batches.push({
+        remainingCount: Math.abs(trade.tradeCount),
+        purchaseDate: trade.tradeDate,
+      });
+    } else if (trade.tradeType === 'SELL') {
+      // 卖出时按FIFO消耗之前的买入批次
+      let remaining = Math.abs(trade.tradeCount);
+      for (const batch of batches) {
+        if (remaining <= 0) break;
+        if (batch.remainingCount > 0) {
+          const consumed = Math.min(batch.remainingCount, remaining);
+          batch.remainingCount -= consumed;
+          remaining -= consumed;
+        }
+      }
+    }
+  }
+
+  // 按FIFO顺序消耗批次，计算卖出数量对应的股息税
+  let remainingSell = absSellCount;
+  let totalTax = 0;
+
+  for (const batch of batches) {
+    if (remainingSell <= 0) break;
+    if (batch.remainingCount <= 0) continue;
+
+    // 计算本批次被卖出的数量
+    const soldFromBatch = Math.min(batch.remainingCount, remainingSell);
+    // 计算持股天数
+    const holdingDays = calcDaysBetween(batch.purchaseDate, sellDate);
+    // 获取对应税率
+    const taxRate = getDividendTaxRate(holdingDays);
+    // 计算本批次的股息税（每股面值1元 × 卖出数量 × 税率）
+    totalTax += soldFromBatch * 1 * taxRate;
+    remainingSell -= soldFromBatch;
+  }
+
+  // 四舍五入到分
+  return Math.round(totalTax * 100) / 100;
+}
+
 export function calcHoldingPrice(
   preRecord: TradeRecord | null,
   tradeType: 'BUY' | 'SELL' | 'DIVIDEND',

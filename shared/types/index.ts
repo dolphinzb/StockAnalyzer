@@ -267,6 +267,19 @@ export interface HistoricalTradeAPI {
 }
 
 /**
+ * 新增交易记录的返回结果
+ * 包含交易记录和资金明细同步状态
+ */
+export interface AddTradeResult {
+  /** 交易记录 */
+  record: any;
+  /** 资金明细同步是否成功 */
+  fundSyncSuccess: boolean;
+  /** 同步失败原因（如果失败） */
+  fundSyncError?: string;
+}
+
+/**
  * 分页查询交易记录的返回结果
  */
 export interface PaginatedTradeRecords {
@@ -281,7 +294,7 @@ export interface PaginatedTradeRecords {
 export interface PositionAPI {
   getPositions(): Promise<any[]>;
   getTradeRecords(stockCode: string, page?: number, pageSize?: number): Promise<PaginatedTradeRecords>;
-  addTradeRecord(trade: any): Promise<any>;
+  addTradeRecord(trade: any): Promise<AddTradeResult>;
   updateTradeRecord(trade: any): Promise<any>;
   deleteTradeRecord(id: number): Promise<boolean>;
   fetchPrices(stockCodes: string[]): Promise<any[]>;
@@ -449,6 +462,8 @@ export interface ProfitStatistics {
   startDate: string;
   /** 结束日期 (YYYY-MM-DD) */
   endDate: string;
+  /** 期初余额（选定日期范围开始前的账户余额） */
+  openingBalance: number;
   /** 转入总金额 */
   totalIn: number;
   /** 转出总金额 */
@@ -457,7 +472,7 @@ export interface ProfitStatistics {
   accountBalance: number;
   /** 当前持仓市值 */
   currentHoldings: number;
-  /** 盈利金额 = totalOut + accountBalance + currentHoldings - totalIn */
+  /** 盈利金额 = accountBalance + currentHoldings - openingBalance - (totalIn - totalOut) */
   profit: number;
 }
 
@@ -503,6 +518,8 @@ export interface FundManagementAPI {
   getCurrentHoldingsTotal(): Promise<number>;
   /** 获取账户余额（从资金明细最后一条记录获取） */
   getAccountBalance(): Promise<number>;
+  /** 获取指定日期之前的期初余额 */
+  getOpeningBalance(date: string): Promise<number>;
 }
 
 declare global {

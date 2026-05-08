@@ -458,4 +458,220 @@ export class FundService {
       throw error;
     }
   }
+
+  /**
+   * 获取指定日期的持仓市值（使用kline_data收盘价计算）
+   * 对每只持股，从kline_data获取指定日期的收盘价，无数据时使用最近前一个交易日收盘价
+   * @param date 目标日期 (YYYY-MM-DD)
+   * @returns 持仓市值计算结果
+   */
+  async getHoldingsMarketValue(date: string): Promise<{
+    marketValue: number;
+    details: Array<{
+      stockCode: string;
+      stockName: string;
+      closePrice: number;
+      holdingCount: number;
+      marketValue: number;
+    }>;
+    missingKlineStocks: string[];
+  }> {
+    try {
+      // 获取截止指定日期的持仓股票（持仓数量>0）
+      // 使用子查询获取每只股票截止指定日期最近一条交易记录的持仓数量
+      const positionsResult = this.db.exec(`
+        SELECT t1.stock_code, t1.stock_name, t1.holding_count
+        FROM trade_record t1
+        INNER JOIN (
+          SELECT stock_code, MAX(trade_date) as max_date
+          FROM trade_record
+          WHERE trade_date <= ?
+          GROUP BY stock_code
+        ) t2 ON t1.stock_code = t2.stock_code AND t1.trade_date = t2.max_date
+        WHERE t1.holding_count > 0
+      `, [date]);
+
+      if (positionsResult.length === 0 || positionsResult[0].values.length === 0) {
+        return { marketValue: 0, details: [], missingKlineStocks: [] };
+      }
+
+      const details: Array<{
+        stockCode: string;
+        stockName: string;
+        closePrice: number;
+        holdingCount: number;
+        marketValue: number;
+      }> = [];
+      const missingKlineStocks: string[] = [];
+      let totalMarketValue = 0;
+
+      for (const row of positionsResult[0].values) {
+        const stockCode = row[0] as string;
+        const stockName = row[1] as string;
+        const holdingCount = row[2] as number;
+
+        // 从kline_data获取指定日期或最近前一个交易日的收盘价
+        const klineResult = this.db.exec(`
+          SELECT close FROM kline_data 
+          WHERE stock_code = ? AND trade_date <= ? 
+          ORDER BY trade_date DESC LIMIT 1
+        `, [stockCode, date]);
+
+        if (klineResult.length === 0 || klineResult[0].values.length === 0 || klineResult[0].values[0][0] === null) {
+          // 无K线数据
+          missingKlineStocks.push(stockCode);
+          log.warn(`股票 ${stockCode}(${stockName}) 无K线数据，日期: ${date}`);
+          continue;
+        }
+
+        const closePrice = klineResult[0].values[0][0] as number;
+        const marketValue = closePrice * holdingCount;
+        totalMarketValue += marketValue;
+
+        details.push({
+          stockCode,
+          stockName,
+          closePrice,
+          holdingCount,
+          marketValue: Number(marketValue.toFixed(2)),
+        });
+      }
+
+      log.info(`获取持仓市值成功，日期: ${date}, 总市值: ${totalMarketValue}, 持股数: ${details.length}, 无K线数据: ${missingKlineStocks.length}`);
+
+      return {
+        marketValue: Number(totalMarketValue.toFixed(2)),
+        details,
+        missingKlineStocks,
+      };
+    } catch (error) {
+      log.error('getHoldingsMarketValue error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取截止指定日期最近一条记录的账户余额
+   * 用于获取期初/期末账户余额
+   * @param date 目标日期 (YYYY-MM-DD)
+   * @returns 账户余额，无记录则返回0
+   */
+  async getClosingBalance(date: string): Promise<number> {
+    try {
+      const result = this.db.exec(
+        `SELECT account_balance FROM transfer_records WHERE transfer_date <= ? ORDER BY transfer_date DESC, id DESC LIMIT 1`,
+        [date]
+      );
+
+      if (result.length === 0 || result[0].values.length === 0) {
+        return 0;
+      }
+
+      return result[0].values[0][0] as number;
+    } catch (error) {
+      log.error('getClosingBalance error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取指定时间段内的资金转入转出统计（来自transfer_records表）
+   * 转入金额 = IN类型的amount之和
+   * 转出金额 = OUT类型的amount之和
+   * @param startDate 开始日期 (YYYY-MM-DD)
+   * @param endDate 结束日期 (YYYY-MM-DD)
+   * @returns 资金转入转出统计结果
+   */
+  async getTradeStatsInRange(startDate: string, endDate: string): Promise<{ totalIn: number; totalOut: number }> {
+    try {
+      // 获取IN类型转入总金额
+      const inResult = this.db.exec(
+        `SELECT COALESCE(SUM(amount), 0) as total_in
+         FROM transfer_records
+         WHERE type = 'IN' AND transfer_date >= ? AND transfer_date <= ?`,
+        [startDate, endDate]
+      );
+
+      // 获取OUT类型转出总金额
+      const outResult = this.db.exec(
+        `SELECT COALESCE(SUM(amount), 0) as total_out
+         FROM transfer_records
+         WHERE type = 'OUT' AND transfer_date >= ? AND transfer_date <= ?`,
+        [startDate, endDate]
+      );
+
+      const totalIn = inResult.length > 0 ? (inResult[0].values[0][0] as number) : 0;
+      const totalOut = outResult.length > 0 ? (outResult[0].values[0][0] as number) : 0;
+
+      log.info(`获取资金转入转出统计成功，时间段: ${startDate} ~ ${endDate}, 转入: ${totalIn}, 转出: ${totalOut}`);
+
+      return {
+        totalIn: Number(totalIn.toFixed(2)),
+        totalOut: Number(totalOut.toFixed(2)),
+      };
+    } catch (error) {
+      log.error('getTradeStatsInRange error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取指定时间段内的盈亏统计数据
+   * 盈亏公式：盈亏金额=(期末账户余额+期末持仓市值)-(期初账户余额+期初持仓市值)+(转出金额-转入金额)
+   * @param startDate 开始日期 (YYYY-MM-DD) - 期初
+   * @param endDate 结束日期 (YYYY-MM-DD) - 期末
+   * @returns 完整的盈亏统计数据
+   */
+  async getProfitStatistics(startDate: string, endDate: string): Promise<{
+    startDate: string;
+    endDate: string;
+    openingAccountBalance: number;
+    closingAccountBalance: number;
+    openingHoldingsValue: number;
+    closingHoldingsValue: number;
+    totalIn: number;
+    totalOut: number;
+    profit: number;
+  }> {
+    try {
+      // 1. 获取期初账户余额（截止期初日期最近记录的account_balance，不包含期初当天）
+      const openingAccountBalance = await this.getOpeningBalance(startDate);
+
+      // 2. 获取期末账户余额（截止期末日期最近记录的account_balance，包含期末当天）
+      const closingAccountBalance = await this.getClosingBalance(endDate);
+
+      // 3. 获取期初持仓市值
+      const openingHoldings = await this.getHoldingsMarketValue(startDate);
+      const openingHoldingsValue = openingHoldings.marketValue;
+
+      // 4. 获取期末持仓市值
+      const closingHoldings = await this.getHoldingsMarketValue(endDate);
+      const closingHoldingsValue = closingHoldings.marketValue;
+
+      // 5. 获取交易统计（来自trade_record表）
+      const tradeStats = await this.getTradeStatsInRange(startDate, endDate);
+
+      // 6. 计算盈亏金额
+      const profit = (closingAccountBalance + closingHoldingsValue)
+        - (openingAccountBalance + openingHoldingsValue)
+        + (tradeStats.totalOut - tradeStats.totalIn);
+
+      log.info(`盈亏统计计算完成，时间段: ${startDate} ~ ${endDate}, 盈亏: ${profit}`);
+
+      return {
+        startDate,
+        endDate,
+        openingAccountBalance,
+        closingAccountBalance,
+        openingHoldingsValue,
+        closingHoldingsValue,
+        totalIn: tradeStats.totalIn,
+        totalOut: tradeStats.totalOut,
+        profit: Number(profit.toFixed(2)),
+      };
+    } catch (error) {
+      log.error('getProfitStatistics error:', error);
+      throw error;
+    }
+  }
 }

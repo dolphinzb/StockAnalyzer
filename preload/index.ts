@@ -270,8 +270,10 @@ const fundManagementAPI: FundManagementAPI = {
     ipcRenderer.invoke('delete-transfer-record', id),
   getProfitStatistics: (startDate: string, endDate: string) =>
     ipcRenderer.invoke('get-profit-statistics', startDate, endDate),
-  getCurrentHoldingsTotal: () =>
-    ipcRenderer.invoke('get-current-holdings-total'),
+  getHoldingsMarketValue: (date: string) =>
+    ipcRenderer.invoke('get-holdings-market-value', date),
+  getTradeStatsInRange: (startDate: string, endDate: string) =>
+    ipcRenderer.invoke('get-trade-stats-in-range', startDate, endDate),
   getAccountBalance: () =>
     ipcRenderer.invoke('get-account-balance'),
   getOpeningBalance: (date: string) =>

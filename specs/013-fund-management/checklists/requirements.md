@@ -3,6 +3,7 @@
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-05-03  
 **Updated**: 2026-05-06 - Updated for fund detail upgrade  
+**Updated**: 2026-05-08 - Updated for profit statistics formula change  
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
@@ -38,6 +39,10 @@
 - [x] Database schema changes documented (account_balance field)
 - [x] Type definitions updated (4 fund types, accountBalance field)
 - [x] Migration strategy for existing data documented
+- [x] plan.md updated on 2026-05-08 for profit statistics formula change
+- [x] data-model.md updated with new ProfitStatistics entity (opening/closing account balance, holdings value, trade stats)
+- [x] IPC contracts updated with new interfaces (getHoldingsMarketValue, getTradeStatsInRange)
+- [x] Data flow updated to reflect new calculation process
 
 ## Tasks Document Status
 
@@ -54,6 +59,7 @@
 - [x] **Task statuses properly set based on existing code reuse**
   - 57 tasks marked as completed `[x]` (can be reused)
   - 21 tasks marked as pending `[ ]` (need modification)
+- [x] tasks.md needs update for new profit statistics formula and data sources
 
 ## Notes
 
@@ -67,4 +73,7 @@
 - Final task count: 78 tasks across 5 phases
 - **Smart task status**: 57 tasks completed (reusable), 21 tasks pending (need modification)
 - **Code reuse strategy**: Maximize reuse of existing transfer record functionality
+- **2026-05-08 update**: Profit statistics formula changed from "盈利=转出+余额+持仓-转入" to "盈亏=(期末余额+期末持仓)-(期初余额+期初持仓)+(转出-转入)"
+- **New data sources**: transfer_records (account balance), kline_data (holdings market value), trade_record (trade stats)
+- **New IPC interfaces**: getHoldingsMarketValue, getTradeStatsInRange (replacing getCurrentHoldingsTotal)
 - Ready for `/speckit.implement` to start coding implementation

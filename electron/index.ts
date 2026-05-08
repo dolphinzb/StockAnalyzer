@@ -527,71 +527,46 @@ ipcMain.handle('get-profit-statistics', async (_event, startDate: string, endDat
     if (!fundService) {
       throw new Error('FundService not initialized');
     }
-    return await fundService.getTransferStatsInRange(startDate, endDate);
+    return await fundService.getProfitStatistics(startDate, endDate);
   } catch (error) {
     log.error('IPC get-profit-statistics error:', error);
     throw error;
   }
 });
 
-
-
 /**
- * 获取当前持仓总市值
+ * 获取指定日期的持仓市值（使用kline_data收盘价计算）
  */
-ipcMain.handle('get-current-holdings-total', async () => {
-  log.debug('IPC: get-current-holdings-total');
+ipcMain.handle('get-holdings-market-value', async (_event, date: string) => {
+  log.debug('IPC: get-holdings-market-value', date);
   try {
-    const positions = getPositions();
-
-    if (positions.length === 0) {
-      return 0;
+    if (!fundService) {
+      throw new Error('FundService not initialized');
     }
-
-    // 获取所有持仓股票的代码（添加市场前缀）
-    const stockCodesWithPrefix = positions.map(p => {
-      // 如果股票代码已经包含前缀，直接使用；否则根据代码规则添加
-      if (p.stockCode.startsWith('sh') || p.stockCode.startsWith('sz')) {
-        return p.stockCode;
-      }
-      // 60/68开头是上海，00/30开头是深圳
-      if (p.stockCode.startsWith('60') || p.stockCode.startsWith('68')) {
-        return `sh${p.stockCode}`;
-      } else if (p.stockCode.startsWith('00') || p.stockCode.startsWith('30')) {
-        return `sz${p.stockCode}`;
-      }
-      return p.stockCode; // 其他情况保持原样
-    });
-
-    // 从价格服务获取实时价格（需要config参数）
-    const config = currentConfig || loadConfig();
-    const priceResults = await fetchStockPrices(stockCodesWithPrefix, config);
-
-    // 创建股票代码到价格的映射（使用不带前缀的代码作为key，与持仓数据匹配）
-    const priceMap = new Map<string, number>();
-    priceResults.forEach(result => {
-      if (result.success && result.price) {
-        // 去除前缀，使用纯数字代码作为key
-        const codeWithoutPrefix = result.stockCode.replace(/^(sh|sz)/, '');
-        priceMap.set(codeWithoutPrefix, result.price);
-      }
-    });
-
-    // 计算总市值 = Σ(持仓数量 × 当前价格)
-    const totalValue = positions.reduce((sum, position) => {
-      const currentPrice = priceMap.get(position.stockCode);
-      if (position.holdingCount > 0 && currentPrice) {
-        return sum + (position.holdingCount * currentPrice);
-      }
-      return sum;
-    }, 0);
-
-    return totalValue;
+    return await fundService.getHoldingsMarketValue(date);
   } catch (error) {
-    log.error('IPC get-current-holdings-total error:', error);
+    log.error('IPC get-holdings-market-value error:', error);
     throw error;
   }
 });
+
+/**
+ * 获取指定时间段内的交易统计（来自trade_record表）
+ */
+ipcMain.handle('get-trade-stats-in-range', async (_event, startDate: string, endDate: string) => {
+  log.debug('IPC: get-trade-stats-in-range', { startDate, endDate });
+  try {
+    if (!fundService) {
+      throw new Error('FundService not initialized');
+    }
+    return await fundService.getTradeStatsInRange(startDate, endDate);
+  } catch (error) {
+    log.error('IPC get-trade-stats-in-range error:', error);
+    throw error;
+  }
+});
+
+
 
 /**
  * 获取期初余额

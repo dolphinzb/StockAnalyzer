@@ -454,25 +454,28 @@ export interface TransferRecord {
 }
 
 /**
- * 盈利统计
- * 指定时间段内的盈利计算结果
+ * 盈亏统计
+ * 指定时间段内的盈亏计算结果
+ * 盈亏公式：盈亏金额=(期末账户余额+期末持仓市值)-(期初账户余额+期初持仓市值)+(转出金额-转入金额)
  */
 export interface ProfitStatistics {
-  /** 开始日期 (YYYY-MM-DD) */
+  /** 开始日期 (YYYY-MM-DD) - 期初 */
   startDate: string;
-  /** 结束日期 (YYYY-MM-DD) */
+  /** 结束日期 (YYYY-MM-DD) - 期末 */
   endDate: string;
-  /** 期初余额（选定日期范围开始前的账户余额） */
-  openingBalance: number;
-  /** 转入总金额 */
+  /** 期初账户余额（来自transfer_records表截止期初日期最近记录的account_balance） */
+  openingAccountBalance: number;
+  /** 期末账户余额（来自transfer_records表截止期末日期最近记录的account_balance） */
+  closingAccountBalance: number;
+  /** 期初持仓市值（来自kline_data各持股收盘价×持仓数量之和） */
+  openingHoldingsValue: number;
+  /** 期末持仓市值（来自kline_data各持股收盘价×持仓数量之和） */
+  closingHoldingsValue: number;
+  /** 转入总金额（来自transfer_records表IN类型amount之和） */
   totalIn: number;
-  /** 转出总金额 */
+  /** 转出总金额（来自transfer_records表OUT类型amount之和） */
   totalOut: number;
-  /** 账户余额 */
-  accountBalance: number;
-  /** 当前持仓市值 */
-  currentHoldings: number;
-  /** 盈利金额 = accountBalance + currentHoldings - openingBalance - (totalIn - totalOut) */
+  /** 盈亏金额 = (closingAccountBalance+closingHoldingsValue)-(openingAccountBalance+openingHoldingsValue)+(totalOut-totalIn) */
   profit: number;
 }
 
@@ -507,19 +510,51 @@ export interface FundManagementAPI {
   updateTransferRecord(id: number, data: TransferRecordUpdate): Promise<{ success: boolean }>;
   /** 删除转账记录 */
   deleteTransferRecord(id: number): Promise<{ success: boolean }>;
-  /** 获取指定时间段的盈利统计 */
-  getProfitStatistics(startDate: string, endDate: string): Promise<{
-    totalIn: number;
-    totalOut: number;
-    startDate: string;
-    endDate: string;
-  }>;
-  /** 获取当前持仓总市值 */
-  getCurrentHoldingsTotal(): Promise<number>;
+  /** 获取指定时间段的盈亏统计（包含期初/期末账户余额、持仓市值、转入/转出金额） */
+  getProfitStatistics(startDate: string, endDate: string): Promise<ProfitStatistics>;
+  /** 获取指定日期的持仓市值（使用kline_data收盘价计算） */
+  getHoldingsMarketValue(date: string): Promise<HoldingsMarketValueResult>;
+  /** 获取指定时间段内的资金转入转出统计（来自transfer_records表IN/OUT类型） */
+  getTradeStatsInRange(startDate: string, endDate: string): Promise<TradeStatsResult>;
   /** 获取账户余额（从资金明细最后一条记录获取） */
   getAccountBalance(): Promise<number>;
   /** 获取指定日期之前的期初余额 */
   getOpeningBalance(date: string): Promise<number>;
+}
+
+/**
+ * 持仓市值计算结果
+ * 指定日期的持仓市值明细
+ */
+export interface HoldingsMarketValueResult {
+  /** 持仓总市值（元） */
+  marketValue: number;
+  /** 各持股明细 */
+  details: Array<{
+    /** 股票代码 */
+    stockCode: string;
+    /** 股票名称 */
+    stockName: string;
+    /** 收盘价 */
+    closePrice: number;
+    /** 持仓数量 */
+    holdingCount: number;
+    /** 个股市值 */
+    marketValue: number;
+  }>;
+  /** 无K线数据的股票代码列表 */
+  missingKlineStocks: string[];
+}
+
+/**
+ * 交易统计结果
+ * 指定时间段内的交易统计数据
+ */
+export interface TradeStatsResult {
+  /** 转入总额（BUY类型交易总金额，含手续费） */
+  totalIn: number;
+  /** 转出总额（SELL类型交易总金额，扣除手续费和印花税） */
+  totalOut: number;
 }
 
 /**

@@ -84,15 +84,15 @@ watch(
 }
 
 .input-group {
-  flex: 1;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
 
   label {
     font-size: 14px;
     color: #6b7280;
     font-weight: 500;
+    white-space: nowrap;
   }
 }
 

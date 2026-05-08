@@ -1,13 +1,13 @@
 # Implementation Plan: 资金管理功能
 
-**Branch**: `feature/fund-detail-upgrade` | **Date**: 2026-05-03 | **Updated**: 2026-05-06 | **Spec**: [spec.md](./spec.md)
+**Branch**: `feature/fund-detail-upgrade` | **Date**: 2026-05-03 | **Updated**: 2026-05-08 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/013-fund-management/spec.md`
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
 
 ## Summary
 
-实现资金管理功能页面，包含两个标签页：资金明细管理和盈利统计。资金明细支持增删改查操作，采用无限滚动加载，系统自动计算每条记录的账户余额；盈利统计基于用户选择的时间段计算转出金额+账户余额+当前持仓金额-转入金额的盈利情况。使用模态对话框进行编辑和删除确认，实时查询持仓系统获取最新数据。
+实现资金管理功能页面，包含两个标签页：资金明细管理和盈亏统计。资金明细支持增删改查操作，采用无限滚动加载，系统自动计算每条记录的账户余额；盈亏统计基于用户选择的时间段，使用公式"盈亏金额=(期末账户余额+期末持仓市值)-(期初账户余额+期初持仓市值)+(转出金额-转入金额)"计算盈亏情况。其中，期末/期初账户余额来自transfer_records表，期末/期初持仓市值来自kline_data表各持股收盘价×持仓数量之和，转入/转出金额来自trade_record表。使用模态对话框进行编辑和删除确认。
 
 ## Technical Context
 
@@ -17,7 +17,7 @@
 **Testing**: 暂无测试框架 (NEEDS CLARIFICATION - 项目未配置测试框架)  
 **Target Platform**: Windows desktop (Electron应用)  
 **Project Type**: desktop-app (Electron + Vite + Vue3)  
-**Performance Goals**: 资金明细列表初始20条记录1秒内加载，后续每批20条0.5秒内加载；盈利统计1秒内计算完成；账户余额自动计算在100ms内完成  
+**Performance Goals**: 资金明细列表初始20条记录1秒内加载，后续每批20条0.5秒内加载；盈亏统计1秒内计算完成；账户余额自动计算在100ms内完成  
 **Constraints**: <1秒响应时间，离线可用（本地数据库），中文界面  
 **Scale/Scope**: 支持最多1000+条资金明细记录，单用户桌面应用
 
@@ -66,7 +66,7 @@ src/
 │   ├── TransferRecordList.vue    # 资金明细列表组件（无限滚动）- 需重命名为FundDetailList.vue
 │   ├── TransferRecordItem.vue    # 资金明细单项组件 - 需重命名为FundDetailItem.vue
 │   ├── TransferEditor.vue        # 资金明细编辑模态对话框 - 需重命名为FundDetailEditor.vue
-│   ├── ProfitStatistics.vue      # 盈利统计组件
+│   ├── ProfitStatistics.vue      # 盈亏统计组件
 │   └── DateRangePicker.vue       # 日期范围选择器组件
 ├── stores/
 │   └── fundManagement.ts         # 资金管理Pinia store
@@ -90,6 +90,12 @@ shared/types/
 2. 数据库变更：在transfer_records表中增加account_balance字段
 3. 业务逻辑：增加账户余额自动计算和级联更新逻辑
 4. 类型扩展：资金类型从2种扩展到4种（IN/OUT/DIVIDEND/DIVIDEND_TAX）
+
+**Key Changes on 2026-05-08**:
+1. 盈亏统计公式更新：从"盈利=转出金额+账户余额+当前持仓金额-转入金额"改为"盈亏金额=(期末账户余额+期末持仓市值)-(期初账户余额+期初持仓市值)+(转出金额-转入金额)"
+2. 数据来源变更：账户余额从transfer_records表获取（期初/期末分别取对应日期最近记录），持仓市值从kline_data表获取（收盘价×持仓数量），转入/转出金额从trade_record表获取（BUY/SELL类型交易）
+3. 盈亏统计展示字段更新：期初账户余额、期末账户余额、期初持仓市值、期末持仓市值、转入总额、转出总额、盈亏金额
+4. 新增IPC接口：getOpeningBalance（已存在）、getClosingBalance、getHoldingsMarketValue(date)、getTradeStatsInRange
 
 ## Complexity Tracking
 

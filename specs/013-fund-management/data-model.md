@@ -2,6 +2,7 @@
 
 **Date**: 2026-05-03  
 **Updated**: 2026-05-06 - Upgrade to fund detail with account balance calculation  
+**Updated**: 2026-05-08 - 更新盈亏统计公式和数据来源  
 **Feature**: 013-fund-management
 
 ## Entities
@@ -60,45 +61,62 @@ CREATE INDEX idx_transfer_type_date ON transfer_records(type, transfer_date);
 
 ---
 
-### 2. ProfitStatistics (盈利统计)
+### 2. ProfitStatistics (盈亏统计)
 
-**Description**: 代表指定时间段内的盈利计算结果，是计算得出的临时数据，不持久化存储。
+**Description**: 代表指定时间段内的盈亏计算结果，是计算得出的临时数据，不持久化存储。
 
 **Fields**:
 | Field | Type | Required | Description | Calculation |
 |-------|------|----------|-------------|-------------|
-| startDate | string | Yes | 开始日期 | 用户输入 |
-| endDate | string | Yes | 结束日期 | 用户输入 |
-| totalIn | number | Yes | 转入总金额 | SUM(amount) WHERE type='IN' AND date in range |
-| totalOut | number | Yes | 转出总金额 | SUM(amount) WHERE type='OUT' AND date in range |
-| accountBalance | number | Yes | 账户余额 | 从数据库读取最新值 |
-| currentHoldings | number | Yes | 当前持仓市值 | 实时查询持仓系统 |
-| profit | number | Yes | 盈利金额 | totalOut + accountBalance + currentHoldings - totalIn |
+| startDate | string | Yes | 开始日期（期初） | 用户输入 |
+| endDate | string | Yes | 结束日期（期末） | 用户输入 |
+| openingAccountBalance | number | Yes | 期初账户余额 | transfer_records表截止期初日期最近一条记录的account_balance，无记录则为0 |
+| closingAccountBalance | number | Yes | 期末账户余额 | transfer_records表截止期末日期最近一条记录的account_balance，无记录则为0 |
+| openingHoldingsValue | number | Yes | 期初持仓市值 | kline_data各持股在期初日期收盘价×持仓数量之和 |
+| closingHoldingsValue | number | Yes | 期末持仓市值 | kline_data各持股在期末日期收盘价×持仓数量之和 |
+| totalIn | number | Yes | 转入总金额 | trade_record表时间段内BUY类型交易总金额（买入金额+手续费） |
+| totalOut | number | Yes | 转出总金额 | trade_record表时间段内SELL类型交易总金额（卖出金额-手续费-印花税） |
+| profit | number | Yes | 盈亏金额 | (closingAccountBalance+closingHoldingsValue)-(openingAccountBalance+openingHoldingsValue)+(totalOut-totalIn) |
 
 **Relationships**:
-- 依赖于FundDetailRecord（数据来源）
-- 依赖于AccountConfig（账户余额）
-- 依赖于持仓系统（currentHoldings）
+- 依赖于FundDetailRecord/transfer_records表（期初/期末账户余额数据来源）
+- 依赖于kline_data表（期初/期末持仓市值数据来源）
+- 依赖于trade_record表（转入/转出金额数据来源）
+- 依赖于持仓系统（获取各持股持仓数量）
 
 **Calculation Formula** (from spec FR-007):
 ```
-profit = totalOut + accountBalance + currentHoldings - totalIn
+盈亏金额 = (期末账户余额 + 期末持仓市值) - (期初账户余额 + 期初持仓市值) + (转出金额 - 转入金额)
 ```
+
+**Data Source Details**:
+- 期初账户余额: `SELECT account_balance FROM transfer_records WHERE transfer_date <= :startDate ORDER BY transfer_date DESC, id DESC LIMIT 1`
+- 期末账户余额: `SELECT account_balance FROM transfer_records WHERE transfer_date <= :endDate ORDER BY transfer_date DESC, id DESC LIMIT 1`
+- 期初持仓市值: 各持股在期初日期的kline_data收盘价 × 持仓数量之和（无K线数据则使用最近前一个交易日收盘价）
+- 期末持仓市值: 各持股在期末日期的kline_data收盘价 × 持仓数量之和（无K线数据则使用最近前一个交易日收盘价）
+- 转入金额: trade_record表中BUY类型交易的总金额（trade_price × trade_count + 手续费）
+- 转出金额: trade_record表中SELL类型交易的总金额（trade_price × trade_count - 手续费 - 印花税）
 
 **Example**:
 ```
 时间段：2026-01-01 至 2026-05-06
-转入总额：10,000元
-转出总额：2,000元
-账户余额：5,000元
-当前持仓：15,000元
-盈利 = 2,000 + 5,000 + 15,000 - 10,000 = 12,000元
+期初账户余额：8,000元
+期末账户余额：5,000元
+期初持仓市值：12,000元
+期末持仓市值：15,000元
+转入金额（BUY交易）：50,000元
+转出金额（SELL交易）：45,000元
+
+盈亏 = (5,000 + 15,000) - (8,000 + 12,000) + (45,000 - 50,000)
+     = 20,000 - 20,000 + (-5,000)
+     = -5,000元（亏损5,000元）
 ```
 
 **Edge Cases**:
-- 无资金明细记录：totalIn=0, totalOut=0, profit=accountBalance+currentHoldings
-- 无持仓数据：显示“无持仓数据”提示
-- 查询失败：显示错误提示（FR-011a）
+- 无资金明细记录：期初/期末账户余额均为0
+- 无K线数据：提示"无K线数据"，跳过该持股的市值计算
+- 无trade_record记录：转入/转出金额均为0
+- 某只持股没有对应日期K线数据：使用最近前一个交易日收盘价
 
 ---
 
@@ -128,20 +146,31 @@ When creating/updating/deleting a record:
 3. Return success
 ```
 
-### 2. 盈利统计计算流程
+### 2. 盈亏统计计算流程
 
 ```
-User selects date range
+User selects date range (startDate, endDate)
        ↓
-Fetch transfer records in range (DB query)
+Fetch opening account balance from transfer_records (截止期初日期最近记录的account_balance)
        ↓
-Calculate totalIn and totalOut (aggregation)
+Fetch closing account balance from transfer_records (截止期末日期最近记录的account_balance)
        ↓
-Fetch account balance from last transfer record
+Fetch holdings list (各持股代码和持仓数量)
        ↓
-Fetch current holdings total (IPC to main process)
+For each holding:
+  Fetch opening close price from kline_data (期初日期收盘价，无则取最近前一个交易日)
+  Fetch closing close price from kline_data (期末日期收盘价，无则取最近前一个交易日)
        ↓
-Calculate profit = totalOut + accountBalance + currentHoldings - totalIn
+Calculate openingHoldingsValue = Σ(各持股期初收盘价 × 持仓数量)
+Calculate closingHoldingsValue = Σ(各持股期末收盘价 × 持仓数量)
+       ↓
+Fetch trade records in range from trade_record
+Calculate totalIn = Σ(BUY类型: trade_price × trade_count + 手续费)
+Calculate totalOut = Σ(SELL类型: trade_price × trade_count - 手续费 - 印花税)
+       ↓
+Calculate profit = (closingAccountBalance + closingHoldingsValue) 
+                 - (openingAccountBalance + openingHoldingsValue) 
+                 + (totalOut - totalIn)
        ↓
 Display results to user
 ```
@@ -166,13 +195,15 @@ export interface FundDetailRecord {
 }
 
 export interface ProfitStatistics {
-  startDate: string;       // YYYY-MM-DD
-  endDate: string;         // YYYY-MM-DD
-  totalIn: number;
-  totalOut: number;
-  accountBalance: number;
-  currentHoldings: number;
-  profit: number;
+  startDate: string;               // YYYY-MM-DD (期初)
+  endDate: string;                 // YYYY-MM-DD (期末)
+  openingAccountBalance: number;   // 期初账户余额 (来自transfer_records)
+  closingAccountBalance: number;   // 期末账户余额 (来自transfer_records)
+  openingHoldingsValue: number;    // 期初持仓市值 (来自kline_data)
+  closingHoldingsValue: number;    // 期末持仓市值 (来自kline_data)
+  totalIn: number;                 // 转入总金额 (来自trade_record BUY)
+  totalOut: number;                // 转出总金额 (来自trade_record SELL)
+  profit: number;                  // 盈亏金额
 }
 
 export interface FundDetailRecordInput {
@@ -201,22 +232,55 @@ ORDER BY transfer_date DESC
 LIMIT :limit OFFSET :offset;
 ```
 
-#### 2. 查询时间段内的转入总额
+#### 2. 查询期初账户余额（截止开始日期最近一条记录）
 ```sql
-SELECT COALESCE(SUM(amount), 0) as total_in 
+SELECT COALESCE(account_balance, 0) as opening_balance 
 FROM transfer_records 
-WHERE type = 'IN' 
-  AND transfer_date >= :startDate 
-  AND transfer_date <= :endDate;
+WHERE transfer_date <= :startDate 
+ORDER BY transfer_date DESC, id DESC 
+LIMIT 1;
 ```
 
-#### 3. 查询时间段内的转出总额
+#### 3. 查询期末账户余额（截止结束日期最近一条记录）
 ```sql
-SELECT COALESCE(SUM(amount), 0) as total_out 
+SELECT COALESCE(account_balance, 0) as closing_balance 
 FROM transfer_records 
-WHERE type = 'OUT' 
-  AND transfer_date >= :startDate 
-  AND transfer_date <= :endDate;
+WHERE transfer_date <= :endDate 
+ORDER BY transfer_date DESC, id DESC 
+LIMIT 1;
+```
+
+#### 4. 查询指定日期的持仓市值（使用kline_data收盘价）
+```sql
+-- 获取各持股在指定日期的收盘价（无则取最近前一个交易日）
+SELECT h.stock_code, 
+       COALESCE(k.close, (
+         SELECT k2.close FROM kline_data k2 
+         WHERE k2.stock_code = h.stock_code AND k2.trade_date <= :targetDate 
+         ORDER BY k2.trade_date DESC LIMIT 1
+       )) as close_price,
+       h.holding_count
+FROM holdings h
+LEFT JOIN kline_data k ON k.stock_code = h.stock_code AND k.trade_date = :targetDate
+WHERE h.holding_count > 0;
+```
+
+#### 5. 查询时间段内的转入总额（trade_record BUY类型）
+```sql
+SELECT COALESCE(SUM(trade_price * trade_count), 0) as total_in 
+FROM trade_record 
+WHERE trade_type = 'BUY' 
+  AND trade_date >= :startDate 
+  AND trade_date <= :endDate;
+```
+
+#### 6. 查询时间段内的转出总额（trade_record SELL类型）
+```sql
+SELECT COALESCE(SUM(trade_price * trade_count), 0) as total_out 
+FROM trade_record 
+WHERE trade_type = 'SELL' 
+  AND trade_date >= :startDate 
+  AND trade_date <= :endDate;
 ```
 
 #### 4. 插入新记录（需要计算account_balance）
@@ -264,7 +328,10 @@ DELETE FROM transfer_records WHERE id = :id;
 interface FundManagementState {
   transferRecords: FundDetailRecord[];
   profitStats: ProfitStatistics | null;
-  accountBalance: number;  // Current account balance from database
+  openingAccountBalance: number;  // 期初账户余额
+  closingAccountBalance: number;  // 期末账户余额
+  openingHoldingsValue: number;   // 期初持仓市值
+  closingHoldingsValue: number;   // 期末持仓市值
   loading: boolean;
   error: string | null;
   hasMore: boolean;
@@ -276,7 +343,10 @@ export const useFundManagementStore = defineStore('fundManagement', {
   state: (): FundManagementState => ({
     transferRecords: [],
     profitStats: null,
-    accountBalance: 0,
+    openingAccountBalance: 0,
+    closingAccountBalance: 0,
+    openingHoldingsValue: 0,
+    closingHoldingsValue: 0,
     loading: false,
     error: null,
     hasMore: true,
@@ -296,6 +366,8 @@ export const useFundManagementStore = defineStore('fundManagement', {
     async deleteFundDetailRecord(id: number),
     async calculateProfit(startDate: string, endDate: string),
     async fetchAccountBalance(),
+    async fetchHoldingsMarketValue(date: string),
+    async fetchTradeStatsInRange(startDate: string, endDate: string),
     resetError()
   }
 });
@@ -329,9 +401,10 @@ export const useFundManagementStore = defineStore('fundManagement', {
    - Both dates required
    
 2. **Data availability**
-   - Handle missing holdings data gracefully
+   - Handle missing kline_data gracefully (use nearest previous trading day)
+   - Handle missing trade_record data (totalIn/totalOut default to 0)
    - Handle DB query failures
-   - Account balance must be available from database
+   - Account balance must be available from transfer_records (default to 0 if no records)
 
 ---
 
@@ -350,7 +423,6 @@ CREATE INDEX idx_transfer_type_date ON transfer_records(type, transfer_date);
 - Initial load (20 records): < 1 second (SC-002)
 - Subsequent loads (20 records): < 0.5 seconds (SC-002)
 - Profit calculation: < 1 second (SC-003)
-- Account balance recalculation: < 100ms for typical operations
 
 ---
 

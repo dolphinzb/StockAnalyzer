@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import IndexStatusBar from '../components/IndexStatusBar.vue';
+import KlineChartDialog from '../components/KlineChartDialog.vue';
+import KlineDownloadDialog from '../components/KlineDownloadDialog.vue';
 import RefreshButton from '../components/RefreshButton.vue';
 import StockEditor from '../components/StockEditor.vue';
 import StockList from '../components/StockList.vue';
+import { useToast } from '../composables/useToast';
 import { useWatchlistStore } from '../stores/watchlist';
 
 defineOptions({
@@ -11,8 +14,13 @@ defineOptions({
 });
 
 const store = useWatchlistStore();
+const { showToast } = useToast();
 const showEditor = ref(false);
 const editingStock = ref<number | null>(null);
+
+// K线下载对话框状态
+const showKlineDialog = ref(false);
+const klineDownloadStock = ref<{ stockCode: string; stockName: string }>({ stockCode: '', stockName: '' });
 
 const sortedStocks = computed(() => store.sortedStocks);
 const lastRefreshTime = computed(() => store.lastRefreshTime);
@@ -63,6 +71,35 @@ async function handleDeleteStock(stockId: number) {
 function handleToggleMonitor(stockId: number, enabled: boolean) {
   store.updateStock(stockId, { monitorEnabled: enabled });
 }
+
+/** 处理下载K线按钮点击，打开下载对话框 */
+function handleDownloadKline(stockCode: string) {
+  const stock = sortedStocks.value.find(s => s.stockCode === stockCode);
+  if (stock) {
+    klineDownloadStock.value = { stockCode: stock.stockCode, stockName: stock.stockName };
+    showKlineDialog.value = true;
+  }
+}
+
+/** 处理K线下载确认 */
+async function handleKlineDownload(payload: { stockCode: string; startDate: string; endDate: string }) {
+  const result = await store.downloadKline(payload.stockCode, payload.startDate, payload.endDate);
+  if (result.success) {
+    showToast(`下载完成，共获取 ${result.count} 条K线数据`, 'success', 3000);
+  } else {
+    showToast(`下载失败：${result.error}`, 'error', 0);
+  }
+}
+
+/** 处理股票名称点击，打开K线弹窗 */
+function handleShowKlineChart(stockCode: string, stockName: string) {
+  store.openKlineChart(stockCode, stockName);
+}
+
+/** 处理K线弹窗关闭 */
+function handleCloseKlineChart() {
+  store.closeKlineChart();
+}
 </script>
 
 <template>
@@ -83,6 +120,8 @@ function handleToggleMonitor(stockId: number, enabled: boolean) {
       @edit="handleEditStock"
       @delete="handleDeleteStock"
       @toggle-monitor="handleToggleMonitor"
+      @download-kline="handleDownloadKline"
+      @show-kline-chart="handleShowKlineChart"
     />
 
     <StockEditor
@@ -91,6 +130,20 @@ function handleToggleMonitor(stockId: number, enabled: boolean) {
       :stock="editingStock !== null ? (sortedStocks.find(s => s.id === editingStock) ?? null) : null"
       @save="handleSaveStock"
       @close="handleCloseEditor"
+    />
+
+    <KlineDownloadDialog
+      v-model="showKlineDialog"
+      :stock-code="klineDownloadStock.stockCode"
+      :stock-name="klineDownloadStock.stockName"
+      @download="handleKlineDownload"
+    />
+
+    <KlineChartDialog
+      v-model="store.klineChartDialog.visible"
+      :stock-code="store.klineChartDialog.stockCode"
+      :stock-name="store.klineChartDialog.stockName"
+      @update:model-value="handleCloseKlineChart"
     />
 
     <div v-if="sortedStocks.length === 0 && !store.isLoading" class="empty-state">

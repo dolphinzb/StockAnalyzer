@@ -132,6 +132,9 @@ export async function initDatabase(): Promise<void> {
     // 初始化转账记录表
     initializeTransferRecordsTable();
 
+    // 初始化K线数据表
+    initializeKlineDataTable();
+
     const result = db.exec("SELECT * FROM config WHERE key = 'app_config'");
     if (result.length === 0 || result[0].values.length === 0) {
       const defaultConfigJson = JSON.stringify(DEFAULT_CONFIG);
@@ -662,4 +665,185 @@ export function initializeTransferRecordsTable(): void {
     // 注意：如果需要迁移，请手动执行: npm run migrate
     // 详见: docs/数据库迁移指南.md
   }
+}
+
+/**
+ * 初始化K线数据表
+ * 创建 kline_data 表用于存储所有自选股的日K线数据
+ */
+export function initializeKlineDataTable(): void {
+  const database = getDb();
+
+  // 检查表是否已存在
+  const tableExists = database.exec(`
+    SELECT name FROM sqlite_master 
+    WHERE type='table' AND name='kline_data'
+  `);
+
+  if (tableExists.length === 0) {
+    log.info('创建 kline_data 表');
+
+    // 创建K线数据表
+    database.run(`
+      CREATE TABLE IF NOT EXISTS kline_data (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stock_code TEXT NOT NULL,
+        trade_date TEXT NOT NULL,
+        open REAL,
+        close REAL,
+        high REAL,
+        low REAL,
+        volume REAL,
+        amount REAL,
+        amplitude REAL,
+        change_percent REAL,
+        change_amount REAL,
+        turnover_rate REAL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(stock_code, trade_date)
+      )
+    `);
+
+    // 创建索引优化查询性能
+    database.run(`CREATE INDEX IF NOT EXISTS idx_kline_data_stock_code ON kline_data(stock_code)`);
+    database.run(`CREATE INDEX IF NOT EXISTS idx_kline_data_trade_date ON kline_data(trade_date)`);
+    database.run(`CREATE INDEX IF NOT EXISTS idx_kline_data_stock_date ON kline_data(stock_code, trade_date)`);
+
+    log.info('kline_data 表及索引创建完成');
+  } else {
+    log.info('kline_data 表已存在，跳过创建');
+  }
+}
+
+/**
+ * stock-sdk 返回的K线数据项类型
+ */
+interface HistoryKlineItem {
+  date: string;
+  code: string;
+  open: number | null;
+  close: number | null;
+  high: number | null;
+  low: number | null;
+  volume: number | null;
+  amount: number | null;
+  amplitude: number | null;
+  changePercent: number | null;
+  change: number | null;
+  turnoverRate: number | null;
+}
+
+/**
+ * 批量保存K线数据到数据库
+ * 使用事务批量INSERT OR REPLACE，按股票代码+交易日期去重
+ * @param stockCode 股票代码（纯数字）
+ * @param klines stock-sdk返回的K线数据数组
+ * @returns 保存的数据条数
+ */
+export function saveKlineData(stockCode: string, klines: HistoryKlineItem[]): number {
+  const database = getDb();
+  const now = new Date().toISOString();
+
+  try {
+    // 开启事务
+    database.run('BEGIN TRANSACTION');
+
+    for (const kline of klines) {
+      // 去除股票代码前缀（如 sz000001 → 000001）
+      const pureCode = kline.code ? kline.code.replace(/^(sh|sz)/, '') : stockCode;
+      const tradeDate = kline.date || '';
+
+      database.run(
+        `INSERT OR REPLACE INTO kline_data 
+         (stock_code, trade_date, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          pureCode,
+          tradeDate,
+          kline.open ?? null,
+          kline.close ?? null,
+          kline.high ?? null,
+          kline.low ?? null,
+          kline.volume ?? null,
+          kline.amount ?? null,
+          kline.amplitude ?? null,
+          kline.changePercent ?? null,
+          kline.change ?? null,
+          kline.turnoverRate ?? null,
+          now,
+          now,
+        ]
+      );
+    }
+
+    // 提交事务
+    database.run('COMMIT');
+    saveDatabase();
+    log.info(`K线数据保存成功: ${stockCode}, 共 ${klines.length} 条`);
+    return klines.length;
+  } catch (error) {
+    // 事务回滚
+    database.run('ROLLBACK');
+    log.error(`K线数据保存失败: ${stockCode}`, error);
+    throw error;
+  }
+}
+
+/**
+ * 将数据库行转换为KlineData对象
+ */
+function rowToKlineData(row: any[]): import('../shared/types').KlineData {
+  return {
+    id: row[0] as number,
+    stockCode: row[1] as string,
+    tradeDate: row[2] as string,
+    open: row[3] as number | null,
+    close: row[4] as number | null,
+    high: row[5] as number | null,
+    low: row[6] as number | null,
+    volume: row[7] as number | null,
+    amount: row[8] as number | null,
+    amplitude: row[9] as number | null,
+    changePercent: row[10] as number | null,
+    changeAmount: row[11] as number | null,
+    turnoverRate: row[12] as number | null,
+    createdAt: row[13] as string,
+    updatedAt: row[14] as string,
+  };
+}
+
+/**
+ * 查询K线数据
+ * @param stockCode 股票代码（纯数字）
+ * @param startDate 开始日期 (YYYY-MM-DD)，可选
+ * @param endDate 结束日期 (YYYY-MM-DD)，可选
+ * @returns K线数据数组，按交易日期升序排列
+ */
+export function getKlineData(stockCode: string, startDate?: string, endDate?: string): import('../shared/types').KlineData[] {
+  const database = getDb();
+
+  let query = `SELECT id, stock_code, trade_date, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at
+               FROM kline_data WHERE stock_code = ?`;
+  const params: any[] = [stockCode];
+
+  // 添加日期范围过滤
+  if (startDate) {
+    query += ` AND trade_date >= ?`;
+    params.push(startDate);
+  }
+  if (endDate) {
+    query += ` AND trade_date <= ?`;
+    params.push(endDate);
+  }
+
+  query += ` ORDER BY trade_date ASC`;
+
+  const result = database.exec(query, params);
+
+  if (result.length === 0) {
+    return [];
+  }
+
+  return result[0].values.map(rowToKlineData);
 }

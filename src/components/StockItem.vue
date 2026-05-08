@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { WatchlistStock, PriceUpdate } from '../types';
 import { useWatchlistStore } from '../stores/watchlist';
+import type { PriceUpdate, WatchlistStock } from '../types';
 
 const props = defineProps<{
   stock: WatchlistStock;
@@ -13,6 +13,8 @@ const emit = defineEmits<{
   edit: [stockId: number];
   delete: [stockId: number];
   toggleMonitor: [stockId: number, enabled: boolean];
+  'download-kline': [stockCode: string];
+  'show-kline-chart': [stockCode: string, stockName: string];
 }>();
 
 function handleEdit() {
@@ -26,6 +28,16 @@ function handleDelete() {
 function handleToggleMonitor(event: Event) {
   const target = event.target as HTMLInputElement;
   emit('toggleMonitor', props.stock.id, target.checked);
+}
+
+/** 处理下载K线按钮点击 */
+function handleDownloadKline() {
+  emit('download-kline', props.stock.stockCode);
+}
+
+/** 处理股票名称点击，弹出K线图 */
+function handleShowKlineChart() {
+  emit('show-kline-chart', props.stock.stockCode, props.stock.stockName);
 }
 
 const stockPrice = computed<PriceUpdate | null>(() => store.getStockPrice(props.stock.stockCode));
@@ -84,7 +96,7 @@ function getChangeColorClass(value: number | null): string {
 <template>
   <div class="stock-item" :class="{ 'monitor-enabled': stock.monitorEnabled }">
     <span class="col-code">{{ stock.stockCode }}</span>
-    <span class="col-name">{{ stock.stockName }}</span>
+    <span class="col-name col-name-clickable" @click="handleShowKlineChart">{{ stock.stockName }}</span>
     <span class="col-price">{{ formatPrice(openPrice) }}</span>
     <span class="col-price">{{ formatPrice(highPrice) }}</span>
     <span class="col-price">{{ formatPrice(lowPrice) }}</span>
@@ -104,6 +116,15 @@ function getChangeColorClass(value: number | null): string {
       </label>
     </span>
     <span class="col-actions">
+      <button
+        class="btn-kline"
+        :class="{ 'btn-loading': store.isDownloading(stock.stockCode) }"
+        :disabled="store.isDownloading(stock.stockCode)"
+        @click="handleDownloadKline"
+      >
+        <span v-if="store.isDownloading(stock.stockCode)" class="spinner"></span>
+        {{ store.isDownloading(stock.stockCode) ? '下载中' : '下载K线' }}
+      </button>
       <button class="btn-edit" @click="handleEdit">编辑</button>
       <button class="btn-delete" @click="handleDelete">删除</button>
     </span>
@@ -113,7 +134,7 @@ function getChangeColorClass(value: number | null): string {
 <style scoped lang="scss">
 .stock-item {
   display: grid;
-  grid-template-columns: 60px 60px 80px 80px 80px 80px 80px 90px 90px 90px 80px 120px;
+  grid-template-columns: 50px 50px 80px 80px 80px 80px 80px 90px 90px 90px 60px 180px;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   align-items: center;
@@ -132,6 +153,17 @@ function getChangeColorClass(value: number | null): string {
 .stock-item > span {
   text-align: center;
   font-family: monospace;
+}
+
+/* 股票名称可点击样式 */
+.col-name-clickable {
+  cursor: pointer;
+  transition: color 0.2s;
+
+  &:hover {
+    color: #3b82f6;
+    text-decoration: underline;
+  }
 }
 
 .price-sell {
@@ -211,6 +243,7 @@ function getChangeColorClass(value: number | null): string {
   justify-content: center;
 }
 
+.btn-kline,
 .btn-edit,
 .btn-delete {
   padding: 0.25rem 0.5rem;
@@ -218,6 +251,40 @@ function getChangeColorClass(value: number | null): string {
   border: none;
   border-radius: 4px;
   cursor: pointer;
+}
+
+.btn-kline {
+  background-color: #3b82f6;
+  color: white;
+
+  &:hover {
+    background-color: #2563eb;
+  }
+
+  &.btn-loading {
+    opacity: 0.7;
+    cursor: not-allowed;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+}
+
+/** 加载动画 spinner */
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .btn-edit {

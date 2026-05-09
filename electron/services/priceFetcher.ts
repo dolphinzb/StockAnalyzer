@@ -47,6 +47,14 @@ function getStockCodeWithPrefix(stockCode: string): string {
 
 function isWithinTradingHours(config: AppConfig): boolean {
   const now = new Date();
+  
+  // 检查是否为工作日 (0=周日, 1-5=周一至周五, 6=周六)
+  const dayOfWeek = now.getDay();
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    log.debug(`Today is weekend (day ${dayOfWeek}), skipping price fetch`);
+    return false;
+  }
+  
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
   const morningStart = config.trading?.morningStart ?? '09:30';

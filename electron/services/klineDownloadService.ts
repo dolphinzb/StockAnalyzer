@@ -239,6 +239,13 @@ function scheduleNextDownload(): void {
     target.setDate(target.getDate() + 1);
   }
 
+  // 检查目标日期是否为周末，如果是则跳到下周一
+  let dayOfWeek = target.getDay();
+  while (dayOfWeek === 0 || dayOfWeek === 6) {
+    target.setDate(target.getDate() + 1);
+    dayOfWeek = target.getDay();
+  }
+
   const delay = target.getTime() - now.getTime();
 
   log.info(`⏰ 下次K线自动下载调度于: ${target.toLocaleString()} (延迟 ${Math.round(delay / 1000 / 60)} 分钟)`);

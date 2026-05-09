@@ -278,6 +278,10 @@ const fundManagementAPI: FundManagementAPI = {
     ipcRenderer.invoke('get-account-balance'),
   getOpeningBalance: (date: string) =>
     ipcRenderer.invoke('get-opening-balance', date),
+  getAnnualProfitData: () =>
+    ipcRenderer.invoke('get-annual-profit-data'),
+  getMonthlyProfitData: () =>
+    ipcRenderer.invoke('get-monthly-profit-data'),
 };
 
 // K线数据 API

@@ -566,6 +566,38 @@ ipcMain.handle('get-trade-stats-in-range', async (_event, startDate: string, end
   }
 });
 
+/**
+ * 获取年度盈亏数据（从2024年开始到当前年份）
+ */
+ipcMain.handle('get-annual-profit-data', async () => {
+  log.debug('IPC: get-annual-profit-data');
+  try {
+    if (!fundService) {
+      throw new Error('FundService not initialized');
+    }
+    return await fundService.getAnnualProfitData();
+  } catch (error) {
+    log.error('IPC get-annual-profit-data error:', error);
+    throw error;
+  }
+});
+
+/**
+ * 获取月度盈亏数据（过去24个月）
+ */
+ipcMain.handle('get-monthly-profit-data', async () => {
+  log.debug('IPC: get-monthly-profit-data');
+  try {
+    if (!fundService) {
+      throw new Error('FundService not initialized');
+    }
+    return await fundService.getMonthlyProfitData();
+  } catch (error) {
+    log.error('IPC get-monthly-profit-data error:', error);
+    throw error;
+  }
+});
+
 
 
 /**

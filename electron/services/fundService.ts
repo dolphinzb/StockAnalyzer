@@ -674,4 +674,121 @@ export class FundService {
       throw error;
     }
   }
+
+  /**
+   * 获取年度盈亏数据（从2024年开始到当前年份）
+   * @returns 年度盈亏数据数组
+   */
+  async getAnnualProfitData(): Promise<Array<{
+    year: number;
+    openingAccountBalance: number;
+    closingAccountBalance: number;
+    openingHoldingsValue: number;
+    closingHoldingsValue: number;
+    totalIn: number;
+    totalOut: number;
+    profit: number;
+  }>> {
+    try {
+      const currentYear = new Date().getFullYear();
+      const startYear = 2024;
+      const annualData: Array<{
+        year: number;
+        openingAccountBalance: number;
+        closingAccountBalance: number;
+        openingHoldingsValue: number;
+        closingHoldingsValue: number;
+        totalIn: number;
+        totalOut: number;
+        profit: number;
+      }> = [];
+
+      for (let year = startYear; year <= currentYear; year++) {
+        const startDate = `${year}-01-01`;
+        const endDate = `${year}-12-31`;
+
+        // 计算该年度的盈亏统计
+        const stats = await this.getProfitStatistics(startDate, endDate);
+
+        annualData.push({
+          year,
+          openingAccountBalance: stats.openingAccountBalance,
+          closingAccountBalance: stats.closingAccountBalance,
+          openingHoldingsValue: stats.openingHoldingsValue,
+          closingHoldingsValue: stats.closingHoldingsValue,
+          totalIn: stats.totalIn,
+          totalOut: stats.totalOut,
+          profit: stats.profit,
+        });
+      }
+
+      log.info(`获取年度盈亏数据成功，共${annualData.length}年`);
+      return annualData;
+    } catch (error) {
+      log.error('getAnnualProfitData error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取月度盈亏数据（过去24个月包括当月）
+   * @returns 月度盈亏数据数组
+   */
+  async getMonthlyProfitData(): Promise<Array<{
+    month: string;
+    openingAccountBalance: number;
+    closingAccountBalance: number;
+    openingHoldingsValue: number;
+    closingHoldingsValue: number;
+    totalIn: number;
+    totalOut: number;
+    profit: number;
+  }>> {
+    try {
+      const now = new Date();
+      const monthlyData: Array<{
+        month: string;
+        openingAccountBalance: number;
+        closingAccountBalance: number;
+        openingHoldingsValue: number;
+        closingHoldingsValue: number;
+        totalIn: number;
+        totalOut: number;
+        profit: number;
+      }> = [];
+
+      // 生成过去24个月的日期范围
+      for (let i = 23; i >= 0; i--) {
+        const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+
+        const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+        
+        // 计算月末日期
+        const lastDay = new Date(year, month, 0).getDate();
+        const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+        // 计算该月的盈亏统计
+        const stats = await this.getProfitStatistics(startDate, endDate);
+
+        monthlyData.push({
+          month: `${year}-${String(month).padStart(2, '0')}`,
+          openingAccountBalance: stats.openingAccountBalance,
+          closingAccountBalance: stats.closingAccountBalance,
+          openingHoldingsValue: stats.openingHoldingsValue,
+          closingHoldingsValue: stats.closingHoldingsValue,
+          totalIn: stats.totalIn,
+          totalOut: stats.totalOut,
+          profit: stats.profit,
+        });
+      }
+
+      log.info(`获取月度盈亏数据成功，共${monthlyData.length}个月`);
+      return monthlyData;
+    } catch (error) {
+      log.error('getMonthlyProfitData error:', error);
+      throw error;
+    }
+  }
 }

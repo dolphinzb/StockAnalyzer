@@ -3,6 +3,7 @@
 **Date**: 2026-05-03  
 **Updated**: 2026-05-06 - Upgrade to fund detail with account balance calculation  
 **Updated**: 2026-05-08 - 更新盈亏统计公式和数据来源  
+**Updated**: 2026-05-08 (Session 2) - 增加年度和月度盈亏数据类型定义
 **Feature**: 013-fund-management
 
 ## Entities
@@ -120,6 +121,52 @@ CREATE INDEX idx_transfer_type_date ON transfer_records(type, transfer_date);
 
 ---
 
+### 3. AnnualProfitData (年度盈亏数据)
+
+**Description**: 代表某一年的盈亏统计数据，用于年度盈亏柱状图展示。
+
+**Fields**:
+| Field | Type | Required | Description | Calculation |
+|-------|------|----------|-------------|-------------|
+| year | number | Yes | 年份（YYYY） | 用户指定或自动计算 |
+| openingAccountBalance | number | Yes | 年初账户余额 | transfer_records表截止当年1月1日最近一条记录的account_balance |
+| closingAccountBalance | number | Yes | 年末账户余额 | transfer_records表截止当年12月31日最近一条记录的account_balance |
+| openingHoldingsValue | number | Yes | 年初持仓市值 | kline_data各持股在年初日期收盘价×持仓数量之和 |
+| closingHoldingsValue | number | Yes | 年末持仓市值 | kline_data各持股在年末日期收盘价×持仓数量之和 |
+| totalIn | number | Yes | 年度转入总额 | transfer_records表当年IN类型amount之和 |
+| totalOut | number | Yes | 年度转出总额 | transfer_records表当年OUT类型amount之和 |
+| profit | number | Yes | 年度盈亏金额 | (closingAccountBalance+closingHoldingsValue)-(openingAccountBalance+openingHoldingsValue)+(totalOut-totalIn) |
+
+**Relationships**:
+- 依赖于transfer_records表（期初/期末账户余额、转入/转出金额数据来源）
+- 依赖于kline_data表（期初/期末持仓市值数据来源）
+- 依赖于持仓系统（获取各持股持仓数量）
+
+---
+
+### 4. MonthlyProfitData (月度盈亏数据)
+
+**Description**: 代表某一个月的盈亏统计数据，用于月度盈亏柱状图展示。
+
+**Fields**:
+| Field | Type | Required | Description | Calculation |
+|-------|------|----------|-------------|-------------|
+| month | string | Yes | 月份（YYYY-MM） | 用户指定或自动计算 |
+| openingAccountBalance | number | Yes | 月初账户余额 | transfer_records表截止当月1日最近一条记录的account_balance |
+| closingAccountBalance | number | Yes | 月末账户余额 | transfer_records表截止当月最后一天最近一条记录的account_balance |
+| openingHoldingsValue | number | Yes | 月初持仓市值 | kline_data各持股在月初日期收盘价×持仓数量之和 |
+| closingHoldingsValue | number | Yes | 月末持仓市值 | kline_data各持股在月末日期收盘价×持仓数量之和 |
+| totalIn | number | Yes | 月度转入总额 | transfer_records表当月IN类型amount之和 |
+| totalOut | number | Yes | 月度转出总额 | transfer_records表当月OUT类型amount之和 |
+| profit | number | Yes | 月度盈亏金额 | (closingAccountBalance+closingHoldingsValue)-(openingAccountBalance+openingHoldingsValue)+(totalOut-totalIn) |
+
+**Relationships**:
+- 依赖于transfer_records表（期初/期末账户余额、转入/转出金额数据来源）
+- 依赖于kline_data表（期初/期末持仓市值数据来源）
+- 依赖于持仓系统（获取各持股持仓数量）
+
+---
+
 ## Data Flow
 
 ### 1. 资金明细管理流程
@@ -204,6 +251,28 @@ export interface ProfitStatistics {
   totalIn: number;                 // 转入总金额 (来自trade_record BUY)
   totalOut: number;                // 转出总金额 (来自trade_record SELL)
   profit: number;                  // 盈亏金额
+}
+
+export interface AnnualProfitData {
+  year: number;                    // 年份 (YYYY)
+  openingAccountBalance: number;   // 年初账户余额
+  closingAccountBalance: number;   // 年末账户余额
+  openingHoldingsValue: number;    // 年初持仓市值
+  closingHoldingsValue: number;    // 年末持仓市值
+  totalIn: number;                 // 年度转入总额
+  totalOut: number;                // 年度转出总额
+  profit: number;                  // 年度盈亏金额
+}
+
+export interface MonthlyProfitData {
+  month: string;                   // 月份 (YYYY-MM)
+  openingAccountBalance: number;   // 月初账户余额
+  closingAccountBalance: number;   // 月末账户余额
+  openingHoldingsValue: number;    // 月初持仓市值
+  closingHoldingsValue: number;    // 月末持仓市值
+  totalIn: number;                 // 月度转入总额
+  totalOut: number;                // 月度转出总额
+  profit: number;                  // 月度盈亏金额
 }
 
 export interface FundDetailRecordInput {

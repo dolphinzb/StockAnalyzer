@@ -480,6 +480,52 @@ export interface ProfitStatistics {
 }
 
 /**
+ * 年度盈亏数据
+ * 用于年度盈亏柱状图展示
+ */
+export interface AnnualProfitData {
+  /** 年份 (YYYY) */
+  year: number;
+  /** 年初账户余额 */
+  openingAccountBalance: number;
+  /** 年末账户余额 */
+  closingAccountBalance: number;
+  /** 年初持仓市值 */
+  openingHoldingsValue: number;
+  /** 年末持仓市值 */
+  closingHoldingsValue: number;
+  /** 年度转入总额 */
+  totalIn: number;
+  /** 年度转出总额 */
+  totalOut: number;
+  /** 年度盈亏金额 */
+  profit: number;
+}
+
+/**
+ * 月度盈亏数据
+ * 用于月度盈亏柱状图展示
+ */
+export interface MonthlyProfitData {
+  /** 月份 (YYYY-MM) */
+  month: string;
+  /** 月初账户余额 */
+  openingAccountBalance: number;
+  /** 月末账户余额 */
+  closingAccountBalance: number;
+  /** 月初持仓市值 */
+  openingHoldingsValue: number;
+  /** 月末持仓市值 */
+  closingHoldingsValue: number;
+  /** 月度转入总额 */
+  totalIn: number;
+  /** 月度转出总额 */
+  totalOut: number;
+  /** 月度盈亏金额 */
+  profit: number;
+}
+
+/**
  * 资金明细记录输入（新增时使用）
  */
 export interface TransferRecordInput {
@@ -520,6 +566,10 @@ export interface FundManagementAPI {
   getAccountBalance(): Promise<number>;
   /** 获取指定日期之前的期初余额 */
   getOpeningBalance(date: string): Promise<number>;
+  /** 获取年度盈亏数据（从2024年开始到当前年份） */
+  getAnnualProfitData(): Promise<AnnualProfitData[]>;
+  /** 获取月度盈亏数据（过去24个月） */
+  getMonthlyProfitData(): Promise<MonthlyProfitData[]>;
 }
 
 /**

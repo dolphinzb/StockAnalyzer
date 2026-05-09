@@ -68,6 +68,9 @@
           </div>
         </div>
       </div>
+
+      <!-- 图表区域 -->
+      <ProfitChart />
     </div>
 
     <!-- 空状态 -->
@@ -84,9 +87,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useFundManagementStore } from '../stores/fundManagement';
 import DateRangePicker from './DateRangePicker.vue';
+import ProfitChart from './ProfitChart.vue';
 
 const store = useFundManagementStore();
 
@@ -132,6 +136,13 @@ const handleCalculate = async () => {
 const handleReset = () => {
   dateRange.value = { startDate: '', endDate: '' };
 };
+
+/**
+ * 页面初始化时自动计算历史盈亏统计
+ */
+onMounted(async () => {
+  await store.calculateProfit();
+});
 
 /**
  * 格式化金额为千分位显示

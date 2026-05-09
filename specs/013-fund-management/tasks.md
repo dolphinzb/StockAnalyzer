@@ -3,7 +3,7 @@
 **Feature**: 013-fund-management  
 **Branch**: `feature/fund-detail-upgrade`  
 **Date**: 2026-05-03  
-**Updated**: 2026-05-08  
+**Updated**: 2026-05-08 (Session 2)  
 **Spec**: [spec.md](./spec.md)  
 **Plan**: [plan.md](./plan.md)
 
@@ -14,12 +14,14 @@ graph TD
     A[Phase 1: Setup] --> B[Phase 2: Foundational]
     B --> C[Phase 3: US1 - 资金明细管理 P1]
     C --> D[Phase 4: US2 - 盈亏统计 P2]
-    D --> E[Phase 5: Polish]
+    D --> E[Phase 5: US2a/US2b - 盈亏图表 P2]
+    E --> F[Phase 6: Polish]
 ```
 
 **User Story Completion Order**:
 1. **US1 (P1)**: 查看和管理资金明细 - 基础功能，可独立测试（含账户余额自动计算）
 2. **US2 (P2)**: 统计指定时间段内的盈亏 - 依赖US1的资金明细数据，同时依赖kline_data和trade_record表
+3. **US2a/US2b (P2)**: 年度和月度盈亏图表 - 依赖US2的数据计算方法
 
 **Parallel Execution Opportunities**:
 - Phase 2中数据库表初始化和类型定义可并行
@@ -39,7 +41,8 @@ graph TD
 **Incremental Delivery**:
 1. MVP: 资金明细管理（US1）
 2. Add: 盈亏统计（US2）- 含kline_data持仓市值计算和trade_record交易统计
-3. Polish: 用户体验优化
+3. Add: 年度和月度盈亏图表（US2a/US2b）- ECharts柱状图展示
+4. Polish: 用户体验优化
 
 ---
 
@@ -208,7 +211,74 @@ graph TD
 
 ---
 
-## Phase 5: Polish & Cross-Cutting Concerns
+## Phase 5: User Story 2a/2b - 年度和月度盈亏图表 (Priority: P2)
+
+**Goal**: 在盈亏统计页面下方增加两个图表：左侧年度盈亏柱状图（从2024年开始），右侧月度盈亏柱状图（过去24个月包括当月）。盈利显示红色且在X轴上方，亏损显示绿色且在X轴下方。
+
+**Independent Test**: 在有足够年份和月份的资金明细、持仓和K线数据的情况下，验证年度和月度柱状图是否正确显示盈亏金额，颜色是否符合红涨绿跌规范，柱子位置是否在正确的X轴方向。
+
+**Acceptance Criteria**:
+1. 年度图表从2024年开始显示到当前年份，每个柱子代表一年的盈亏
+2. 月度图表显示过去24个月（包括当月），每个柱子代表一个月的盈亏
+3. 盈利年份/月份用红色(#ef4444)表示且柱子在X轴上方（正值）
+4. 亏损年份/月份用绿色(#10b981)表示且柱子在X轴下方（负值）
+5. 鼠标悬停时显示详细数据提示
+6. 无数据的年份/月份柱子高度为0
+
+### Dependencies
+
+- [ ] T081 [US2a/US2b] 创建src/composables/useProfitChart.ts composable（封装Canvas柱状图绘制逻辑，参考useKlineChart）
+
+### Type Definitions
+
+- [ ] T082 [US2a/US2b] 在shared/types/index.ts中添加AnnualProfitData接口定义
+- [ ] T083 [US2a/US2b] 在shared/types/index.ts中添加MonthlyProfitData接口定义
+- [ ] T084 [US2a/US2b] 在shared/types/index.ts的FundManagementAPI中添加getAnnualProfitData和getMonthlyProfitData方法签名
+
+### Service Layer
+
+- [ ] T085 [US2a/US2b] [P] 在electron/services/fundService.ts中实现getAnnualProfitData方法（获取从2024年开始到当前年份的年度盈亏数据数组）
+- [ ] T086 [US2a/US2b] [P] 在electron/services/fundService.ts中实现getMonthlyProfitData方法（获取过去24个月的月度盈亏数据数组）
+
+### IPC Handlers
+
+- [ ] T087 [US2a/US2b] [P] 在electron/index.ts中注册'get-annual-profit-data' IPC handler
+- [ ] T088 [US2a/US2b] [P] 在electron/index.ts中注册'get-monthly-profit-data' IPC handler
+
+### Preload API
+
+- [ ] T089 [US2a/US2b] 在preload/index.ts中暴露getAnnualProfitData API
+- [ ] T090 [US2a/US2b] 在preload/index.ts中暴露getMonthlyProfitData API
+
+### Pinia Store
+
+- [ ] T091 [US2a/US2b] 在src/stores/fundManagement.ts中添加annualProfitData和monthlyProfitData state字段
+- [ ] T092 [US2a/US2b] 在src/stores/fundManagement.ts中实现fetchAnnualProfitData action
+- [ ] T093 [US2a/US2b] 在src/stores/fundManagement.ts中实现fetchMonthlyProfitData action
+
+### Components
+
+- [ ] T094 [US2a/US2b] 创建src/components/ProfitChart.vue组件（包含年度和月度两个柱状图）
+- [ ] T095 [US2a/US2b] 在ProfitChart.vue中使用Canvas绘制年度柱状图（从2024年开始，红涨绿跌，X轴上下方显示）
+- [ ] T096 [US2a/US2b] 在ProfitChart.vue中使用Canvas绘制月度柱状图（过去24个月，红涨绿跌，X轴上下方显示）
+- [ ] T097 [US2a/US2b] 在ProfitChart.vue中实现鼠标悬停数据提示功能（参考KlineChartDialog的tooltip实现）
+- [ ] T098 [US2a/US2b] 在ProfitChart.vue中实现响应式布局（左右两个图表并排）
+
+### View Integration
+
+- [ ] T099 [US2a/US2b] 在ProfitStatistics.vue中集成ProfitChart组件（放在统计卡片下方）
+- [ ] T100 [US2a/US2b] 在FundManagementView.vue切换到盈亏统计标签时自动加载图表数据
+
+### Edge Cases
+
+- [ ] T101 [US2a/US2b] 处理某年/某月无数据的情况（柱子高度为0）
+- [ ] T102 [US2a/US2b] 处理Canvas初始化失败的错误提示
+- [ ] T103 [US2a/US2b] 处理窗口resize时图表自适应
+- [ ] T104 [US2a/US2b] 在组件卸载时释放Canvas资源（参考KlineChartDialog的onBeforeUnmount）
+
+---
+
+## Phase 6: Polish & Cross-Cutting Concerns
 
 **Goal**: 优化用户体验，完善边界情况，性能优化
 
@@ -240,20 +310,22 @@ graph TD
 
 ## Task Summary
 
-**Total Tasks**: 88 tasks
-**Tasks Completed**: 64 tasks (Phase 1-3 全部完成 + Phase 4 全部完成)
-**Tasks Pending**: 24 tasks (Phase 5 Polish)
+**Total Tasks**: 103 tasks
+**Tasks Completed**: 64 tasks (Phase 1-4 全部完成)
+**Tasks Pending**: 39 tasks (Phase 5 + Phase 6)
 
 **By Phase**:
 - Phase 1 (Setup): 4 tasks → **All completed** ✅
 - Phase 2 (Foundational): 14 tasks → **All completed** ✅
 - Phase 3 (US1 - 资金明细): 18 tasks → **All completed** ✅
 - Phase 4 (US2 - 盈亏统计): 24 tasks → **All completed** ✅
-- Phase 5 (Polish): 12 tasks → **2 completed** (T045, T046), 10 pending
+- Phase 5 (US2a/US2b - 盈亏图表): 23 tasks → **0 completed**, 23 pending
+- Phase 6 (Polish): 12 tasks → **2 completed** (T045, T046), 10 pending
 
 **By User Story**:
 - US1 (P1): 18 tasks → **All completed** ✅ - 资金明细功能完整实现
 - US2 (P2): 24 tasks → **All completed** ✅ - 盈亏统计按新公式重写完成
+- US2a/US2b (P2): 23 tasks → **0 completed** - 年度和月度图表待实现
 - Polish: 12 tasks → **2 completed** - UI文本更新已完成
 
 **Phase 4 Key Changes (2026-05-08)**:
@@ -263,6 +335,14 @@ graph TD
 4. **移除接口**: getCurrentHoldingsTotal（由getHoldingsMarketValue替代）
 5. **ProfitStatistics接口重写**: 新增openingAccountBalance、closingAccountBalance、openingHoldingsValue、closingHoldingsValue字段
 6. **前端计算简化**: 盈亏统计计算逻辑移至后端，前端直接使用后端返回的完整数据
+
+**Phase 5 Key Changes (2026-05-08 Session 2)**:
+1. **新增图表功能**: 年度盈亏柱状图（从2024年开始）和月度盈亏柱状图（过去24个月）
+2. **Canvas集成**: 使用Canvas进行图表渲染（与K线图技术栈保持一致）
+3. **可视化规范**: 盈利红色在X轴上方，亏损绿色在X轴下方
+4. **新数据类型**: AnnualProfitData和MonthlyProfitData
+5. **新服务方法**: getAnnualProfitData和getMonthlyProfitData
+6. **新增composable**: useProfitChart.ts封装Canvas绘制逻辑
 
 **Phase 4 Task Breakdown**:
 - Type Definitions (T057-T058): 2 tasks

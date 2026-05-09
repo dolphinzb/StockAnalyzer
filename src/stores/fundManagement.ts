@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
-import type { ProfitStatistics, TransferRecord } from '../../shared/types';
+import type { AnnualProfitData, MonthlyProfitData, ProfitStatistics, TransferRecord } from '../../shared/types';
 
 export const useFundManagementStore = defineStore('fundManagement', () => {
   // State
@@ -8,6 +8,12 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   const profitStatistics = ref<ProfitStatistics | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
+
+  // 图表相关状态
+  const annualProfitData = ref<AnnualProfitData[]>([]);
+  const monthlyProfitData = ref<MonthlyProfitData[]>([]);
+  const isLoadingAnnual = ref(false);
+  const isLoadingMonthly = ref(false);
 
   // 分页相关状态
   const currentPage = ref(0);
@@ -190,6 +196,46 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     error.value = null;
   }
 
+  /**
+   * 获取年度盈亏数据
+   */
+  async function fetchAnnualProfitData(): Promise<void> {
+    try {
+      console.log('[Store] 开始获取年度盈亏数据...');
+      isLoadingAnnual.value = true;
+      error.value = null;
+
+      const data = await window.fundManagementAPI.getAnnualProfitData();
+      console.log('[Store] 年度盈亏数据:', data);
+      annualProfitData.value = data;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '获取年度盈亏数据失败';
+      console.error('[Store] fetchAnnualProfitData error:', err);
+    } finally {
+      isLoadingAnnual.value = false;
+    }
+  }
+
+  /**
+   * 获取月度盈亏数据
+   */
+  async function fetchMonthlyProfitData(): Promise<void> {
+    try {
+      console.log('[Store] 开始获取月度盈亏数据...');
+      isLoadingMonthly.value = true;
+      error.value = null;
+
+      const data = await window.fundManagementAPI.getMonthlyProfitData();
+      console.log('[Store] 月度盈亏数据:', data);
+      monthlyProfitData.value = data;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '获取月度盈亏数据失败';
+      console.error('[Store] fetchMonthlyProfitData error:', err);
+    } finally {
+      isLoadingMonthly.value = false;
+    }
+  }
+
   return {
     // State
     transferRecords,
@@ -200,6 +246,11 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     pageSize,
     hasMore,
     totalRecords,
+    // 图表相关状态
+    annualProfitData,
+    monthlyProfitData,
+    isLoadingAnnual,
+    isLoadingMonthly,
 
     // Getters
     recordsCount,
@@ -213,5 +264,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     calculateProfit,
     calculateAccountBalance,
     clearError,
+    fetchAnnualProfitData,
+    fetchMonthlyProfitData,
   };
 });

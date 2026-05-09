@@ -14,7 +14,7 @@
         :class="{ active: activeTab === 'profit' }"
         @click="activeTab = 'profit'"
       >
-        盈利统计
+        盈亏统计
       </button>
     </div>
 
@@ -27,7 +27,7 @@
       />
     </div>
 
-    <!-- 盈利统计标签页 -->
+    <!-- 盈亏统计标签页 -->
     <div v-else-if="activeTab === 'profit'" class="tab-content">
       <ProfitStatistics />
     </div>
@@ -60,12 +60,12 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import TransferRecordList from '../components/TransferRecordList.vue';
-import TransferEditor from '../components/TransferEditor.vue';
-import ProfitStatistics from '../components/ProfitStatistics.vue';
-import Modal from '../components/Modal.vue';
-import { useFundManagementStore } from '../stores/fundManagement';
 import type { TransferRecord } from '../../shared/types';
+import Modal from '../components/Modal.vue';
+import ProfitStatistics from '../components/ProfitStatistics.vue';
+import TransferEditor from '../components/TransferEditor.vue';
+import TransferRecordList from '../components/TransferRecordList.vue';
+import { useFundManagementStore } from '../stores/fundManagement';
 
 const activeTab = ref('transfers');
 const showEditor = ref(false);
@@ -95,6 +95,7 @@ const handleSaveTransfer = async (data: { transferDate: string; amount: number; 
       await store.updateTransferRecord(editingRecord.value.id, data);
     } else {
       // 新增
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { accountBalance, ...newRecordData } = data;
       await store.addTransferRecord(newRecordData as any);
     }

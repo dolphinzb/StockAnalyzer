@@ -1,11 +1,12 @@
 # Quickstart: 资金管理功能
 
 **Date**: 2026-05-03  
+**Updated**: 2026-05-08 - 更新盈亏统计公式和数据来源  
 **Feature**: 013-fund-management
 
 ## Overview
 
-本指南帮助开发者快速理解和开发资金管理功能。该功能包含转账记录管理和盈利统计两个核心模块。
+本指南帮助开发者快速理解和开发资金管理功能。该功能包含资金明细管理和盈亏统计两个核心模块。
 
 ## Prerequisites
 
@@ -29,10 +30,10 @@ src/
 ├── views/
 │   └── FundManagementView.vue    # 主页面
 ├── components/
-│   ├── TransferRecordList.vue    # 转账列表
+│   ├── TransferRecordList.vue    # 资金明细列表
 │   ├── TransferRecordItem.vue    # 列表项
 │   ├── TransferEditor.vue        # 编辑对话框
-│   ├── ProfitStatistics.vue      # 盈利统计
+│   ├── ProfitStatistics.vue      # 盈亏统计
 │   └── DateRangePicker.vue       # 日期选择器
 ├── stores/
 │   └── fundManagement.ts         # Pinia store
@@ -69,7 +70,8 @@ function initializeTransferRecordsTable(db: Database) {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         transfer_date TEXT NOT NULL,
         amount REAL NOT NULL CHECK(amount > 0),
-        type TEXT NOT NULL CHECK(type IN ('IN', 'OUT')),
+        type TEXT NOT NULL CHECK(type IN ('IN', 'OUT', 'DIVIDEND', 'DIVIDEND_TAX', 'STOCK_BUY', 'STOCK_SELL', 'INTEREST')),
+        account_balance REAL NOT NULL DEFAULT 0,
         created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
         updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
       )
@@ -90,7 +92,8 @@ export interface TransferRecord {
   id: number;
   transferDate: string;
   amount: number;
-  type: 'IN' | 'OUT';
+  type: 'IN' | 'OUT' | 'DIVIDEND' | 'DIVIDEND_TAX' | 'STOCK_BUY' | 'STOCK_SELL' | 'INTEREST';
+  accountBalance: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -98,10 +101,13 @@ export interface TransferRecord {
 export interface ProfitStatistics {
   startDate: string;
   endDate: string;
-  totalIn: number;
-  totalOut: number;
-  currentHoldings: number;
-  profit: number;
+  openingAccountBalance: number;   // 期初账户余额
+  closingAccountBalance: number;   // 期末账户余额
+  openingHoldingsValue: number;    // 期初持仓市值
+  closingHoldingsValue: number;    // 期末持仓市值
+  totalIn: number;                 // 转入总金额 (trade_record BUY)
+  totalOut: number;                // 转出总金额 (trade_record SELL)
+  profit: number;                  // 盈亏金额
 }
 ```
 
@@ -219,17 +225,10 @@ export const useFundManagementStore = defineStore('fundManagement', {
     async calculateProfit(startDate: string, endDate: string) {
       this.loading = true;
       try {
-        // 获取转账统计数据
+        // 获取盈亏统计数据（包含期初/期末账户余额、持仓市值、转入转出金额）
         const stats = await window.api.getProfitStatistics(startDate, endDate);
         
-        // 获取当前持仓总额
-        const currentHoldings = await window.api.getCurrentHoldingsTotal();
-        
-        this.profitStats = {
-          ...stats,
-          currentHoldings,
-          profit: stats.totalOut - stats.totalIn + currentHoldings
-        };
+        this.profitStats = stats;
       } catch (error) {
         this.error = error.message;
       } finally {
@@ -248,10 +247,10 @@ export const useFundManagementStore = defineStore('fundManagement', {
 <template>
   <div class="fund-management">
     <el-tabs v-model="activeTab">
-      <el-tab-pane label="转账记录" name="transfers">
+      <el-tab-pane label="资金明细" name="transfers">
         <TransferRecordList />
       </el-tab-pane>
-      <el-tab-pane label="盈利统计" name="profit">
+      <el-tab-pane label="盈亏统计" name="profit">
         <ProfitStatistics />
       </el-tab-pane>
     </el-tabs>
@@ -333,12 +332,13 @@ export function useInfiniteScroll(callback: () => Promise<void>) {
    - [ ] 滚动到底部自动加载更多记录
    - [ ] 输入负数金额时显示错误提示
 
-2. **盈利统计**
-   - [ ] 首次进入显示提示信息
-   - [ ] 选择日期范围后显示盈利结果
+2. **盈亏统计**
+   - [ ] 首次进入显示历史所有记录的盈亏统计
+   - [ ] 选择日期范围后显示盈亏结果
    - [ ] 修改日期范围实时更新结果
-   - [ ] 无转账记录时显示正确结果
-   - [ ] 持仓数据查询失败时显示错误提示
+   - [ ] 无资金明细记录时显示正确结果（期初/期末账户余额为0）
+   - [ ] 无K线数据时显示"无K线数据"提示
+   - [ ] 无trade_record记录时转入转出为0
 
 ## Common Issues & Solutions
 
@@ -370,7 +370,7 @@ export function useInfiniteScroll(callback: () => Promise<void>) {
 
 1. 完成基础CRUD功能
 2. 实现无限滚动
-3. 实现盈利统计
+3. 实现盈亏统计（含kline_data持仓市值计算和trade_record交易统计）
 4. 添加错误处理和边界情况处理
 5. 优化性能和用户体验
 6. 编写单元测试（如果项目配置了测试框架）

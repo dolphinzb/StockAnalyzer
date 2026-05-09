@@ -88,36 +88,42 @@ CREATE INDEX idx_transfer_date ON transfer_records(transfer_date DESC);
 
 ---
 
-### 4. 持仓数据实时查询机制
+### 4. 持仓市值计算机制
 
-**Decision**: 通过Electron IPC从主进程查询持仓数据，每次计算盈利时重新获取
+**Decision**: 通过kline_data表获取各持股在指定日期的收盘价，结合持仓数量计算持仓市值
 
 **Rationale**:
-- 规范要求FR-011：实时查询确俜数据准确性
-- Electron架构中，持仓数据可能在主进程管理
-- IPC通信是Electron标准的进程间通信方式
-- 参考现有代码`electron/services/priceFetcher.ts`的模式
+- 规范要求FR-011：从kline_data表中获取各持股收盘价计算持仓市值
+- kline_data表已存储所有自选股的日K线数据，包含收盘价(close)字段
+- 需要同时计算期初和期末两个时间点的持仓市值
+- 对于缺失日期的K线数据，使用距离该日期最近的前一个交易日的收盘价
 
 **Implementation approach**:
 ```typescript
-// Renderer process (Vue组件)
-const currentHoldings = await window.api.getCurrentHoldingsTotal();
-
-// Main process (electron/index.ts)
-ipcMain.handle('get-current-holdings-total', async () => {
-  // 从持仓系统获取最新总市值
-  return calculateTotalHoldingsValue();
-});
+// Main process (electron/services/fundService.ts)
+async getHoldingsMarketValue(date: string) {
+  // 1. 获取所有持仓股票代码和数量
+  const holdings = getHoldings();
+  
+  // 2. 对每只持股，从kline_data获取指定日期的收盘价
+  for (const holding of holdings) {
+    const kline = db.exec(`
+      SELECT close FROM kline_data 
+      WHERE stock_code = ? AND trade_date <= ? 
+      ORDER BY trade_date DESC LIMIT 1
+    `, [holding.stockCode, date]);
+    
+    marketValue += kline.close * holding.holdingCount;
+  }
+  
+  return marketValue;
+}
 ```
 
 **Error handling**:
-- 查询失败时显示错误提示（FR-011a）
-- 引导用户检查持仓系统状态
-- 不缓存旧数据，避免误导
-
-**Alternatives considered**:
-- 定时刷新缓存：可能导致数据不一致
-- 用户手动输入：操作繁琐，易出错
+- 查询kline_data失败时显示错误提示（FR-011a）
+- 无K线数据时提示"无K线数据"并跳过该持股
+- 引导用户检查K线数据下载状态
 
 ---
 
@@ -148,29 +154,44 @@ ipcMain.handle('get-current-holdings-total', async () => {
 
 ---
 
-### 6. 盈利计算公式验证
+### 6. 盈亏计算公式验证
 
-**Decision**: 严格遵循规范公式：盈利 = 转出金额 - 转入金额 + 当前持仓金额
+**Decision**: 严格遵循规范公式：盈亏金额=(期末账户余额+期末持仓市值)-(期初账户余额+期初持仓市值)+(转出金额-转入金额)
 
 **Rationale**:
 - 规范FR-007明确定义的计算公式
-- 业务逻辑清晰：转出（资金离开）- 转入（资金进入）+ 当前持仓价值
+- 业务逻辑清晰：盈亏=资产变化+净流出，其中资产变化=(期末资产-期初资产)，净流出=(转出-转入)
 - 正值表示盈利，负值表示亏损
+- 数据来源明确：账户余额来自transfer_records表，持仓市值来自kline_data表，转入转出来自trade_record表
+
+**Data Source Mapping**:
+- 期初账户余额: transfer_records表中截止期初日期最近一条记录的account_balance
+- 期末账户余额: transfer_records表中截止期末日期最近一条记录的account_balance
+- 期初持仓市值: kline_data各持股在期初日期收盘价×持仓数量之和
+- 期末持仓市值: kline_data各持股在期末日期收盘价×持仓数量之和
+- 转入金额: trade_record表中BUY类型交易总金额（买入金额+手续费）
+- 转出金额: trade_record表中SELL类型交易总金额（卖出金额-手续费-印花税）
 
 **Example calculation**:
 ```
-假设时间段内：
-- 转入总额：10,000元（追加投资）
-- 转出总额：2,000元（提取收益）
-- 当前持仓市值：15,000元
+假设时间段：2026-01-01 至 2026-05-06
+期初账户余额：8,000元
+期末账户余额：5,000元
+期初持仓市值：12,000元
+期末持仓市值：15,000元
+转入金额（BUY交易）：50,000元
+转出金额（SELL交易）：45,000元
 
-盈利 = 2,000 - 10,000 + 15,000 = 7,000元
+盈亏 = (5,000 + 15,000) - (8,000 + 12,000) + (45,000 - 50,000)
+     = 20,000 - 20,000 + (-5,000)
+     = -5,000元（亏损5,000元）
 ```
 
 **Edge cases handled**:
-- 无转账记录：盈利 = 0 - 0 + 当前持仓 = 当前持仓
-- 无持仓数据：显示"无持仓数据"提示
-- 查询失败：显示错误提示
+- 无资金明细记录：期初/期末账户余额均为0
+- 无K线数据：提示"无K线数据"，跳过该持股
+- 无trade_record记录：转入/转出金额均为0
+- 某只持股没有对应日期K线数据：使用最近前一个交易日收盘价
 
 ---
 
@@ -189,17 +210,23 @@ ipcMain.handle('get-current-holdings-total', async () => {
 // stores/fundManagement.ts
 export const useFundManagementStore = defineStore('fundManagement', {
   state: () => ({
-    transferRecords: [],      // 转账记录列表
-    profitStats: null,        // 盈利统计结果
-    loading: false,           // 加载状态
-    error: null              // 错误信息
+    transferRecords: [],           // 资金明细记录列表
+    profitStats: null,             // 盈亏统计结果
+    openingAccountBalance: 0,      // 期初账户余额
+    closingAccountBalance: 0,      // 期末账户余额
+    openingHoldingsValue: 0,       // 期初持仓市值
+    closingHoldingsValue: 0,       // 期末持仓市值
+    loading: false,                // 加载状态
+    error: null                   // 错误信息
   }),
   actions: {
     async fetchTransferRecords(page, limit),
     async addTransferRecord(record),
     async updateTransferRecord(id, data),
     async deleteTransferRecord(id),
-    async calculateProfit(startDate, endDate)
+    async calculateProfit(startDate, endDate),
+    async fetchHoldingsMarketValue(date),
+    async fetchTradeStatsInRange(startDate, endDate)
   }
 });
 ```
@@ -226,18 +253,22 @@ export interface TransferRecord {
   id: number;
   transferDate: string;    // YYYY-MM-DD
   amount: number;          // 正数
-  type: 'IN' | 'OUT';     // 枚举值
+  type: 'IN' | 'OUT' | 'DIVIDEND' | 'DIVIDEND_TAX' | 'STOCK_BUY' | 'STOCK_SELL' | 'INTEREST';
+  accountBalance: number;  // 自动计算
   createdAt?: string;
   updatedAt?: string;
 }
 
 export interface ProfitStatistics {
-  startDate: string;
-  endDate: string;
-  totalIn: number;
-  totalOut: number;
-  currentHoldings: number;
-  profit: number;
+  startDate: string;               // YYYY-MM-DD (期初)
+  endDate: string;                 // YYYY-MM-DD (期末)
+  openingAccountBalance: number;   // 期初账户余额
+  closingAccountBalance: number;   // 期末账户余额
+  openingHoldingsValue: number;    // 期初持仓市值
+  closingHoldingsValue: number;    // 期末持仓市值
+  totalIn: number;                 // 转入总金额 (trade_record BUY)
+  totalOut: number;                // 转出总金额 (trade_record SELL)
+  profit: number;                  // 盈亏金额
 }
 ```
 
@@ -274,10 +305,16 @@ export interface ProfitStatistics {
 - 参考`SideNav.vue`和`useNavigation.ts`的实现
 
 ### 2. 与持仓系统交互
-- 调用现有持仓服务获取总市值
-- 可能需要扩展`position.ts` store或创建新的IPC handler
+- 从kline_data表获取各持股在指定日期的收盘价
+- 从持仓系统获取各持股的持仓数量
+- 结合收盘价和持仓数量计算期初/期末持仓市值
 
-### 3. 数据库迁移
+### 3. 与交易记录系统交互
+- 从trade_record表获取指定时间段内的交易记录
+- 统计BUY类型交易总金额作为转入金额
+- 统计SELL类型交易总金额作为转出金额
+
+### 4. 数据库迁移
 - 在应用启动时检查并创建`transfer_records`表
 - 参考`database.ts`中的表初始化逻辑
 
@@ -291,11 +328,13 @@ export interface ProfitStatistics {
 - 日期选择器：HTML5原生支持
 
 ### Medium Risk
-- 持仓数据实时查询：需要了解现有持仓系统的接口
+- kline_data数据查询：需要确保K线数据已下载且日期覆盖范围足够
+- trade_record数据查询：需要正确计算手续费和印花税
 - 数据库表扩展：需要确保不影响现有表结构
 
 ### Mitigation Strategies
-- 先调研现有持仓服务的实现方式
+- 先调研现有kline_data表的数据覆盖范围
+- 先调研现有trade_record表的结构和手续费计算逻辑
 - 数据库操作前备份现有数据
 - 充分的边界情况测试
 

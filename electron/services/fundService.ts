@@ -764,10 +764,18 @@ export class FundService {
         const month = date.getMonth() + 1;
 
         const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-        
-        // 计算月末日期
-        const lastDay = new Date(year, month, 0).getDate();
-        const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+        // 计算截止日期：当月使用当前日期，历史月份使用月末日期
+        let endDate: string;
+        if (i === 0) {
+          // 当月使用当前日期
+          const today = new Date();
+          endDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        } else {
+          // 历史月份使用月末日期
+          const lastDay = new Date(year, month, 0).getDate();
+          endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        }
 
         // 计算该月的盈亏统计
         const stats = await this.getProfitStatistics(startDate, endDate);
@@ -788,6 +796,178 @@ export class FundService {
       return monthlyData;
     } catch (error) {
       log.error('getMonthlyProfitData error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取当前资金概览
+   * 包含当前账户余额、当前持仓总市值和总资产
+   * @returns 资金概览数据
+   */
+  async getFundOverview(): Promise<{
+    currentAccountBalance: number;
+    currentHoldingsMarketValue: number;
+    totalAssets: number;
+  }> {
+    try {
+      // 1. 获取当前账户余额（最后一条transfer_records的account_balance）
+      const currentAccountBalance = await this.getAccountBalance();
+
+      // 2. 获取当前所有持仓股票（holding_count > 0）
+      const positionsResult = this.db.exec(`
+        SELECT t1.stock_code, t1.stock_name, t1.holding_count
+        FROM trade_record t1
+        INNER JOIN (
+          SELECT stock_code, MAX(trade_date) as max_date
+          FROM trade_record
+          GROUP BY stock_code
+        ) t2 ON t1.stock_code = t2.stock_code AND t1.trade_date = t2.max_date
+        WHERE t1.holding_count > 0
+      `);
+
+      let currentHoldingsMarketValue = 0;
+
+      if (positionsResult.length > 0 && positionsResult[0].values.length > 0) {
+        for (const row of positionsResult[0].values) {
+          const stockCode = row[0] as string;
+          const holdingCount = row[2] as number;
+
+          // 获取该股票最新的收盘价（从kline_data表）
+          const klineResult = this.db.exec(`
+            SELECT close FROM kline_data
+            WHERE stock_code = ? AND close IS NOT NULL
+            ORDER BY trade_date DESC LIMIT 1
+          `, [stockCode]);
+
+          if (klineResult.length > 0 && klineResult[0].values.length > 0) {
+            const closePrice = klineResult[0].values[0][0] as number;
+            currentHoldingsMarketValue += closePrice * holdingCount;
+          }
+        }
+      }
+
+      // 3. 计算总资产
+      const totalAssets = currentAccountBalance + currentHoldingsMarketValue;
+
+      log.info(`获取资金概览成功，账户余额: ${currentAccountBalance}, 持仓市值: ${currentHoldingsMarketValue}, 总资产: ${totalAssets}`);
+
+      return {
+        currentAccountBalance: Number(currentAccountBalance.toFixed(2)),
+        currentHoldingsMarketValue: Number(currentHoldingsMarketValue.toFixed(2)),
+        totalAssets: Number(totalAssets.toFixed(2)),
+      };
+    } catch (error) {
+      log.error('getFundOverview error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取过去60个月的月度资金数据
+   * 对每个月计算月末账户余额和月末持仓市值
+   * 缺失数据使用前值填充
+   * @returns 月度资金数据数组（按月份升序排列）
+   */
+  async getMonthlyFundData(): Promise<
+    Array<{
+      month: string;
+      endOfMonthAccountBalance: number;
+      endOfMonthHoldingsMarketValue: number;
+      endOfMonthTotalAssets: number;
+    }>
+  > {
+    try {
+      const now = new Date();
+      const monthlyData: Array<{
+        month: string;
+        endOfMonthAccountBalance: number;
+        endOfMonthHoldingsMarketValue: number;
+        endOfMonthTotalAssets: number;
+      }> = [];
+
+      // 用于前值填充的变量
+      let lastAccountBalance = 0;
+      let lastHoldingsMarketValue = 0;
+
+      // 生成过去60个月的日期范围（从最早到最近）
+      for (let i = 59; i >= 0; i--) {
+        const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+
+        // 计算截止日期：当月使用当前日期，历史月份使用月末日期
+        let endDate: string;
+        if (i === 0) {
+          // 当月使用当前日期
+          const today = new Date();
+          endDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        } else {
+          // 历史月份使用月末日期
+          const lastDay = new Date(year, month, 0).getDate();
+          endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        }
+
+        // 获取月末账户余额（截止月末最后一天最近记录的account_balance）
+        let endOfMonthAccountBalance = 0;
+        let hasAccountBalanceData = false; // 标记是否有数据
+        try {
+          const balanceResult = this.db.exec(
+            `SELECT account_balance FROM transfer_records WHERE transfer_date <= ? ORDER BY transfer_date DESC, id DESC LIMIT 1`,
+            [endDate]
+          );
+          if (balanceResult.length > 0 && balanceResult[0].values.length > 0) {
+            endOfMonthAccountBalance = balanceResult[0].values[0][0] as number;
+            hasAccountBalanceData = true; // 有数据记录
+          }
+        } catch (error) {
+          log.error(`获取${monthStr}账户余额失败:`, error);
+        }
+
+        // 获取月末持仓市值
+        let endOfMonthHoldingsMarketValue = 0;
+        let hasHoldingsData = false; // 标记是否有数据
+        try {
+          const holdingsResult = await this.getHoldingsMarketValue(endDate);
+          endOfMonthHoldingsMarketValue = holdingsResult.marketValue;
+          hasHoldingsData = true; // 有数据记录
+        } catch (error) {
+          log.error(`获取${monthStr}持仓市值失败:`, error);
+        }
+
+        // 前值填充逻辑：仅在没有数据时才使用前值填充
+        // 如果有数据但值为0，应该显示0（这是用户的真实余额）
+        if (!hasAccountBalanceData && lastAccountBalance !== 0) {
+          endOfMonthAccountBalance = lastAccountBalance;
+        }
+        if (!hasHoldingsData && lastHoldingsMarketValue !== 0) {
+          endOfMonthHoldingsMarketValue = lastHoldingsMarketValue;
+        }
+
+        // 更新前值记录（无论值是0还是其他值，只要有数据就更新）
+        if (hasAccountBalanceData) {
+          lastAccountBalance = endOfMonthAccountBalance;
+        }
+        if (hasHoldingsData) {
+          lastHoldingsMarketValue = endOfMonthHoldingsMarketValue;
+        }
+
+        // 计算月末总资产
+        const endOfMonthTotalAssets = endOfMonthAccountBalance + endOfMonthHoldingsMarketValue;
+
+        monthlyData.push({
+          month: monthStr,
+          endOfMonthAccountBalance: Number(endOfMonthAccountBalance.toFixed(2)),
+          endOfMonthHoldingsMarketValue: Number(endOfMonthHoldingsMarketValue.toFixed(2)),
+          endOfMonthTotalAssets: Number(endOfMonthTotalAssets.toFixed(2)),
+        });
+      }
+
+      log.info(`获取月度资金数据成功，共${monthlyData.length}个月`);
+      return monthlyData;
+    } catch (error) {
+      log.error('getMonthlyFundData error:', error);
       throw error;
     }
   }

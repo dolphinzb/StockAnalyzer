@@ -201,19 +201,19 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     const volumeMax = Math.max(...visibleKlines.map(k => k.volume ?? 0)) || 1;
 
     // 绘制坐标轴网格线
-    drawGrid(ctx, chartWidth, candleAreaHeight, adjustedPriceMin, adjustedPriceRange, volumeAreaTop, volumeAreaHeight, dateAxisTop);
+    drawGrid(ctx, chartWidth, candleAreaHeight, volumeAreaTop, dateAxisTop);
 
     // 绘制蜡烛图
-    drawCandles(ctx, visibleKlines, chartWidth, candleAreaHeight, adjustedPriceMin, adjustedPriceRange);
+    drawCandles(ctx, visibleKlines, candleAreaHeight, adjustedPriceMin, adjustedPriceRange);
 
     // 绘制成交量柱状图
-    drawVolume(ctx, visibleKlines, chartWidth, volumeAreaTop, volumeAreaHeight, volumeMax);
+    drawVolume(ctx, visibleKlines, volumeAreaTop, volumeAreaHeight, volumeMax);
 
     // 绘制交易标注
-    drawTradeMarkers(ctx, visibleKlines, chartWidth, candleAreaHeight, adjustedPriceMin, adjustedPriceRange);
+    drawTradeMarkers(ctx, visibleKlines, candleAreaHeight, adjustedPriceMin, adjustedPriceRange);
 
     // 绘制坐标轴文字
-    drawAxisLabels(ctx, visibleKlines, chartWidth, width, height, candleAreaHeight, adjustedPriceMin, adjustedPriceMax, adjustedPriceRange, volumeAreaTop, volumeMax, dateAxisTop);
+    drawAxisLabels(ctx, visibleKlines, chartWidth, height, candleAreaHeight, adjustedPriceMax, adjustedPriceRange, volumeAreaTop, volumeMax, dateAxisTop);
   }
 
   /**
@@ -223,10 +223,7 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     ctx: CanvasRenderingContext2D,
     chartWidth: number,
     candleAreaHeight: number,
-    priceMin: number,
-    priceRange: number,
     volumeAreaTop: number,
-    volumeAreaHeight: number,
     dateAxisTop: number
   ): void {
     ctx.strokeStyle = CHART_CONFIG.COLOR_AXIS;
@@ -260,7 +257,6 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
   function drawCandles(
     ctx: CanvasRenderingContext2D,
     visibleKlines: KlineData[],
-    chartWidth: number,
     candleAreaHeight: number,
     priceMin: number,
     priceRange: number
@@ -321,7 +317,6 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
   function drawVolume(
     ctx: CanvasRenderingContext2D,
     visibleKlines: KlineData[],
-    chartWidth: number,
     volumeAreaTop: number,
     volumeAreaHeight: number,
     volumeMax: number
@@ -348,7 +343,6 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
   function drawTradeMarkers(
     ctx: CanvasRenderingContext2D,
     visibleKlines: KlineData[],
-    chartWidth: number,
     candleAreaHeight: number,
     priceMin: number,
     priceRange: number
@@ -362,7 +356,6 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
 
       const kline = visibleKlines[klineIndex];
       const x = klineIndex * CHART_CONFIG.CANDLE_STEP + CHART_CONFIG.CANDLE_STEP / 2;
-      const close = kline.close ?? 0;
       const high = kline.high ?? 0;
       const low = kline.low ?? 0;
 
@@ -418,10 +411,8 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     ctx: CanvasRenderingContext2D,
     visibleKlines: KlineData[],
     chartWidth: number,
-    width: number,
     _height: number,
     candleAreaHeight: number,
-    priceMin: number,
     priceMax: number,
     priceRange: number,
     volumeAreaTop: number,

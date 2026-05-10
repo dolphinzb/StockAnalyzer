@@ -282,6 +282,10 @@ const fundManagementAPI: FundManagementAPI = {
     ipcRenderer.invoke('get-annual-profit-data'),
   getMonthlyProfitData: () =>
     ipcRenderer.invoke('get-monthly-profit-data'),
+  getFundOverview: () =>
+    ipcRenderer.invoke('fund:getFundOverview'),
+  getMonthlyFundData: () =>
+    ipcRenderer.invoke('fund:getMonthlyFundData'),
 };
 
 // K线数据 API

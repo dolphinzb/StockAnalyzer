@@ -616,6 +616,38 @@ ipcMain.handle('get-opening-balance', async (_event, date: string) => {
   }
 });
 
+/**
+ * 获取当前资金概览（账户余额 + 持仓市值 + 总资产）
+ */
+ipcMain.handle('fund:getFundOverview', async () => {
+  log.debug('IPC: fund:getFundOverview');
+  try {
+    if (!fundService) {
+      throw new Error('FundService not initialized');
+    }
+    return await fundService.getFundOverview();
+  } catch (error) {
+    log.error('IPC fund:getFundOverview error:', error);
+    throw error;
+  }
+});
+
+/**
+ * 获取过去60个月的月度资金数据
+ */
+ipcMain.handle('fund:getMonthlyFundData', async () => {
+  log.debug('IPC: fund:getMonthlyFundData');
+  try {
+    if (!fundService) {
+      throw new Error('FundService not initialized');
+    }
+    return await fundService.getMonthlyFundData();
+  } catch (error) {
+    log.error('IPC fund:getMonthlyFundData error:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('grid:calculatePosition', (_event, input) => {
   log.debug('IPC: grid:calculatePosition', input);
   return calculatePosition(input);

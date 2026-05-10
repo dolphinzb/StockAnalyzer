@@ -4,6 +4,13 @@
     <div class="tab-navigation">
       <button
         class="tab-button"
+        :class="{ active: activeTab === 'statistics' }"
+        @click="activeTab = 'statistics'"
+      >
+        资金统计
+      </button>
+      <button
+        class="tab-button"
         :class="{ active: activeTab === 'transfers' }"
         @click="activeTab = 'transfers'"
       >
@@ -18,8 +25,13 @@
       </button>
     </div>
 
+    <!-- 资金统计标签页 -->
+    <div v-if="activeTab === 'statistics'" class="tab-content">
+      <FundStatistics />
+    </div>
+
     <!-- 资金明细标签页 -->
-    <div v-if="activeTab === 'transfers'" class="tab-content">
+    <div v-else-if="activeTab === 'transfers'" class="tab-content">
       <TransferRecordList
         @add="handleAddTransfer"
         @edit="handleEditTransfer"
@@ -61,13 +73,14 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import type { TransferRecord } from '../../shared/types';
+import FundStatistics from '../components/FundStatistics.vue';
 import Modal from '../components/Modal.vue';
 import ProfitStatistics from '../components/ProfitStatistics.vue';
 import TransferEditor from '../components/TransferEditor.vue';
 import TransferRecordList from '../components/TransferRecordList.vue';
 import { useFundManagementStore } from '../stores/fundManagement';
 
-const activeTab = ref('transfers');
+const activeTab = ref('statistics');
 const showEditor = ref(false);
 const editingRecord = ref<TransferRecord | null>(null);
 const showDeleteConfirm = ref(false);
@@ -163,7 +176,7 @@ const confirmDelete = async () => {
 
 .tab-content {
   flex: 1;
-  overflow: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }

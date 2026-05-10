@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
-import type { AnnualProfitData, MonthlyProfitData, ProfitStatistics, TransferRecord } from '../../shared/types';
+import type { AnnualProfitData, FundOverview, MonthlyFundData, MonthlyProfitData, ProfitStatistics, TransferRecord } from '../../shared/types';
 
 export const useFundManagementStore = defineStore('fundManagement', () => {
   // State
@@ -14,6 +14,12 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   const monthlyProfitData = ref<MonthlyProfitData[]>([]);
   const isLoadingAnnual = ref(false);
   const isLoadingMonthly = ref(false);
+
+  // 资金统计相关状态
+  const fundOverview = ref<FundOverview | null>(null);
+  const monthlyFundData = ref<MonthlyFundData[]>([]);
+  const isLoadingOverview = ref(false);
+  const isLoadingMonthlyFund = ref(false);
 
   // 分页相关状态
   const currentPage = ref(0);
@@ -236,6 +242,44 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     }
   }
 
+  /**
+   * 获取当前资金概览（账户余额 + 持仓市值 + 总资产）
+   */
+  async function fetchFundOverview(): Promise<void> {
+    try {
+      isLoadingOverview.value = true;
+      error.value = null;
+
+      const data = await window.fundManagementAPI.getFundOverview();
+      fundOverview.value = data;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '获取资金概览失败';
+      console.error('[Store] fetchFundOverview error:', err);
+      throw err;
+    } finally {
+      isLoadingOverview.value = false;
+    }
+  }
+
+  /**
+   * 获取过去60个月的月度资金数据
+   */
+  async function fetchMonthlyFundData(): Promise<void> {
+    try {
+      isLoadingMonthlyFund.value = true;
+      error.value = null;
+
+      const data = await window.fundManagementAPI.getMonthlyFundData();
+      monthlyFundData.value = data;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '获取月度资金数据失败';
+      console.error('[Store] fetchMonthlyFundData error:', err);
+      throw err;
+    } finally {
+      isLoadingMonthlyFund.value = false;
+    }
+  }
+
   return {
     // State
     transferRecords,
@@ -251,6 +295,11 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     monthlyProfitData,
     isLoadingAnnual,
     isLoadingMonthly,
+    // 资金统计相关状态
+    fundOverview,
+    monthlyFundData,
+    isLoadingOverview,
+    isLoadingMonthlyFund,
 
     // Getters
     recordsCount,
@@ -266,5 +315,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     clearError,
     fetchAnnualProfitData,
     fetchMonthlyProfitData,
+    fetchFundOverview,
+    fetchMonthlyFundData,
   };
 });

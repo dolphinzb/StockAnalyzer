@@ -545,6 +545,49 @@ export interface TransferRecordUpdate {
 }
 
 /**
+ * 资金概览数据
+ * 包含当前账户余额、持仓市值和总资产
+ */
+export interface FundOverview {
+  /** 当前账户余额（元） */
+  currentAccountBalance: number;
+  /** 当前持仓总市值（元） */
+  currentHoldingsMarketValue: number;
+  /** 总资产（账户余额 + 持仓市值，元） */
+  totalAssets: number;
+}
+
+/**
+ * 月度资金数据
+ * 记录某个月末的账户余额、持仓市值和总资产
+ */
+export interface MonthlyFundData {
+  /** 月份标识 (YYYY-MM) */
+  month: string;
+  /** 月末账户余额（元） */
+  endOfMonthAccountBalance: number;
+  /** 月末持仓总市值（元） */
+  endOfMonthHoldingsMarketValue: number;
+  /** 月末总资产（元） */
+  endOfMonthTotalAssets: number;
+}
+
+/**
+ * 饼图数据项
+ * 用于饼图展示的数据结构
+ */
+export interface PieChartDataItem {
+  /** 数据标签（如"账户余额"、"持仓市值"） */
+  label: string;
+  /** 数值（元） */
+  value: number;
+  /** 颜色（CSS颜色值） */
+  color: string;
+  /** 占比（百分比数值，如 45.5 表示 45.5%） */
+  percentage: number;
+}
+
+/**
  * 资金管理API类型 - 通过 preload contextBridge 暴露给渲染进程
  */
 export interface FundManagementAPI {
@@ -570,6 +613,10 @@ export interface FundManagementAPI {
   getAnnualProfitData(): Promise<AnnualProfitData[]>;
   /** 获取月度盈亏数据（过去24个月） */
   getMonthlyProfitData(): Promise<MonthlyProfitData[]>;
+  /** 获取当前资金概览（账户余额 + 持仓市值 + 总资产） */
+  getFundOverview(): Promise<FundOverview>;
+  /** 获取过去60个月的月度资金数据（月末账户余额 + 月末持仓市值 + 月末总资产） */
+  getMonthlyFundData(): Promise<MonthlyFundData[]>;
 }
 
 /**

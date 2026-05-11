@@ -273,12 +273,12 @@ graph TD
 
 - [x] T082 [US4-EXT] 修改electron/services/klineDownloadService.ts中的getChartData函数，从数据库查询而非调用stock-sdk
 - [x] T083 [US4-EXT] 更新electron/index.ts中的kline:get-chart-data IPC handler，使用数据库查询结果
-- [ ] T084 [US4-EXT] 修改src/composables/useKlineChart.ts中的getChartData调用，处理空数组情况
-- [ ] T085 [US4-EXT] 修改src/components/KlineChartDialog.vue，当数据库无数据时显示"暂无XXX复权数据，请先下载"提示
-- [ ] T086 [US4-EXT] 修改KlineChartDialog.vue中的复权切换逻辑，切换时先从数据库查询目标复权类型数据
-- [ ] T087 [US4-EXT] 当切换的目标复权类型无数据时，显示提示并保持当前视图不变
-- [ ] T088 [US4-EXT] 移除KlineChartDialog.vue中所有stock-sdk实时获取数据的代码
-- [ ] T089 [US4-EXT] 优化useKlineChart.ts，确保空数据时Canvas渲染不报错
+- [x] T084 [US4-EXT] 修改src/composables/useKlineChart.ts中的getChartData调用，处理空数组情况
+- [x] T085 [US4-EXT] 修改src/components/KlineChartDialog.vue，当数据库无数据时显示"暂无XXX复权数据，请先下载"提示
+- [x] T086 [US4-EXT] 修改KlineChartDialog.vue中的复权切换逻辑，切换时先从数据库查询目标复权类型数据
+- [x] T087 [US4-EXT] 当切换的目标复权类型无数据时，显示提示并保持当前视图不变
+- [x] T088 [US4-EXT] 移除KlineChartDialog.vue中所有stock-sdk实时获取数据的代码
+- [x] T089 [US4-EXT] 优化useKlineChart.ts，确保空数据时Canvas渲染不报错
 
 **Checkpoint**: US4扩展完成 - K线弹窗完全依赖数据库，无数据时显示明确提示
 

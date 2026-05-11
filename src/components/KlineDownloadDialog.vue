@@ -16,17 +16,15 @@ const emit = defineEmits<{
   download: [payload: { stockCode: string; startDate: string; endDate: string }];
 }>();
 
-/** 计算默认开始日期：1个月前 */
+/** 计算默认开始日期：当日 */
 function getDefaultStartDate(): string {
   const date = new Date();
-  date.setMonth(date.getMonth() - 1);
   return date.toISOString().slice(0, 10);
 }
 
-/** 计算默认结束日期：前一天 */
+/** 计算默认结束日期：当日 */
 function getDefaultEndDate(): string {
   const date = new Date();
-  date.setDate(date.getDate() - 1);
   return date.toISOString().slice(0, 10);
 }
 

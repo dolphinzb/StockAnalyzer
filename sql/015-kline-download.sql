@@ -24,9 +24,6 @@ SELECT COUNT(*)
 FROM pragma_table_info('kline_data')
 WHERE name = 'adjust_type';
 
--- 如果已经迁移过（has_adjust_type > 0），则直接结束
--- 注意：SQLite不支持条件中断，所以我们需要通过后续的逻辑来处理
-
 -- ============================================
 -- 步骤2: 创建新表结构（包含adjust_type字段）
 -- ============================================
@@ -54,6 +51,7 @@ CREATE TABLE IF NOT EXISTS kline_data_new (
 -- 步骤3: 迁移现有数据
 -- ============================================
 -- 仅当新表为空时才迁移数据（避免重复迁移）
+-- 注意：旧表中没有adjust_type字段，所以设置为默认值''
 INSERT OR IGNORE INTO kline_data_new (
   id, stock_code, trade_date, adjust_type,
   open, close, high, low, volume, amount,
@@ -62,7 +60,7 @@ INSERT OR IGNORE INTO kline_data_new (
 )
 SELECT 
   id, stock_code, trade_date, 
-  COALESCE(adjust_type, '') as adjust_type,
+  '' as adjust_type,
   open, close, high, low, volume, amount,
   amplitude, change_percent, change_amount, turnover_rate,
   created_at, updated_at

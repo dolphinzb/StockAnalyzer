@@ -585,7 +585,15 @@ interface HistoryKlineItem {
  * @param klines stock-sdk返回的K线数据数组
  * @returns 保存的数据条数
  */
-export function saveKlineData(stockCode: string, klines: HistoryKlineItem[]): number {
+/**
+ * 批量保存K线数据到数据库
+ * 使用事务批量INSERT OR REPLACE，按股票代码+交易日期+复权类型去重
+ * @param stockCode 股票代码（纯数字）
+ * @param klines stock-sdk返回的K线数据数组
+ * @param adjustType 复权类型：'none' 不复权 | 'qfq' 前复权
+ * @returns 保存的数据条数
+ */
+export function saveKlineData(stockCode: string, klines: HistoryKlineItem[], adjustType: 'none' | 'qfq' = 'none'): number {
   const database = getDb();
   const now = new Date().toISOString();
 
@@ -600,11 +608,12 @@ export function saveKlineData(stockCode: string, klines: HistoryKlineItem[]): nu
 
       database.run(
         `INSERT OR REPLACE INTO kline_data 
-         (stock_code, trade_date, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (stock_code, trade_date, adjust_type, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           pureCode,
           tradeDate,
+          adjustType,
           kline.open ?? null,
           kline.close ?? null,
           kline.high ?? null,
@@ -624,12 +633,12 @@ export function saveKlineData(stockCode: string, klines: HistoryKlineItem[]): nu
     // 提交事务
     database.run('COMMIT');
     saveDatabase();
-    log.info(`K线数据保存成功: ${stockCode}, 共 ${klines.length} 条`);
+    log.info(`K线数据保存成功: ${stockCode}, 复权类型: ${adjustType}, 共 ${klines.length} 条`);
     return klines.length;
   } catch (error) {
     // 事务回滚
     database.run('ROLLBACK');
-    log.error(`K线数据保存失败: ${stockCode}`, error);
+    log.error(`K线数据保存失败: ${stockCode}, 复权类型: ${adjustType}`, error);
     throw error;
   }
 }
@@ -642,18 +651,19 @@ function rowToKlineData(row: any[]): import('../shared/types').KlineData {
     id: row[0] as number,
     stockCode: row[1] as string,
     tradeDate: row[2] as string,
-    open: row[3] as number | null,
-    close: row[4] as number | null,
-    high: row[5] as number | null,
-    low: row[6] as number | null,
-    volume: row[7] as number | null,
-    amount: row[8] as number | null,
-    amplitude: row[9] as number | null,
-    changePercent: row[10] as number | null,
-    changeAmount: row[11] as number | null,
-    turnoverRate: row[12] as number | null,
-    createdAt: row[13] as string,
-    updatedAt: row[14] as string,
+    adjustType: row[3] as 'none' | 'qfq',
+    open: row[4] as number | null,
+    close: row[5] as number | null,
+    high: row[6] as number | null,
+    low: row[7] as number | null,
+    volume: row[8] as number | null,
+    amount: row[9] as number | null,
+    amplitude: row[10] as number | null,
+    changePercent: row[11] as number | null,
+    changeAmount: row[12] as number | null,
+    turnoverRate: row[13] as number | null,
+    createdAt: row[14] as string,
+    updatedAt: row[15] as string,
   };
 }
 
@@ -684,6 +694,27 @@ export function getKlineData(stockCode: string, startDate?: string, endDate?: st
   query += ` ORDER BY trade_date ASC`;
 
   const result = database.exec(query, params);
+
+  if (result.length === 0) {
+    return [];
+  }
+
+  return result[0].values.map(rowToKlineData);
+}
+
+/**
+ * 获取K线图展示数据（从数据库查询，支持前复权/不复权切换）
+ * @param stockCode 股票代码
+ * @param adjustType 复权类型：'none' 不复权 | 'qfq' 前复权
+ * @returns K线数据数组，按交易日期升序排列
+ */
+export function getChartData(stockCode: string, adjustType: 'none' | 'qfq'): import('../shared/types').KlineData[] {
+  const database = getDb();
+
+  const query = `SELECT id, stock_code, trade_date, adjust_type, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at
+                 FROM kline_data WHERE stock_code = ? AND adjust_type = ? ORDER BY trade_date ASC`;
+
+  const result = database.exec(query, [stockCode, adjustType]);
 
   if (result.length === 0) {
     return [];

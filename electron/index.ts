@@ -737,7 +737,7 @@ ipcMain.handle('kline:get-data', async (_event, stockCode: string, startDate?: s
 ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjustType: 'none' | 'qfq') => {
   log.info('IPC: kline:get-chart-data', stockCode, adjustType);
   try {
-    return await dbGetChartData(stockCode, adjustType);
+    return dbGetChartData(stockCode, adjustType);
   } catch (error) {
     log.error('IPC kline:get-chart-data error:', error);
     throw error;

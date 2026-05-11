@@ -720,14 +720,22 @@ export interface KlineData {
 
 /**
  * K线数据下载结果
- * 代表一次K线数据下载操作的返回结果
+ * 代表一次K线数据下载操作的返回结果（支持双复权类型）
  */
 export interface KlineDownloadResult {
-  /** 是否成功 */
+  /** 是否成功（至少一种复权类型成功即为true） */
   success: boolean;
-  /** 获取的数据条数 */
+  /** 不复权数据条数 */
+  unadjustedCount?: number;
+  /** 前复权数据条数 */
+  adjustedCount?: number;
+  /** 不复权失败原因 */
+  unadjustedError?: string;
+  /** 前复权失败原因 */
+  adjustedError?: string;
+  /** 兼容旧版：总数据条数（已废弃，使用unadjustedCount + adjustedCount） */
   count?: number;
-  /** 失败原因 */
+  /** 兼容旧版：失败原因（已废弃，使用unadjustedError/adjustedError） */
   error?: string;
 }
 

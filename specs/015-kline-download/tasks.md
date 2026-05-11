@@ -223,33 +223,33 @@ graph TD
 - [x] T053 [P] 在迁移脚本中删除原有UNIQUE(stock_code, trade_date)约束并重建为UNIQUE(stock_code, trade_date, adjust_type）
 - [x] T054 [P] 在迁移脚本中创建复合索引idx_kline_data_stock_date_adjust ON kline_data(stock_code, trade_date, adjust_type)
 - [x] T055 [P] 在迁移脚本中添加验证查询注释，用于检查迁移前后数据完整性
-- [ ] T056 执行数据库迁移脚本，验证adjust_type字段正确添加且已有数据设置为''
-- [ ] T057 验证迁移脚本可重复执行（运行两次无错误）
-- [ ] T058 [P] 更新shared/types/index.ts中的KlineData接口，添加adjustType字段（'none' | 'qfq'）
-- [ ] T059 [P] 更新shared/types/index.ts中的KlineDownloadResult接口，添加unadjustedCount和adjustedCount字段
-- [ ] T060 [P] 更新src/types.ts重新导出更新后的类型定义
+- [x] T056 执行数据库迁移脚本，验证adjust_type字段正确添加且已有数据设置为''
+- [x] T057 验证迁移脚本可重复执行（运行两次无错误）
+- [x] T058 [P] 更新shared/types/index.ts中的KlineData接口，添加adjustType字段（'none' | 'qfq'）
+- [x] T059 [P] 更新shared/types/index.ts中的KlineDownloadResult接口，添加unadjustedCount和adjustedCount字段
+- [x] T060 [P] 更新src/types.ts重新导出更新后的类型定义
 
 ### 8.2 数据库操作层更新
 
-- [ ] T061 更新electron/database.ts中的saveKlineData函数签名，接受adjustType参数
-- [ ] T062 修改saveKlineData函数实现，将adjustType值写入数据库的adjust_type字段
-- [ ] T063 更新electron/database.ts中的getKlineData函数，添加adjustType过滤参数
-- [ ] T064 修改getKlineData函数实现，按adjust_type字段过滤查询结果
-- [ ] T065 [P] 在electron/database.ts中添加getChartData函数（接收stockCode和adjustType参数，从数据库查询对应复权类型的K线数据）
+- [x] T061 更新electron/database.ts中的saveKlineData函数签名，接受adjustType参数
+- [x] T062 修改saveKlineData函数实现，将adjustType值写入数据库的adjust_type字段
+- [x] T063 更新electron/database.ts中的getKlineData函数，添加adjustType过滤参数
+- [x] T064 修改getKlineData函数实现，按adjust_type字段过滤查询结果
+- [x] T065 [P] 在electron/database.ts中添加getChartData函数（接收stockCode和adjustType参数，从数据库查询对应复权类型的K线数据）
 
 ### 8.3 User Story 1扩展 - 手动下载双复权类型
 
 **Goal**: 用户点击下载K线按钮后，系统同时下载不复权和前复权两种数据，并分别显示成功条数
 
-- [ ] T066 [US1-EXT] 在electron/services/klineDownloadService.ts中添加downloadSingleAdjust内部函数（接收stockCode、startDate、endDate、adjustType参数，调用sdk.getHistoryKline获取指定复权类型数据，保存到数据库）
-- [ ] T067 [US1-EXT] 修改electron/services/klineDownloadService.ts中的downloadKline函数，改为调用两次downloadSingleAdjust（一次adjust=''，一次adjust='qfq'）
-- [ ] T068 [US1-EXT] 修改downloadKline函数返回值为{ success: boolean; unadjustedCount?: number; adjustedCount?: number; unadjustedError?: string; adjustedError?: string }
-- [ ] T069 [US1-EXT] 添加部分成功处理逻辑：一种复权类型失败不影响另一种，分别记录结果
-- [ ] T070 [US1-EXT] 更新electron/index.ts中的kline:download IPC handler返回值，包含两种复权类型的统计信息
-- [ ] T071 [US1-EXT] 更新preload/index.ts中的klineAPI.downloadKline返回类型定义
-- [ ] T072 [US1-EXT] 更新src/stores/watchlist.ts中的downloadStatusMap类型，支持存储两种复权类型的结果
-- [ ] T073 [US1-EXT] 修改src/views/WatchlistView.vue中的Toast通知逻辑，显示"下载完成，共获取 N 条不复权数据，M 条前复权数据"
-- [ ] T074 [US1-EXT] 修改src/views/WatchlistView.vue处理部分成功情况，显示"下载完成，不复权：N 条成功，前复权：下载失败（原因：XXX）"
+- [x] T066 [US1-EXT] 在electron/services/klineDownloadService.ts中添加downloadSingleAdjust内部函数（接收stockCode、startDate、endDate、adjustType参数，调用sdk.getHistoryKline获取指定复权类型数据，保存到数据库）
+- [x] T067 [US1-EXT] 修改electron/services/klineDownloadService.ts中的downloadKline函数，改为调用两次downloadSingleAdjust（一次adjust=''，一次adjust='qfq'）
+- [x] T068 [US1-EXT] 修改downloadKline函数返回值为{ success: boolean; unadjustedCount?: number; adjustedCount?: number; unadjustedError?: string; adjustedError?: string }
+- [x] T069 [US1-EXT] 添加部分成功处理逻辑：一种复权类型失败不影响另一种，分别记录结果
+- [x] T070 [US1-EXT] 更新electron/index.ts中的kline:download IPC handler返回值，包含两种复权类型的统计信息
+- [x] T071 [US1-EXT] 更新preload/index.ts中的klineAPI.downloadKline返回类型定义
+- [x] T072 [US1-EXT] 更新src/stores/watchlist.ts中的downloadStatusMap类型，支持存储两种复权类型的结果
+- [x] T073 [US1-EXT] 修改src/views/WatchlistView.vue中的Toast通知逻辑，显示"下载完成，共获取 N 条不复权数据，M 条前复权数据"
+- [x] T074 [US1-EXT] 修改src/views/WatchlistView.vue处理部分成功情况，显示"下载完成，不复权：N 条成功，前复权：下载失败（原因：XXX）"
 
 **Checkpoint**: US1扩展完成 - 手动下载可同时获取两种复权类型数据，结果分别显示
 
@@ -257,13 +257,13 @@ graph TD
 
 **Goal**: 交易日15:10自动串行下载所有自选股的两种复权类型数据，日志分别统计成功/失败数量
 
-- [ ] T075 [US2-EXT] 修改electron/services/klineDownloadService.ts中的performAutoDownload函数，改为串行策略：每只股票依次下载不复权→前复权
-- [ ] T076 [US2-EXT] 实现per-stock串行下载循环：for each stock { download none → download qfq }
-- [ ] T077 [US2-EXT] 修改downloadWithRetry函数，为每种复权类型独立重试1次
-- [ ] T078 [US2-EXT] 更新日志格式，分别统计不复权和前复权的成功/失败数量
-- [ ] T079 [US2-EXT] 修改日志输出为"K线数据自动下载完成，共 N 只股票，不复权：M 只成功/K 只失败，前复权：P 只成功/Q 只失败"
-- [ ] T080 [US2-EXT] 添加网络中断容错处理：已完成的股票数据保留，未完成的记录失败，不整体回滚
-- [ ] T081 [US2-EXT] 调整超时时间：单只股票从10秒放宽至15秒，50只股票从60秒放宽至120秒
+- [x] T075 [US2-EXT] 修改electron/services/klineDownloadService.ts中的performAutoDownload函数，改为串行策略：每只股票依次下载不复权→前复权
+- [x] T076 [US2-EXT] 实现per-stock串行下载循环：for each stock { download none → download qfq }
+- [x] T077 [US2-EXT] 修改downloadWithRetry函数，为每种复权类型独立重试1次
+- [x] T078 [US2-EXT] 更新日志格式，分别统计不复权和前复权的成功/失败数量
+- [x] T079 [US2-EXT] 修改日志输出为"K线数据自动下载完成，共 N 只股票，不复权：M 只成功/K 只失败，前复权：P 只成功/Q 只失败"
+- [x] T080 [US2-EXT] 添加网络中断容错处理：已完成的股票数据保留，未完成的记录失败，不整体回滚
+- [x] T081 [US2-EXT] 调整超时时间：单只股票从10秒放宽至15秒，50只股票从60秒放宽至120秒
 
 **Checkpoint**: US2扩展完成 - 自动下载串行获取两种复权类型，日志分别统计
 
@@ -271,8 +271,8 @@ graph TD
 
 **Goal**: K线弹窗从数据库查询对应复权类型数据，无数据时显示明确提示，不再调用stock-sdk实时获取
 
-- [ ] T082 [US4-EXT] 修改electron/services/klineDownloadService.ts中的getChartData函数，从数据库查询而非调用stock-sdk
-- [ ] T083 [US4-EXT] 更新electron/index.ts中的kline:get-chart-data IPC handler，使用数据库查询结果
+- [x] T082 [US4-EXT] 修改electron/services/klineDownloadService.ts中的getChartData函数，从数据库查询而非调用stock-sdk
+- [x] T083 [US4-EXT] 更新electron/index.ts中的kline:get-chart-data IPC handler，使用数据库查询结果
 - [ ] T084 [US4-EXT] 修改src/composables/useKlineChart.ts中的getChartData调用，处理空数组情况
 - [ ] T085 [US4-EXT] 修改src/components/KlineChartDialog.vue，当数据库无数据时显示"暂无XXX复权数据，请先下载"提示
 - [ ] T086 [US4-EXT] 修改KlineChartDialog.vue中的复权切换逻辑，切换时先从数据库查询目标复权类型数据

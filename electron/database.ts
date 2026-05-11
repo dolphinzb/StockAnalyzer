@@ -78,78 +78,12 @@ export async function initDatabase(): Promise<void> {
       db = new SQL.Database(fileBuffer);
       log.info('数据库文件加载成功');
     } else {
-      db = new SQL.Database();
-      log.info('创建新的数据库实例');
+      log.warn('数据库文件不存在:', dbPath);
+      throw new Error('数据库文件不存在，请先通过迁移脚本初始化数据库');
     }
-
-    db.run(`
-      CREATE TABLE IF NOT EXISTS config (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL,
-        updated_at INTEGER
-      )
-    `);
-
-    db.run(`
-      CREATE TABLE IF NOT EXISTS trade_record (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        stock_code TEXT DEFAULT NULL,
-        stock_name TEXT DEFAULT NULL,
-        trade_date TEXT DEFAULT NULL,
-        trade_type TEXT DEFAULT NULL,
-        trade_price REAL DEFAULT NULL,
-        trade_count INTEGER DEFAULT NULL,
-        holding_count INTEGER DEFAULT NULL,
-        holding_price REAL DEFAULT NULL
-      )
-    `);
-
-    db.run(`
-      CREATE TABLE IF NOT EXISTS watchlist_stocks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        stock_code TEXT UNIQUE NOT NULL,
-        stock_name TEXT NOT NULL,
-        buy_threshold REAL NOT NULL,
-        sell_threshold REAL NOT NULL,
-        monitor_enabled INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )
-    `);
-
-    db.run(`
-      CREATE INDEX IF NOT EXISTS idx_watchlist_stocks_monitor_enabled
-      ON watchlist_stocks(monitor_enabled)
-    `);
-
-    db.run(`
-      CREATE INDEX IF NOT EXISTS idx_watchlist_stocks_stock_code
-      ON watchlist_stocks(stock_code)
-    `);
-
-    log.info('自选股数据库表初始化完成');
-
-    // 初始化转账记录表
-    initializeTransferRecordsTable();
-
-    // 初始化K线数据表
-    initializeKlineDataTable();
-
-    const result = db.exec("SELECT * FROM config WHERE key = 'app_config'");
-    if (result.length === 0 || result[0].values.length === 0) {
-      const defaultConfigJson = JSON.stringify(DEFAULT_CONFIG);
-      db.run(
-        "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?)",
-        ['app_config', defaultConfigJson, Date.now()]
-      );
-      saveDatabase();
-      log.info('默认配置已插入数据库');
-    }
-
-    log.info('数据库表初始化完成');
   } catch (error) {
     log.error('数据库初始化失败:', error);
-    db = new SQL.Database();
+    throw error;
   }
 }
 
@@ -625,96 +559,6 @@ export function getTradeRecordsByStockCode(stockCode: string): TradeRecord[] {
 }
 
 
-
-/**
- * 初始化转账记录表
- * 创建 transfer_records 表用于存储资金管理功能的转账记录
- */
-export function initializeTransferRecordsTable(): void {
-  const database = getDb();
-
-  // 检查表是否已存在
-  const tableExists = database.exec(`
-    SELECT name FROM sqlite_master 
-    WHERE type='table' AND name='transfer_records'
-  `);
-
-  if (tableExists.length === 0) {
-    log.info('创建 transfer_records 表');
-
-    // 创建资金明细表（包含account_balance字段）
-    database.run(`
-      CREATE TABLE transfer_records (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        transfer_date TEXT NOT NULL,
-        amount REAL NOT NULL CHECK(amount > 0),
-        type TEXT NOT NULL CHECK(type IN ('IN', 'OUT', 'DIVIDEND', 'DIVIDEND_TAX', 'STOCK_BUY', 'STOCK_SELL', 'INTEREST')),
-        account_balance REAL NOT NULL DEFAULT 0,
-        created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
-      )
-    `);
-
-    // 创建索引优化查询性能
-    database.run(`CREATE INDEX idx_transfer_date_desc ON transfer_records(transfer_date DESC)`);
-    database.run(`CREATE INDEX idx_transfer_type_date ON transfer_records(type, transfer_date)`);
-
-    log.info('transfer_records 表及索引创建完成');
-  } else {
-    log.info('transfer_records 表已存在，跳过创建');
-    // 注意：如果需要迁移，请手动执行: npm run migrate
-    // 详见: docs/数据库迁移指南.md
-  }
-}
-
-/**
- * 初始化K线数据表
- * 创建 kline_data 表用于存储所有自选股的日K线数据
- */
-export function initializeKlineDataTable(): void {
-  const database = getDb();
-
-  // 检查表是否已存在
-  const tableExists = database.exec(`
-    SELECT name FROM sqlite_master 
-    WHERE type='table' AND name='kline_data'
-  `);
-
-  if (tableExists.length === 0) {
-    log.info('创建 kline_data 表');
-
-    // 创建K线数据表
-    database.run(`
-      CREATE TABLE IF NOT EXISTS kline_data (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        stock_code TEXT NOT NULL,
-        trade_date TEXT NOT NULL,
-        open REAL,
-        close REAL,
-        high REAL,
-        low REAL,
-        volume REAL,
-        amount REAL,
-        amplitude REAL,
-        change_percent REAL,
-        change_amount REAL,
-        turnover_rate REAL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE(stock_code, trade_date)
-      )
-    `);
-
-    // 创建索引优化查询性能
-    database.run(`CREATE INDEX IF NOT EXISTS idx_kline_data_stock_code ON kline_data(stock_code)`);
-    database.run(`CREATE INDEX IF NOT EXISTS idx_kline_data_trade_date ON kline_data(trade_date)`);
-    database.run(`CREATE INDEX IF NOT EXISTS idx_kline_data_stock_date ON kline_data(stock_code, trade_date)`);
-
-    log.info('kline_data 表及索引创建完成');
-  } else {
-    log.info('kline_data 表已存在，跳过创建');
-  }
-}
 
 /**
  * stock-sdk 返回的K线数据项类型

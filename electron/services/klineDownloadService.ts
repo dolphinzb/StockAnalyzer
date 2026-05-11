@@ -12,7 +12,7 @@
 import log from 'electron-log';
 import { StockSDK } from 'stock-sdk';
 import type { KlineData, KlineDownloadResult } from '../../shared/types';
-import { getWatchlist, saveKlineData } from '../database';
+import { getWatchlist, saveKlineData, getChartData as dbGetChartData } from '../database';
 
 // StockSDK 模块级单例
 const sdk = new StockSDK();
@@ -81,28 +81,83 @@ export function validateDownloadInput(stockCode: string, startDate: string, endD
  * @param endDate 结束日期 (YYYYMMDD)
  * @returns 下载结果
  */
-export async function downloadKline(stockCode: string, startDate: string, endDate: string): Promise<KlineDownloadResult> {
+/**
+ * 下载单种复权类型的K线数据（内部辅助函数）
+ * @param stockCode 股票代码
+ * @param startDate 开始日期 (YYYYMMDD)
+ * @param endDate 结束日期 (YYYYMMDD)
+ * @param adjustType 复权类型：'none' 不复权 | 'qfq' 前复权
+ * @returns 下载结果
+ */
+async function downloadSingleAdjust(
+  stockCode: string,
+  startDate: string,
+  endDate: string,
+  adjustType: 'none' | 'qfq'
+): Promise<{ success: boolean; count?: number; error?: string }> {
   try {
-    log.info(`开始下载K线数据: ${stockCode}, ${startDate} ~ ${endDate}`);
+    const adjustParam = adjustType === 'qfq' ? 'qfq' : '';
+    log.info(`开始下载${adjustType === 'qfq' ? '前复权' : '不复权'}K线数据: ${stockCode}, ${startDate} ~ ${endDate}`);
 
-    // 调用 stock-sdk 获取不复权日K线数据
+    // 调用 stock-sdk 获取K线数据
     const klines = await sdk.getHistoryKline(stockCode, {
       period: 'daily',
-      adjust: '',       // 不复权原始数据
+      adjust: adjustParam,
       startDate,
       endDate,
     });
 
     // 保存到数据库
-    const count = saveKlineData(stockCode, klines);
+    const count = saveKlineData(stockCode, klines, adjustType);
 
-    log.info(`K线数据下载完成: ${stockCode}, 共 ${count} 条`);
+    log.info(`${adjustType === 'qfq' ? '前复权' : '不复权'}K线数据下载完成: ${stockCode}, 共 ${count} 条`);
     return { success: true, count };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '未知错误';
-    log.error(`K线数据下载失败: ${stockCode}`, errorMessage);
+    log.error(`${adjustType === 'qfq' ? '前复权' : '不复权'}K线数据下载失败: ${stockCode}`, errorMessage);
     return { success: false, error: errorMessage };
   }
+}
+
+/**
+ * 手动下载K线数据（同时下载不复权和前复权两种类型）
+ * @param stockCode 股票代码
+ * @param startDate 开始日期 (YYYYMMDD)
+ * @param endDate 结束日期 (YYYYMMDD)
+ * @returns 下载结果（包含两种复权类型的统计）
+ */
+export async function downloadKline(stockCode: string, startDate: string, endDate: string): Promise<KlineDownloadResult> {
+  log.info(`开始下载双复权类型K线数据: ${stockCode}, ${startDate} ~ ${endDate}`);
+
+  // 串行下载：先下载不复权，再下载前复权
+  const unadjustedResult = await downloadSingleAdjust(stockCode, startDate, endDate, 'none');
+  const adjustedResult = await downloadSingleAdjust(stockCode, startDate, endDate, 'qfq');
+
+  // 至少一种成功即为整体成功
+  const overallSuccess = unadjustedResult.success || adjustedResult.success;
+
+  const result: KlineDownloadResult = {
+    success: overallSuccess,
+    unadjustedCount: unadjustedResult.count,
+    adjustedCount: adjustedResult.count,
+  };
+
+  // 记录失败原因
+  if (!unadjustedResult.success && unadjustedResult.error) {
+    result.unadjustedError = unadjustedResult.error;
+  }
+  if (!adjustedResult.success && adjustedResult.error) {
+    result.adjustedError = adjustedResult.error;
+  }
+
+  // 兼容旧版字段
+  result.count = (unadjustedResult.count || 0) + (adjustedResult.count || 0);
+  if (!overallSuccess) {
+    result.error = `不复权: ${unadjustedResult.error || '未知错误'}; 前复权: ${adjustedResult.error || '未知错误'}`;
+  }
+
+  log.info(`双复权类型K线数据下载完成: ${stockCode}, 不复权=${unadjustedResult.count || 0}条, 前复权=${adjustedResult.count || 0}条`);
+  return result;
 }
 
 /**
@@ -161,10 +216,10 @@ export async function downloadWithRetry(stockCode: string, startDate: string, en
 
 /**
  * 执行自动下载所有自选股当日K线数据
- * 串行逐只下载，失败重试1次，结果记录到日志
+ * 串行逐只下载两种复权类型（股票A不复权→前复权→股票B...），失败重试1次，结果记录到日志
  */
 export async function performAutoDownload(): Promise<void> {
-  log.info('开始执行K线数据自动下载...');
+  log.info('开始执行K线数据自动下载（双复权类型）...');
 
   // 判断是否为交易日
   const isTradeDay = await isTradingDay();
@@ -183,42 +238,78 @@ export async function performAutoDownload(): Promise<void> {
   // 获取今天的日期 (YYYYMMDD)
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
 
-  let successCount = 0;
-  let failCount = 0;
-  const failedStocks: { stockCode: string; stockName: string; error: string }[] = [];
+  // 分别统计不复权和前复权的成功/失败数量
+  let unadjustedSuccessCount = 0;
+  let unadjustedFailCount = 0;
+  let adjustedSuccessCount = 0;
+  let adjustedFailCount = 0;
+  
+  const unadjustedFailedStocks: { stockCode: string; stockName: string; error: string }[] = [];
+  const adjustedFailedStocks: { stockCode: string; stockName: string; error: string }[] = [];
 
-  // 串行逐只下载
+  // 串行逐只下载：每只股票依次下载不复权→前复权
   for (const stock of watchlist) {
     try {
       const result = await downloadWithRetry(stock.stockCode, today, today);
-      if (result.success) {
-        successCount++;
+      
+      // 统计不复权结果
+      if (result.unadjustedCount !== undefined && result.unadjustedCount > 0) {
+        unadjustedSuccessCount++;
       } else {
-        failCount++;
-        failedStocks.push({
+        unadjustedFailCount++;
+        unadjustedFailedStocks.push({
           stockCode: stock.stockCode,
           stockName: stock.stockName,
-          error: result.error || '未知错误',
+          error: result.unadjustedError || '未知错误',
+        });
+      }
+      
+      // 统计前复权结果
+      if (result.adjustedCount !== undefined && result.adjustedCount > 0) {
+        adjustedSuccessCount++;
+      } else {
+        adjustedFailCount++;
+        adjustedFailedStocks.push({
+          stockCode: stock.stockCode,
+          stockName: stock.stockName,
+          error: result.adjustedError || '未知错误',
         });
       }
     } catch (error) {
-      failCount++;
-      failedStocks.push({
+      // 异常情况下，两种复权类型都标记为失败
+      unadjustedFailCount++;
+      adjustedFailCount++;
+      const errorMsg = error instanceof Error ? error.message : '未知错误';
+      unadjustedFailedStocks.push({
         stockCode: stock.stockCode,
         stockName: stock.stockName,
-        error: error instanceof Error ? error.message : '未知错误',
+        error: errorMsg,
+      });
+      adjustedFailedStocks.push({
+        stockCode: stock.stockCode,
+        stockName: stock.stockName,
+        error: errorMsg,
       });
     }
   }
 
   // 记录汇总日志
   const totalCount = watchlist.length;
-  if (failCount === 0) {
-    log.info(`K线数据自动下载完成，共 ${totalCount} 只股票，全部成功`);
-  } else {
-    log.info(`K线数据自动下载完成，共 ${totalCount} 只股票，${successCount} 只成功，${failCount} 只失败`);
-    for (const failed of failedStocks) {
-      log.info(`  失败: ${failed.stockCode} ${failed.stockName} - ${failed.error}`);
+  log.info(`K线数据自动下载完成，共 ${totalCount} 只股票`);
+  log.info(`  不复权: ${unadjustedSuccessCount} 只成功, ${unadjustedFailCount} 只失败`);
+  log.info(`  前复权: ${adjustedSuccessCount} 只成功, ${adjustedFailCount} 只失败`);
+  
+  // 记录不复权失败的股票
+  if (unadjustedFailedStocks.length > 0) {
+    for (const failed of unadjustedFailedStocks) {
+      log.info(`  不复权失败: ${failed.stockCode} ${failed.stockName} - ${failed.error}`);
+    }
+  }
+  
+  // 记录前复权失败的股票
+  if (adjustedFailedStocks.length > 0) {
+    for (const failed of adjustedFailedStocks) {
+      log.info(`  前复权失败: ${failed.stockCode} ${failed.stockName} - ${failed.error}`);
     }
   }
 }
@@ -282,34 +373,21 @@ export function stopKlineDownloadScheduler(): void {
  * @param adjust 复权方式：'qfq' 前复权 | '' 不复权
  * @returns K线数据数组
  */
+/**
+ * 获取K线图展示数据（从数据库读取，支持前复权/不复权切换）
+ * @param stockCode 股票代码
+ * @param adjust 复权类型：'qfq' 前复权 | '' 不复权
+ * @returns K线数据数组，按交易日期升序排列
+ */
 export async function getChartData(stockCode: string, adjust: 'qfq' | ''): Promise<KlineData[]> {
   try {
-    log.info(`获取K线图展示数据: ${stockCode}, 复权方式: ${adjust || '不复权'}`);
+    // 将adjust参数转换为数据库使用的格式
+    const adjustType = adjust === 'qfq' ? 'qfq' : 'none';
+    
+    log.info(`获取K线图展示数据（从数据库）: ${stockCode}, 复权方式: ${adjustType}`);
 
-    // 调用 stock-sdk 获取对应复权类型的K线数据
-    const klines = await sdk.getHistoryKline(stockCode, {
-      period: 'daily',
-      adjust,  // 'qfq' 前复权 | '' 不复权
-    });
-
-    // 转换为 KlineData 格式
-    const result: KlineData[] = klines.map(kline => ({
-      id: 0, // 临时ID，展示数据不需要数据库ID
-      stockCode: kline.code.replace(/^[a-z]+/, ''), // 去除前缀（如 sh.600000 → 600000）
-      tradeDate: kline.date,
-      open: kline.open ?? null,
-      close: kline.close ?? null,
-      high: kline.high ?? null,
-      low: kline.low ?? null,
-      volume: kline.volume ?? null,
-      amount: kline.amount ?? null,
-      amplitude: kline.amplitude ?? null,
-      changePercent: kline.changePercent ?? null,
-      changeAmount: kline.change ?? null,
-      turnoverRate: kline.turnoverRate ?? null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }));
+    // 从数据库查询对应复权类型的K线数据
+    const result = dbGetChartData(stockCode, adjustType);
 
     log.info(`K线图展示数据获取成功: ${stockCode}, 共 ${result.length} 条`);
     return result;

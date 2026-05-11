@@ -32,7 +32,7 @@ const emit = defineEmits<{
 /** Canvas 元素引用 */
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 /** 当前复权方式 */
-const adjustType = ref<'qfq' | ''>('qfq');
+const adjustType = ref<'none' | 'qfq'>('qfq');
 /** 是否正在加载数据 */
 const isLoading = ref(false);
 /** 是否无数据 */
@@ -55,12 +55,14 @@ const tooltipInfo = ref<TooltipInfo>({
 /**
  * 加载K线数据和交易记录
  */
-async function loadChartData(): Promise<void> {
+async function loadChartData(showEmptyMsg = true): Promise<void> {
   if (!props.stockCode) return;
 
   isLoading.value = true;
-  isEmpty.value = false;
-  errorMsg.value = '';
+  if (showEmptyMsg) {
+    isEmpty.value = false;
+    errorMsg.value = '';
+  }
 
   try {
     // 并行获取K线数据和交易记录
@@ -71,15 +73,21 @@ async function loadChartData(): Promise<void> {
 
     if (klines.length === 0) {
       isEmpty.value = true;
+      if (showEmptyMsg) {
+        errorMsg.value = `暂无${adjustType.value === 'qfq' ? '前复权' : '不复权'}数据，请先下载`;
+      }
     } else {
       isEmpty.value = false;
+      errorMsg.value = '';
       // 等待 DOM 更新后设置数据并绘制
       await nextTick();
       klineChart.setData(klines, trades);
     }
   } catch (error) {
-    errorMsg.value = error instanceof Error ? error.message : '加载数据失败';
     isEmpty.value = true;
+    if (showEmptyMsg) {
+      errorMsg.value = error instanceof Error ? error.message : '加载数据失败';
+    }
   } finally {
     isLoading.value = false;
   }
@@ -88,10 +96,26 @@ async function loadChartData(): Promise<void> {
 /**
  * 切换复权方式
  */
-async function switchAdjustType(type: 'qfq' | ''): Promise<void> {
+async function switchAdjustType(type: 'none' | 'qfq'): Promise<void> {
   if (adjustType.value === type) return;
+  
+  // 保存当前状态
+  const previousAdjustType = adjustType.value;
+  const wasEmpty = isEmpty.value;
+  
+  // 尝试加载新数据
   adjustType.value = type;
-  await loadChartData();
+  await loadChartData(false); // 不显示空状态消息，保持当前视图
+  
+  // 如果新数据为空，恢复之前的状态并显示提示
+  if (isEmpty.value && !wasEmpty) {
+    adjustType.value = previousAdjustType;
+    isEmpty.value = false; // 恢复到有数据的状态
+    errorMsg.value = `暂无${type === 'qfq' ? '前复权' : '不复权'}数据，请先下载`;
+    // 重新绘制当前数据
+    await nextTick();
+    klineChart.drawChart();
+  }
 }
 
 /**
@@ -147,8 +171,8 @@ onBeforeUnmount(() => {
         </button>
         <button
           class="adjust-btn"
-          :class="{ active: adjustType === '' }"
-          @click="switchAdjustType('')"
+          :class="{ active: adjustType === 'none' }"
+          @click="switchAdjustType('none')"
         >
           不复权
         </button>

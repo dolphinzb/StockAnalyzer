@@ -690,6 +690,8 @@ export interface KlineData {
   stockCode: string;
   /** 交易日期 (YYYY-MM-DD) */
   tradeDate: string;
+  /** 复权类型：'none' 不复权 | 'qfq' 前复权 */
+  adjustType: 'none' | 'qfq';
   /** 开盘价 */
   open: number | null;
   /** 收盘价 */
@@ -718,14 +720,22 @@ export interface KlineData {
 
 /**
  * K线数据下载结果
- * 代表一次K线数据下载操作的返回结果
+ * 代表一次K线数据下载操作的返回结果（支持双复权类型）
  */
 export interface KlineDownloadResult {
-  /** 是否成功 */
+  /** 是否成功（至少一种复权类型成功即为true） */
   success: boolean;
-  /** 获取的数据条数 */
+  /** 不复权数据条数 */
+  unadjustedCount?: number;
+  /** 前复权数据条数 */
+  adjustedCount?: number;
+  /** 不复权失败原因 */
+  unadjustedError?: string;
+  /** 前复权失败原因 */
+  adjustedError?: string;
+  /** 兼容旧版：总数据条数（已废弃，使用unadjustedCount + adjustedCount） */
   count?: number;
-  /** 失败原因 */
+  /** 兼容旧版：失败原因（已废弃，使用unadjustedError/adjustedError） */
   error?: string;
 }
 
@@ -750,8 +760,8 @@ export interface KlineAPI {
   downloadKline(input: KlineDownloadInput): Promise<KlineDownloadResult>;
   /** 获取指定股票的K线数据 */
   getKlineData(stockCode: string, startDate?: string, endDate?: string): Promise<KlineData[]>;
-  /** 获取K线图展示数据（支持前复权/不复权） */
-  getChartData(stockCode: string, adjust: 'qfq' | ''): Promise<KlineData[]>;
+  /** 获取K线图展示数据（从数据库读取，支持前复权/不复权切换） */
+  getChartData(stockCode: string, adjustType: 'none' | 'qfq'): Promise<KlineData[]>;
   /** 获取交易记录数据（复用已有TradeRecord实体，查询全部历史记录） */
   getTradeRecords(stockCode: string): Promise<TradeRecord[]>;
 }

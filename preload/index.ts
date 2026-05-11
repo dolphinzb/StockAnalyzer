@@ -294,8 +294,8 @@ const klineAPI: KlineAPI = {
     ipcRenderer.invoke('kline:download', input),
   getKlineData: (stockCode: string, startDate?: string, endDate?: string) =>
     ipcRenderer.invoke('kline:get-data', stockCode, startDate, endDate),
-  getChartData: (stockCode: string, adjust: 'qfq' | '') =>
-    ipcRenderer.invoke('kline:get-chart-data', stockCode, adjust),
+  getChartData: (stockCode: string, adjustType: 'none' | 'qfq') =>
+    ipcRenderer.invoke('kline:get-chart-data', stockCode, adjustType),
   getTradeRecords: (stockCode: string) =>
     ipcRenderer.invoke('kline:get-trade-records', stockCode),
 };

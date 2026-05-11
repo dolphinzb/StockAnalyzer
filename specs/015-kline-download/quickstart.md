@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS kline_data (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   stock_code TEXT NOT NULL,
   trade_date TEXT NOT NULL,
+  adjust_type TEXT NOT NULL DEFAULT 'none',
   open REAL,
   close REAL,
   high REAL,
@@ -91,7 +92,7 @@ CREATE TABLE IF NOT EXISTS kline_data (
   turnover_rate REAL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE(stock_code, trade_date)
+  UNIQUE(stock_code, trade_date, adjust_type)
 );
 ```
 
@@ -99,7 +100,7 @@ CREATE TABLE IF NOT EXISTS kline_data (
 
 | Channel | Direction | Description |
 |---------|-----------|-------------|
-| `kline:download` | R → M | 手动下载K线数据 |
+| `kline:download` | R → M | 手动下载K线数据（同时获取不复权和前复权） |
 | `kline:get-data` | R → M | 查询本地K线数据 |
 | `kline:get-chart-data` | R → M | 获取K线图展示数据（支持前复权/不复权） |
 | `kline:get-trade-records` | R → M | 获取交易记录数据（复用已有TradeRecord） |

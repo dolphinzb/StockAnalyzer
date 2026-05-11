@@ -7,6 +7,7 @@ import {
   addStock,
   closeDatabase,
   addTradeRecord as dbAddTradeRecord,
+  getChartData as dbGetChartData,
   getKlineData as dbGetKlineData,
   deleteStock,
   deleteTradeRecord,
@@ -733,10 +734,10 @@ ipcMain.handle('kline:get-data', async (_event, stockCode: string, startDate?: s
 /**
  * 获取K线图展示数据（支持前复权/不复权）
  */
-ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjust: 'qfq' | '') => {
-  log.info('IPC: kline:get-chart-data', stockCode, adjust);
+ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjustType: 'none' | 'qfq') => {
+  log.info('IPC: kline:get-chart-data', stockCode, adjustType);
   try {
-    return await getChartData(stockCode, adjust);
+    return dbGetChartData(stockCode, adjustType);
   } catch (error) {
     log.error('IPC kline:get-chart-data error:', error);
     throw error;

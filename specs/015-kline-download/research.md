@@ -119,12 +119,13 @@ function isWeekend(date: Date): boolean {
 
 ### 4. K线数据存储方案
 
-**Decision**: 在现有 SQLite 数据库中新建 `kline_data` 表，使用 UPSERT 语义按股票代码+日期去重
+**Decision**: 在现有 SQLite 数据库中新建 `kline_data` 表，使用 UPSERT 语义按股票代码+日期+复权类型去重
 
 **Rationale**:
 - 所有自选股的K线数据存储在同一张表中（FR-005要求）
 - UPSERT语义确保重复下载时新数据覆盖旧数据（FR-006要求）
-- 使用股票代码+日期作为唯一约束，保证数据唯一性
+- 使用股票代码+日期+复权类型作为唯一约束，保证数据唯一性
+- **方案 A 决策**：数据库中同时存储不复权和前复权两种数据，通过 adjust_type 字段区分
 - 表结构与 stock-sdk 返回的 HistoryKline 字段对齐
 
 **Implementation approach**:
@@ -133,6 +134,7 @@ CREATE TABLE IF NOT EXISTS kline_data (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   stock_code TEXT NOT NULL,
   trade_date TEXT NOT NULL,
+  adjust_type TEXT NOT NULL DEFAULT 'none',
   open REAL,
   close REAL,
   high REAL,
@@ -145,7 +147,7 @@ CREATE TABLE IF NOT EXISTS kline_data (
   turnover_rate REAL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE(stock_code, trade_date)
+  UNIQUE(stock_code, trade_date, adjust_type)
 );
 
 -- UPSERT 语义
@@ -479,36 +481,42 @@ function drawTradeMarkers(ctx, klines, tradeRecords, offsetX) {
 
 ### 11. 复权方式切换实现
 
-**Decision**: 切换复权方式时通过 IPC 调用主进程，使用 stock-sdk 的 adjust 参数重新获取对应复权类型的K线数据
+**Decision**: 切换复权方式时从数据库读取对应复权类型的K线数据，无需网络请求
 
 **Rationale**:
-- stock-sdk 的 getHistoryKline 支持 `adjust: 'qfq'`（前复权）和 `adjust: ''`（不复权）
-- 前复权计算由 stock-sdk 在服务端完成，客户端无需实现复权算法
-- 切换时重新获取数据并重新渲染，确保数据准确性
+- **方案 A 决策**：数据库中同时存储不复权和前复权两种数据，通过 adjust_type 字段区分
+- 下载时调用两次 stock-sdk API（一次不复权，一次前复权），展示时直接从数据库读取
+- 避免网络请求，提升稳定性和响应速度（FR-022要求切换响应时间在500ms以内）
 - 默认展示前复权（FR-016要求），不复权为可选切换
 
 **Implementation approach**:
 ```typescript
-// 主进程：获取K线图展示数据
-ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjust: 'qfq' | '') => {
-  const klines = await sdk.getHistoryKline(stockCode, {
-    period: 'daily',
-    adjust,  // 'qfq' 前复权 | '' 不复权
-  });
+// 主进程：从数据库获取K线图展示数据（electron/database.ts）
+export function getChartData(stockCode: string, adjustType: 'none' | 'qfq'): KlineData[] {
+  const stmt = db.prepare(
+    'SELECT * FROM kline_data WHERE stock_code = ? AND adjust_type = ? ORDER BY trade_date ASC'
+  );
+  const rows = stmt.all(stockCode, adjustType);
+  return rows.map(row => convertToKlineData(row));
+}
+
+// IPC handler (electron/index.ts)
+ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjustType: 'none' | 'qfq') => {
+  const klines = getChartData(stockCode, adjustType);
   return klines;
 });
 
 // 渲染进程：切换复权方式
-async function switchAdjustType(adjust: 'qfq' | '') {
-  const klines = await window.klineAPI.getChartData(stockCode, adjust);
+async function switchAdjustType(adjustType: 'none' | 'qfq') {
+  const klines = await window.klineAPI.getChartData(stockCode, adjustType);
   drawChart(klines, tradeMarkers);
 }
 ```
 
 **Alternatives considered**:
 - 客户端自行计算前复权：算法复杂，需获取除权除息数据，stock-sdk已封装
-- 缓存两种复权数据：内存占用翻倍，切换频率低，实时获取即可
-- 仅使用数据库中已下载的不复权数据：无法展示前复权，不满足需求
+- 每次切换时调用 stock-sdk：网络请求延迟高，不符合性能要求
+- 仅缓存一种复权数据：内存占用少但切换时需要网络请求
 
 ---
 

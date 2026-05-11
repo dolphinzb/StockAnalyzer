@@ -93,6 +93,94 @@ interface KlineData {
 
 ---
 
+#### getChartData
+
+获取K线图展示数据（从数据库读取，支持前复权/不复权切换）
+
+**Request**:
+```typescript
+{
+  channel: 'kline:get-chart-data',
+  args: [
+    stockCode: string,          // 股票代码
+    adjustType: 'none' | 'qfq'  // 复权方式：'none'不复权 | 'qfq'前复权
+  ]
+}
+```
+
+**Response**:
+```typescript
+KlineData[]
+
+interface KlineData {
+  id: number;
+  stockCode: string;
+  tradeDate: string;        // YYYY-MM-DD
+  adjustType: 'none' | 'qfq';
+  open: number | null;
+  close: number | null;
+  high: number | null;
+  low: number | null;
+  volume: number | null;
+  amount: number | null;
+  amplitude: number | null;
+  changePercent: number | null;
+  changeAmount: number | null;
+  turnoverRate: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+**Errors**:
+- `DATABASE_ERROR`: 数据库查询失败
+- `INVALID_STOCK_CODE`: 股票代码无效
+
+**Note**: 此方法从本地数据库 kline_data 表查询已下载的K线数据，不进行网络请求。数据在下载时已通过 downloadKline 接口获取并存储。
+
+---
+
+#### getTradeRecords
+
+获取指定股票的交易记录（用于K线图标注）
+
+**Request**:
+```typescript
+{
+  channel: 'kline:get-trade-records',
+  args: [
+    stockCode: string           // 股票代码
+  ]
+}
+```
+
+**Response**:
+```typescript
+TradeRecord[]
+
+interface TradeRecord {
+  id: number;
+  stockCode: string;
+  tradeDate: string;            // YYYY-MM-DD
+  tradeType: 'BUY' | 'SELL' | 'DIVIDEND';
+  tradePrice: number;
+  tradeCount: number;
+  holdingCount: number;
+  totalCost: number;
+  commission: number;
+  stampDuty: number;
+  transferFee: number;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+**Errors**:
+- `DATABASE_ERROR`: 数据库查询失败
+
+---
+
 ## Preload API Exposure
 
 在 preload 脚本中暴露的API：
@@ -106,6 +194,14 @@ contextBridge.exposeInMainWorld('klineAPI', {
   // 获取K线数据
   getKlineData: (stockCode: string, startDate?: string, endDate?: string) => 
     ipcRenderer.invoke('kline:get-data', stockCode, startDate, endDate),
+  
+  // 获取K线图展示数据（从数据库读取）
+  getChartData: (stockCode: string, adjustType: 'none' | 'qfq') => 
+    ipcRenderer.invoke('kline:get-chart-data', stockCode, adjustType),
+  
+  // 获取交易记录数据
+  getTradeRecords: (stockCode: string) => 
+    ipcRenderer.invoke('kline:get-trade-records', stockCode),
 });
 ```
 
@@ -151,6 +247,8 @@ export interface KlineDownloadInput {
 export interface KlineAPI {
   downloadKline(input: KlineDownloadInput): Promise<KlineDownloadResult>;
   getKlineData(stockCode: string, startDate?: string, endDate?: string): Promise<KlineData[]>;
+  getChartData(stockCode: string, adjustType: 'none' | 'qfq'): Promise<KlineData[]>;
+  getTradeRecords(stockCode: string): Promise<TradeRecord[]>;
 }
 ```
 

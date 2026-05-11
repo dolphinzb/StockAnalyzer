@@ -32,7 +32,7 @@ const emit = defineEmits<{
 /** Canvas 元素引用 */
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 /** 当前复权方式 */
-const adjustType = ref<'qfq' | ''>('qfq');
+const adjustType = ref<'none' | 'qfq'>('qfq');
 /** 是否正在加载数据 */
 const isLoading = ref(false);
 /** 是否无数据 */
@@ -88,7 +88,7 @@ async function loadChartData(): Promise<void> {
 /**
  * 切换复权方式
  */
-async function switchAdjustType(type: 'qfq' | ''): Promise<void> {
+async function switchAdjustType(type: 'none' | 'qfq'): Promise<void> {
   if (adjustType.value === type) return;
   adjustType.value = type;
   await loadChartData();
@@ -147,8 +147,8 @@ onBeforeUnmount(() => {
         </button>
         <button
           class="adjust-btn"
-          :class="{ active: adjustType === '' }"
-          @click="switchAdjustType('')"
+          :class="{ active: adjustType === 'none' }"
+          @click="switchAdjustType('none')"
         >
           不复权
         </button>

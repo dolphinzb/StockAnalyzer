@@ -1,266 +1,202 @@
-# Tasks: 自选股K线数据下载功能（含前复权支持）
-
-**Input**: Design documents from `/specs/015-kline-download/`
-**Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
-
-**Tests**: Tests are OPTIONAL - not explicitly requested in the feature specification. Implementation tasks only.
-
-**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
-
-## Format: `[ID] [P?] [Story] Description`
-
-- **[P]**: Can run in parallel (different files, no dependencies)
-- **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3, US4)
-- Include exact file paths in descriptions
-
-## Path Conventions
-
-- **Project structure**: Electron + Vue3 desktop app
-- Backend: `electron/`, `shared/types/`, `preload/`
-- Frontend: `src/`
-- Database migration: `sql/`
-
----
-
-## Phase 1: Setup (Shared Infrastructure)
-
-**Purpose**: Project initialization - already complete (existing project)
-
-*No setup tasks needed - project already exists with all infrastructure*
-
----
-
-## Phase 2: Foundational (Blocking Prerequisites)
-
-**Purpose**: Core infrastructure that MUST be complete before ANY user story can be implemented
-
-**⚠️ CRITICAL**: No user story work can begin until this phase is complete
-
-- [ ] T001 [P] Update KlineData type definition in shared/types/index.ts (add adjustType field)
-- [ ] T002 [P] Update KlineDownloadResult type in shared/types/index.ts (add unadjustedCount/adjustedCount)
-- [ ] T003 Execute database migration script sql/015-kline-download.sql to add adjust_type column
-- [ ] T004 Verify database migration success and data integrity
-- [ ] T005 Update saveKlineData function signature in electron/database.ts to accept adjustType parameter
-- [ ] T006 Update getKlineData function in electron/database.ts to filter by adjustType parameter
-- [ ] T007 Add idx_kline_data_stock_date_adjust index creation to migration script
-
-**Checkpoint**: Foundation ready - user story implementation can now begin in parallel
-
----
-
-## Phase 3: User Story 1 - 手动下载历史K线数据（含前复权） (Priority: P1) 🎯 MVP
-
-**Goal**: 用户点击下载K线按钮后，系统同时下载不复权和前复权两种数据，并分别显示成功条数
-
-**Independent Test**: 在自选股列表中选择一只股票，点击下载K线按钮，选择日期范围后确认，验证数据库中是否同时存在不复权和前复权两种数据，且结果提示正确显示两种类型的数据条数
-
-### Implementation for User Story 1
-
-- [ ] T008 [US1] Add downloadSingleAdjust internal function in electron/services/klineDownloadService.ts
-- [ ] T009 [US1] Modify downloadKline function in electron/services/klineDownloadService.ts to download both adjust types
-- [ ] T010 [US1] Update kline:download IPC handler in electron/index.ts to return dual statistics
-- [ ] T011 [US1] Update preload klineAPI.downloadKline return type in preload/index.ts
-- [ ] T012 [US1] Update StockItem.vue download result toast to show both adjust type counts
-- [ ] T013 [US1] Add error handling for partial success (one type fails, other succeeds) in klineDownloadService.ts
-- [ ] T014 [US1] Add loading state management in watchlist store for download button disable
-
-**Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
-
----
-
-## Phase 4: User Story 2 - 自动下载当日K线数据（含前复权） (Priority: P1)
-
-**Goal**: 交易日15:10自动串行下载所有自选股的两种复权类型数据，日志分别统计成功/失败数量
-
-**Independent Test**: 在交易日15:10前后观察系统是否自动触发下载，检查日志文件中是否分别记录了不复权和前复权的下载结果；在非交易日验证系统不执行下载
-
-### Implementation for User Story 2
-
-- [ ] T015 [US2] Modify autoDownloadKlineData function in electron/services/klineDownloadService.ts for serial strategy
-- [ ] T016 [US2] Implement per-stock serial download: stockA none → stockA qfq → stockB none → stockB qfq
-- [ ] T017 [US2] Add independent retry logic for each adjust type (retry once if fails)
-- [ ] T018 [US2] Update log format to show separate statistics for none and qfq types
-- [ ] T019 [US2] Handle network interruption gracefully (keep completed stocks, mark incomplete as failed)
-- [ ] T020 [US2] Add concurrency control to prevent API rate limiting
-
-**Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
-
----
-
-## Phase 5: User Story 3 - K线弹窗展示（完全依赖本地数据） (Priority: P1)
-
-**Goal**: K线弹窗从数据库查询对应复权类型数据，无数据时显示明确提示，不再调用stock-sdk实时获取
-
-**Independent Test**: 在自选股列表中点击一只已有K线数据的股票名称，验证K线弹窗是否正确从数据库加载数据并展示；删除数据库中某复权类型数据后，验证弹窗是否显示正确的提示信息
-
-### Implementation for User Story 3
-
-- [ ] T021 [US3] Modify getChartData function in electron/services/klineDownloadService.ts to query database by adjustType
-- [ ] T022 [US3] Update kline:get-chart-data IPC handler in electron/index.ts to use database query
-- [ ] T023 [US3] Modify KlineChartDialog.vue to show "暂无XXX复权数据，请先下载" when no data
-- [ ] T024 [US3] Update adjust type switch logic in KlineChartDialog.vue to query database first
-- [ ] T025 [US3] Keep current view unchanged when target adjust type has no data
-- [ ] T026 [US3] Remove stock-sdk real-time fetch calls from KlineChartDialog.vue
-- [ ] T027 [US3] Update useKlineChart.ts composable to handle empty data array gracefully
-
-**Checkpoint**: All user stories should now be independently functional
-
----
-
-## Phase 6: User Story 4 - 数据库迁移与兼容性 (Priority: P1)
-
-**Goal**: 提供可重复执行的数据库迁移脚本，安全添加adjust_type字段，保证向后兼容
-
-**Independent Test**: 执行迁移脚本，验证adjust_type字段是否正确添加，已有数据是否设置为''（不复权），查询功能是否正常，应用是否可正常启动和使用
-
-### Implementation for User Story 4
-
-- [ ] T028 [US4] Create migration script sql/015-kline-download.sql with ALTER TABLE approach
-- [ ] T029 [US4] Add idempotency checks using temporary table mechanism
-- [ ] T030 [US4] Implement transaction protection (BEGIN TRANSACTION / COMMIT)
-- [ ] T031 [US4] Add data validation queries in migration script comments
-- [ ] T032 [US4] Set existing records adjust_type = '' (unadjusted) in migration
-- [ ] T033 [US4] Rebuild UNIQUE constraint to include adjust_type
-- [ ] T034 [US4] Create composite index idx_kline_data_stock_date_adjust
-- [ ] T035 [US4] Test migration script idempotency (run twice, verify no errors)
-- [ ] T036 [US4] Verify backward compatibility - existing queries work without modification
-
-**Checkpoint**: Database migration complete and verified
-
----
-
-## Phase 7: Polish & Cross-Cutting Concerns
-
-**Purpose**: Improvements that affect multiple user stories
-
-- [ ] T037 [P] Update TypeScript type exports in src/types.ts
-- [ ] T038 [P] Add Chinese comments to all new code (项目规则要求)
-- [ ] T039 Update documentation for K线下载功能 in README or docs/
-- [ ] T040 Performance testing: verify manual download completes within 15 seconds
-- [ ] T041 Performance testing: verify auto download of 50 stocks completes within 120 seconds
-- [ ] T042 Performance testing: verify K线弹窗 renders within 1 second (≤100 records)
-- [ ] T043 Edge case testing: one adjust type succeeds, other fails
-- [ ] T044 Edge case testing: stock-sdk doesn't support certain adjust type
-- [ ] T045 Edge case testing: user closes dialog during download
-- [ ] T046 Code cleanup and refactoring
-- [ ] T047 Security review: validate all user inputs and SQL queries
-
----
-
-## Dependencies & Execution Order
-
-### Phase Dependencies
-
-- **Setup (Phase 1)**: No dependencies - already complete
-- **Foundational (Phase 2)**: BLOCKS all user stories - must complete first
-- **User Stories (Phase 3-6)**: All depend on Foundational phase completion
-  - User stories can proceed in parallel (if staffed)
-  - Or sequentially in priority order (all P1, can choose order)
-- **Polish (Phase 7)**: Depends on all user stories being complete
-
-### User Story Dependencies
-
-- **User Story 1 (P1)**: Manual download with dual adjust types - depends on T001-T007
-- **User Story 2 (P1)**: Auto download with serial strategy - depends on T001-T007
-- **User Story 3 (P1)**: K线弹窗 database-only mode - depends on T001-T007
-- **User Story 4 (P1)**: Database migration - depends on T001-T002 (types), can run in parallel with US1-3 implementation
-
-### Within Each User Story
-
-- Types before services (T001-T002 before T008-T009)
-- Services before IPC handlers (T008-T009 before T010)
-- IPC handlers before UI updates (T010 before T012)
-- Core implementation before edge cases
-
-### Parallel Opportunities
-
-- **Phase 2**: T001, T002 can run in parallel (different type definitions)
-- **Phase 2**: T005, T006 can run in parallel (different database functions)
-- **Phase 3**: T008, T009 can run in parallel (service layer functions)
-- **Phase 3**: T010, T011 can run in parallel (IPC and preload updates)
-- **Phase 5**: T021, T022 can run in parallel (service and IPC)
-- **Phase 5**: T023, T024, T025 can run in parallel (UI component updates)
-- **Phase 6**: T028-T034 can run in parallel (migration script development)
-- **Phase 7**: All polish tasks marked [P] can run in parallel
-
----
-
-## Parallel Example: User Story 1
-
-```bash
-# Launch all type updates together:
-Task: "Update KlineData type definition in shared/types/index.ts"
-Task: "Update KlineDownloadResult type in shared/types/index.ts"
-
-# Launch service layer functions together:
-Task: "Add downloadSingleAdjust internal function in electron/services/klineDownloadService.ts"
-Task: "Modify downloadKline function in electron/services/klineDownloadService.ts"
-
-# Launch IPC and preload updates together:
-Task: "Update kline:download IPC handler in electron/index.ts"
-Task: "Update preload klineAPI.downloadKline return type in preload/index.ts"
+# Tasks: 自选股K线数据下载与展示功能
+
+**Feature**: 015-kline-download  
+**Branch**: `015-kline-download`  
+**Date**: 2026-05-08  
+**Spec**: [spec.md](./spec.md)  
+**Plan**: [plan.md](./plan.md)
+
+## Dependencies & Completion Order
+
+```mermaid
+graph TD
+    A[Phase 1: Setup] --> B[Phase 2: Foundational]
+    B --> C[Phase 3: US1 - 手动下载K线数据 P1]
+    B --> D[Phase 4: US2 - 自动下载当日K线数据 P1]
+    C --> E[Phase 5: US3 - 下载进度与结果反馈 P2]
+    D --> E
+    E --> F[Phase 6: Polish]
+    B --> G[Phase 7: US4 - K线弹窗展示 P1]
+    F --> G
 ```
 
----
+**User Story Completion Order**:
+1. **US1 (P1)**: 手动下载历史K线数据 - 基础下载逻辑和UI交互，可独立测试
+2. **US2 (P1)**: 自动下载当日K线数据 - 依赖下载服务，可独立测试
+3. **US3 (P2)**: 下载进度与结果反馈 - 增强用户体验，依赖US1/US2
+4. **US4 (P1)**: K线弹窗展示 - 依赖数据库和下载服务，点击股票名称展示K线图
+
+**Parallel Execution Opportunities**:
+- Phase 1中类型定义和npm安装可并行
+- Phase 2中数据库操作和服务创建可并行
+- Phase 3和Phase 4的US1/US2核心逻辑可并行开发（不同文件）
+- US1的UI部分和US2的调度逻辑互不依赖
 
 ## Implementation Strategy
 
-### MVP First (User Story 1 Only)
+**MVP Scope**: Phase 1 + Phase 2 + Phase 3 (US1 only)
+- 安装stock-sdk，创建数据库表和下载服务
+- 手动下载K线数据功能完整可用
+- 可独立演示和测试
 
-1. Complete Phase 2: Foundational (T001-T007) - CRITICAL
-2. Complete Phase 3: User Story 1 (T008-T014)
-3. **STOP and VALIDATE**: Test manual download with dual adjust types
-4. Verify database has both adjust_type values
-5. Verify toast shows correct counts
-6. Deploy/demo if ready
-
-### Incremental Delivery
-
-1. Complete Foundational (Phase 2) → Foundation ready
-2. Add User Story 1 (Phase 3) → Test independently → Deploy/Demo (MVP!)
-3. Add User Story 2 (Phase 4) → Test independently → Deploy/Demo
-4. Add User Story 3 (Phase 5) → Test independently → Deploy/Demo
-5. Add User Story 4 (Phase 6) → Test migration → Verify compatibility
-6. Each story adds value without breaking previous stories
-
-### Parallel Team Strategy
-
-With multiple developers:
-
-1. Team completes Foundational (Phase 2) together
-2. Once Foundational is done:
-   - Developer A: User Story 1 (Manual download)
-   - Developer B: User Story 2 (Auto download)
-   - Developer C: User Story 3 (K线弹窗)
-   - Developer D: User Story 4 (Migration script)
-3. Stories complete and integrate independently
+**Incremental Delivery**:
+1. MVP: 手动下载K线数据（US1）
+2. Add: 自动下载当日K线数据（US2）
+3. Add: 下载进度与结果反馈优化（US3）
+4. Add: K线弹窗展示（US4）
+5. Polish: 边界情况处理和用户体验优化
 
 ---
 
-## Summary Statistics
+## Phase 1: Setup (共享基础设施)
 
-- **Total tasks**: 47
-- **Phase 2 (Foundational)**: 7 tasks
-- **Phase 3 (US1 - Manual Download)**: 7 tasks
-- **Phase 4 (US2 - Auto Download)**: 6 tasks
-- **Phase 5 (US3 - K线弹窗)**: 7 tasks
-- **Phase 6 (US4 - Migration)**: 9 tasks
-- **Phase 7 (Polish)**: 11 tasks
-- **Parallel opportunities**: 15+ tasks marked [P]
+**Goal**: 安装依赖、定义类型、准备数据库表，为所有用户故事提供基础
 
-## Independent Test Criteria
+- [x] T001 安装stock-sdk依赖：执行 `npm install stock-sdk`，验证package.json中包含stock-sdk依赖
+- [x] T002 [P] 在shared/types/index.ts中添加KlineData接口定义（包含id、stockCode、tradeDate、open、close、high、low、volume、amount、amplitude、changePercent、changeAmount、turnoverRate、createdAt、updatedAt字段）
+- [x] T003 [P] 在shared/types/index.ts中添加KlineDownloadResult接口定义（包含success、count?、error?字段）
+- [x] T004 [P] 在shared/types/index.ts中添加KlineDownloadInput接口定义（包含stockCode、startDate、endDate字段）
+- [x] T005 [P] 在shared/types/index.ts中添加KlineAPI接口定义（包含downloadKline和getKlineData方法）
+- [x] T006 [P] 在shared/types/index.ts的Window接口中添加klineAPI: KlineAPI声明
+- [x] T007 [P] 在src/types.ts中从shared/types重新导出KlineData、KlineDownloadResult、KlineDownloadInput、KlineAPI类型
 
-- **US1**: Database contains both adjust_type values for downloaded stock; toast shows correct counts
-- **US2**: Log file shows separate statistics for none and qfq; serial execution verified
-- **US3**: K线弹窗 loads from database; shows prompt when no data; no stock-sdk calls
-- **US4**: Migration script runs successfully twice; existing data has adjust_type=''; queries work
+---
 
-## Suggested MVP Scope
+## Phase 2: Foundational (基础架构)
 
-**Minimum Viable Product**: User Story 1 (Manual Download with Dual Adjust Types)
-- Users can manually download both unadjusted and forward-adjusted K-line data
-- Results show separate counts for each adjust type
-- Database stores both types with proper adjust_type field
-- Existing functionality remains intact
+**Goal**: 创建数据库表、下载服务核心逻辑、IPC通信，为所有用户故事提供下载框架
 
-This delivers immediate value: users no longer need to download twice for different adjust types.
+**⚠️ CRITICAL**: 所有用户故事依赖此阶段的数据库表和下载服务
+
+- [x] T008 在electron/database.ts的initDatabase函数中添加kline_data表的CREATE TABLE IF NOT EXISTS语句（包含id、stock_code、trade_date、open、close、high、low、volume、amount、amplitude、change_percent、change_amount、turnover_rate、created_at、updated_at字段，UNIQUE(stock_code, trade_date)约束）
+- [x] T009 [P] 在electron/database.ts的initDatabase函数中添加kline_data表的三个索引（idx_kline_data_stock_code、idx_kline_data_trade_date、idx_kline_data_stock_date）
+- [x] T010 在electron/database.ts中添加saveKlineData函数（接收stockCode和HistoryKline数组，批量INSERT OR REPLACE写入kline_data表，使用事务提升性能，完成后调用saveDatabase）
+- [x] T011 [P] 在electron/database.ts中添加getKlineData函数（接收stockCode、可选startDate和endDate，查询kline_data表返回KlineData数组，按trade_date升序排列）
+- [x] T012 创建electron/services/klineDownloadService.ts，实现StockSDK实例化（模块级单例，配置retry: { maxRetries: 1, baseDelay: 500 }）
+- [x] T013 在electron/services/klineDownloadService.ts中实现downloadKline函数（接收stockCode、startDate、endDate参数，调用sdk.getHistoryKline获取不复权日K线数据，调用saveKlineData保存到数据库，返回KlineDownloadResult）
+- [x] T014 [P] 在electron/services/klineDownloadService.ts中实现validateDownloadInput函数（验证stockCode为6位数字、日期格式为YYYYMMDD、开始日期不晚于结束日期、结束日期不晚于当前日期）
+- [x] T015 [P] 在electron/services/klineDownloadService.ts中实现isTradingDay函数（调用sdk.getTradingCalendar获取交易日历，缓存当日数据，API不可用时回退到周末排除规则）
+- [x] T016 在electron/index.ts中注册kline:download IPC handler（调用validateDownloadInput验证输入，调用downloadKline执行下载，返回KlineDownloadResult）
+- [x] T017 [P] 在electron/index.ts中注册kline:get-data IPC handler（调用getKlineData查询数据库，返回KlineData数组）
+- [x] T018 在preload脚本中暴露klineAPI对象（包含downloadKline和getKlineData方法，映射到kline:download和kline:get-data IPC通道）
+
+**Checkpoint**: 基础框架就绪 - kline_data表已创建，下载服务可用，IPC通道已注册，用户故事实现可以开始
+
+---
+
+## Phase 3: User Story 1 - 手动下载历史K线数据 (Priority: P1) 🎯 MVP
+
+**Goal**: 用户在自选股列表中点击"下载K线"按钮，选择日期范围后下载K线数据，完成后Toast通知结果
+
+**Independent Test**: 在自选股列表中选择一只股票，点击下载K线按钮，选择日期范围后确认，验证数据是否正确下载并保存到数据库，且结果提示正确显示
+
+- [x] T019 [US1] 创建src/components/KlineDownloadDialog.vue组件（使用Modal组件包裹，包含DateRangePicker组件，默认开始日期为1个月前、结束日期为前一天，添加"确定"和"取消"按钮，确定按钮点击时验证日期有效性并触发download事件）
+- [x] T020 [US1] 修改src/components/StockItem.vue，在操作列中增加"下载K线"按钮（在"编辑"和"删除"按钮之前，按钮样式与现有按钮一致，点击时触发download-kline事件传递stockCode，下载中显示加载状态并禁用按钮）
+- [x] T021 [US1] 修改src/components/StockList.vue，在表头增加"下载K线"列头，调整grid-template-columns增加对应列宽
+- [x] T022 [US1] 修改src/stores/watchlist.ts，添加downloadStatusMap响应式Map（类型Map<string, { isDownloading: boolean; result?: { success: boolean; count?: number; error?: string } | null }>），添加downloadKline异步方法（设置下载状态、调用window.klineAPI.downloadKline、更新下载状态、返回结果），添加isDownloading计算方法（根据stockCode查询下载状态）
+- [x] T023 [US1] 修改src/views/WatchlistView.vue，添加KlineDownloadDialog组件集成（控制对话框显示/隐藏，处理download-kline事件打开对话框，处理对话框download事件调用store.downloadKline，根据结果显示Toast通知：成功显示3秒自动消失，失败显示需手动关闭）
+- [x] T024 [US1] 修改src/components/StockItem.vue的grid-template-columns，调整列宽以容纳新增的"下载K线"按钮（从120px调整为合适宽度）
+
+**Checkpoint**: US1完成 - 手动下载K线数据功能可用，3次点击内完成下载，Toast通知正确显示
+
+---
+
+## Phase 4: User Story 2 - 自动下载当日K线数据 (Priority: P1)
+
+**Goal**: 交易日15:10自动串行下载所有自选股当日K线数据，非交易日跳过，失败重试1次，结果记录到日志
+
+**Independent Test**: 在交易日15:10前后观察系统是否自动触发下载，检查日志文件中是否记录了下载结果；在非交易日验证系统不执行下载
+
+- [x] T025 [US2] 在electron/services/klineDownloadService.ts中实现performAutoDownload函数（判断交易日→获取自选股列表→串行逐只下载→失败重试1次→记录汇总日志，参考backupService.ts的日志格式）
+- [x] T026 [US2] 在electron/services/klineDownloadService.ts中实现downloadWithRetry函数（接收stockCode、startDate、endDate参数，首次失败后自动重试1次，返回KlineDownloadResult）
+- [x] T027 [US2] 在electron/services/klineDownloadService.ts中实现scheduleNextDownload函数（参考backupService.ts的setTimeout递归调度模式，计算到下一个15:10的延迟，触发后执行performAutoDownload并递归调度下一次）
+- [x] T028 [US2] 在electron/services/klineDownloadService.ts中导出startKlineDownloadScheduler和stopKlineDownloadScheduler函数（start调用scheduleNextDownload，stop清除timeout）
+- [x] T029 [US2] 修改electron/index.ts，在app.whenReady中调用startKlineDownloadScheduler启动自动下载调度器
+- [x] T030 [US2] 修改electron/index.ts，在app.on('before-quit')中调用stopKlineDownloadScheduler停止自动下载调度器
+- [x] T031 [US2] 在electron/services/klineDownloadService.ts中实现日志记录逻辑（成功时记录"K线数据自动下载完成，共N只股票，全部成功"，部分失败时记录成功/失败数量及失败股票代码和原因，非交易日记录"非交易日，跳过K线数据下载"，空列表记录"自选股列表为空，跳过K线数据下载"）
+
+**Checkpoint**: US2完成 - 自动下载功能可用，交易日15:10自动触发，日志记录完整
+
+---
+
+## Phase 5: User Story 3 - 下载进度与结果反馈 (Priority: P2)
+
+**Goal**: 手动下载时显示下载进度，完成后Toast通知区分成功/失败，成功3秒消失，失败需手动关闭
+
+**Independent Test**: 选择一只股票下载较长时间段的K线数据，验证进度提示是否正确更新，完成后结果提示是否准确
+
+- [x] T032 [US3] 修改src/components/StockItem.vue，下载中时在"下载K线"按钮上显示加载动画（使用CSS spinner或文字"下载中..."），下载完成后恢复按钮状态
+- [x] T033 [US3] 修改src/views/WatchlistView.vue，优化Toast通知逻辑：成功时使用showToast(message, 'success', 3000)三秒自动消失，失败时使用showToast(message, 'error', 0)需手动关闭（duration=0表示不自动消失）
+- [x] T034 [US3] 修改src/stores/watchlist.ts的downloadKline方法，下载完成后自动清除下载状态（延迟2秒清除isDownloading，保留result供UI展示）
+
+**Checkpoint**: US3完成 - 下载进度反馈清晰，Toast通知区分成功/失败
+
+---
+
+## Phase 6: Polish (边界情况与优化)
+
+**Goal**: 处理边界情况，优化用户体验，确保功能健壮性
+
+- [x] T035 修改electron/services/klineDownloadService.ts的downloadKline函数，处理stock-sdk返回null字段的情况（使用默认值0替代null的数值字段，记录警告日志）
+- [x] T036 [P] 修改electron/services/klineDownloadService.ts，添加A股代码判断逻辑（6位数字且以0/3/6开头为A股，非A股代码跳过并在结果中标注"不支持的股票类型"）
+- [x] T037 [P] 修改electron/database.ts的saveKlineData函数，添加事务回滚逻辑（写入失败时回滚事务，抛出错误供上层捕获）
+- [x] T038 修改electron/services/klineDownloadService.ts的isTradingDay函数，添加交易日历缓存过期逻辑（每日0点清除缓存，确保新一天获取最新数据）
+- [x] T039 修改src/components/KlineDownloadDialog.vue，添加结束日期不能晚于当前日期的前端验证（在DateRangePicker的验证逻辑中增加endDate <= today检查）
+- [x] T040 修改src/components/StockItem.vue，确保自动下载和手动下载同时操作同一只股票时不会冲突（后写入覆盖先写入，UPSERT语义保证数据一致性）
+
+---
+
+## Phase 7: User Story 4 - K线弹窗展示 (Priority: P1)
+
+**Goal**: 用户点击自选股列表中的股票名称，弹出K线弹窗展示日K线图，默认前复权模式，支持不复权/前复权切换，支持鼠标拖动查看不同日期范围，标注买入(B)、卖出(S)、分红(D)交易点
+
+**Independent Test**: 在自选股列表中点击一只已有K线数据和交易记录的股票名称，验证K线弹窗是否正确展示，复权切换是否生效，拖动是否流畅，交易点标注是否准确
+
+**复用清单**:
+- ✅ `Modal.vue` - K线弹窗复用已有模态框组件
+- ✅ `TradeRecord` 类型 - 交易标注复用已有实体，无需新建 TradeMarker
+- ✅ `getTradeRecordsByStockCode` - 数据库函数复用，返回全部交易记录
+- ✅ `useToast` - 通知提示复用
+- ✅ `StockItem.vue` 的 `col-name` - 仅需添加 click 事件和 hover 样式
+- ⚠️ `positionApi.getTradeRecords` - **不可直接复用**，因其使用分页+仅返回当前周期（lastZero之后）的记录，K线图需要全部历史交易记录
+
+- [x] T041 [US4] 在shared/types/index.ts中扩展KlineAPI接口添加getChartData(stockCode, adjust)和getTradeRecords(stockCode)方法（复用已有TradeRecord实体，无需新建TradeMarker类型）；在preload/index.ts中扩展klineAPI对象，添加getChartData和getTradeRecords方法，映射到kline:get-chart-data和kline:get-trade-records IPC通道
+- [x] T042 [US4] 在electron/index.ts中注册kline:get-chart-data IPC handler（调用getChartData获取K线图展示数据）和kline:get-trade-records IPC handler（复用已有getTradeRecordsByStockCode函数查询trade_record表全部交易记录，返回TradeRecord数组。注意：不能复用position:get-records，因为其使用分页且仅返回当前持仓周期的记录）
+- [x] T043 [US4] 在electron/services/klineDownloadService.ts中添加getChartData函数（接收stockCode和adjust参数，调用sdk.getHistoryKline获取对应复权类型的K线数据，adjust为'qfq'时获取前复权数据，adjust为''时获取不复权数据，返回KlineData数组）
+- [x] T044 [US4] 创建src/composables/useKlineChart.ts，实现K线图Canvas渲染逻辑（包含：canvas引用绑定、offsetX拖动偏移量管理、drawChart主绘制函数、drawCandles蜡烛图绘制、drawVolume成交量柱状图绘制、drawAxis坐标轴绘制、drawTradeMarkers交易标注绘制（使用TradeRecord类型）、onMouseDown/onMouseMove/onMouseUp拖动事件处理、onMouseMoveTooltip悬停检测，使用requestAnimationFrame节流重绘）
+- [x] T045 [US4] 创建src/components/KlineChartDialog.vue组件（复用已有Modal组件包裹，顶部显示股票名称和复权方式切换控件"前复权/不复权"默认前复权，中间区域放置Canvas元素，底部显示"暂无K线数据，请先下载"空状态提示，弹窗关闭时释放Canvas资源）
+- [x] T046 [US4] 修改src/components/StockItem.vue，使股票名称可点击（在已有col-name的span上添加click事件，触发show-kline-chart事件传递stockCode和stockName，名称样式添加cursor:pointer和hover效果）
+- [x] T047 [US4] 修改src/stores/watchlist.ts，添加klineChartDialog状态（包含visible、stockCode、stockName字段），添加openKlineChart和closeKlineChart方法
+- [x] T048 [US4] 修改src/views/WatchlistView.vue，集成KlineChartDialog组件（监听show-kline-chart事件调用store.openKlineChart，弹窗打开时通过klineAPI.getChartData获取前复权K线数据，通过klineAPI.getTradeRecords获取交易记录，调用useKlineChart的drawChart渲染，复权切换时重新获取数据并渲染，弹窗关闭时调用closeKlineChart）
+
+**Checkpoint**: US4完成 - K线弹窗展示功能可用，默认前复权，复权切换正常，拖动流畅，交易标注准确
+
+---
+
+## Summary
+
+| Phase | Tasks | Story | Description |
+|-------|-------|-------|-------------|
+| Phase 1: Setup | T001-T007 (7) | - | 安装依赖、类型定义 |
+| Phase 2: Foundational | T008-T018 (11) | - | 数据库表、下载服务、IPC |
+| Phase 3: US1 | T019-T024 (6) | US1 | 手动下载K线数据 |
+| Phase 4: US2 | T025-T031 (7) | US2 | 自动下载当日K线 |
+| Phase 5: US3 | T032-T034 (3) | US3 | 下载进度与结果反馈 |
+| Phase 6: Polish | T035-T040 (6) | - | 边界情况与优化 |
+| Phase 7: US4 | T041-T048 (8) | US4 | K线弹窗展示 |
+| **Total** | **48** | | |
+
+**Task Count per User Story**:
+- US1 (手动下载): 6 tasks
+- US2 (自动下载): 7 tasks
+- US3 (进度反馈): 3 tasks
+- US4 (K线弹窗展示): 8 tasks
+- Shared (Setup + Foundational + Polish): 24 tasks
+
+**Parallel Opportunities**:
+- T002-T007: 类型定义可并行编写
+- T009, T011, T014, T015: 数据库索引、查询函数、验证函数、交易日判断可并行
+- T019-T024: US1的UI组件可并行开发
+- T025-T031: US2的服务逻辑可并行开发
+
+**MVP Scope**: Phase 1 + Phase 2 + Phase 3 (T001-T024, 共24个任务)

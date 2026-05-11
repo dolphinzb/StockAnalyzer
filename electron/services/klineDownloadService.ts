@@ -86,18 +86,32 @@ export async function downloadKline(stockCode: string, startDate: string, endDat
     log.info(`开始下载K线数据: ${stockCode}, ${startDate} ~ ${endDate}`);
 
     // 调用 stock-sdk 获取不复权日K线数据
-    const klines = await sdk.getHistoryKline(stockCode, {
+    const klinesNone = await sdk.getHistoryKline(stockCode, {
       period: 'daily',
       adjust: '',       // 不复权原始数据
       startDate,
       endDate,
     });
 
-    // 保存到数据库
-    const count = saveKlineData(stockCode, klines);
+    // 保存不复权数据到数据库
+    const countNone = saveKlineData(stockCode, klinesNone, 'none');
+    log.info(`不复权K线数据保存成功: ${stockCode}, 共 ${countNone} 条`);
 
-    log.info(`K线数据下载完成: ${stockCode}, 共 ${count} 条`);
-    return { success: true, count };
+    // 调用 stock-sdk 获取前复权日K线数据
+    const klinesQfq = await sdk.getHistoryKline(stockCode, {
+      period: 'daily',
+      adjust: 'qfq',    // 前复权
+      startDate,
+      endDate,
+    });
+
+    // 保存前复权数据到数据库
+    const countQfq = saveKlineData(stockCode, klinesQfq, 'qfq');
+    log.info(`前复权K线数据保存成功: ${stockCode}, 共 ${countQfq} 条`);
+
+    const totalCount = countNone + countQfq;
+    log.info(`K线数据下载完成: ${stockCode}, 总计 ${totalCount} 条（不复权${countNone}条，前复权${countQfq}条）`);
+    return { success: true, count: totalCount };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '未知错误';
     log.error(`K线数据下载失败: ${stockCode}`, errorMessage);

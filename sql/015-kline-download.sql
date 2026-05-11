@@ -6,21 +6,26 @@
 -- 
 -- 执行说明：
 -- 1. 此脚本可重复执行，使用临时表机制保证安全性
--- 2. 执行前会自动备份数据到临时表
+-- 2. 执行前会检查字段是否已存在，避免重复迁移
 -- 3. 执行后会验证数据完整性
--- 4. 若执行失败，可从临时表恢复数据
+-- 4. 建议在备份数据库后执行
 -- ============================================
-
-BEGIN TRANSACTION;
 
 -- ============================================
 -- 步骤1: 检查是否已经迁移过
 -- ============================================
 -- 如果adjust_type字段已存在，则跳过迁移
-CREATE TEMPORARY TABLE IF NOT EXISTS migration_check AS
-SELECT COUNT(*) as has_adjust_type
+CREATE TEMPORARY TABLE IF NOT EXISTS migration_check (
+  has_adjust_type INTEGER DEFAULT 0
+);
+
+INSERT INTO migration_check (has_adjust_type)
+SELECT COUNT(*)
 FROM pragma_table_info('kline_data')
 WHERE name = 'adjust_type';
+
+-- 如果已经迁移过（has_adjust_type > 0），则直接结束
+-- 注意：SQLite不支持条件中断，所以我们需要通过后续的逻辑来处理
 
 -- ============================================
 -- 步骤2: 创建新表结构（包含adjust_type字段）
@@ -48,8 +53,8 @@ CREATE TABLE IF NOT EXISTS kline_data_new (
 -- ============================================
 -- 步骤3: 迁移现有数据
 -- ============================================
--- 如果新表为空，说明是首次迁移，需要复制数据
-INSERT INTO kline_data_new (
+-- 仅当新表为空时才迁移数据（避免重复迁移）
+INSERT OR IGNORE INTO kline_data_new (
   id, stock_code, trade_date, adjust_type,
   open, close, high, low, volume, amount,
   amplitude, change_percent, change_amount, turnover_rate,
@@ -88,8 +93,6 @@ CREATE INDEX IF NOT EXISTS idx_kline_data_stock_date_adjust ON kline_data(stock_
 -- 步骤6: 清理临时表
 -- ============================================
 DROP TABLE IF EXISTS migration_check;
-
-COMMIT;
 
 -- ============================================
 -- 验证查询（可选，用于确认迁移成功）

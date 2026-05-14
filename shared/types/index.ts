@@ -690,8 +690,8 @@ export interface KlineData {
   stockCode: string;
   /** 交易日期 (YYYY-MM-DD) */
   tradeDate: string;
-  /** 复权类型：'none' 不复权 | 'qfq' 前复权 */
-  adjustType: 'none' | 'qfq';
+  /** 复权类型：'' 不复权 | 'qfq' 前复权 */
+  adjustType: '' | 'qfq';
   /** 开盘价 */
   open: number | null;
   /** 收盘价 */
@@ -750,6 +750,8 @@ export interface KlineDownloadInput {
   startDate: string;
   /** 结束日期 (YYYYMMDD) */
   endDate: string;
+  /** 复权类型数组（可选，默认 ['', 'qfq']，与stock-sdk的adjust参数一致） */
+  adjustTypes?: ('' | 'qfq')[];
 }
 
 /**
@@ -761,7 +763,7 @@ export interface KlineAPI {
   /** 获取指定股票的K线数据 */
   getKlineData(stockCode: string, startDate?: string, endDate?: string): Promise<KlineData[]>;
   /** 获取K线图展示数据（从数据库读取，支持前复权/不复权切换） */
-  getChartData(stockCode: string, adjustType: 'none' | 'qfq'): Promise<KlineData[]>;
+  getChartData(stockCode: string, adjustType: '' | 'qfq'): Promise<KlineData[]>;
   /** 获取交易记录数据（复用已有TradeRecord实体，查询全部历史记录） */
   getTradeRecords(stockCode: string): Promise<TradeRecord[]>;
 }

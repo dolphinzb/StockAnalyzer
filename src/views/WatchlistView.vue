@@ -81,13 +81,42 @@ function handleDownloadKline(stockCode: string) {
   }
 }
 
-/** 处理K线下载确认 */
-async function handleKlineDownload(payload: { stockCode: string; startDate: string; endDate: string }) {
-  const result = await store.downloadKline(payload.stockCode, payload.startDate, payload.endDate);
+/** 处理K线下载确认（T108-T110：传递adjustTypes参数并更新Toast通知） */
+async function handleKlineDownload(payload: {
+  stockCode: string;
+  startDate: string;
+  endDate: string;
+  adjustTypes: ('' | 'qfq')[];
+}) {
+  const result = await store.downloadKline(
+    payload.stockCode,
+    payload.startDate,
+    payload.endDate,
+    payload.adjustTypes
+  );
+
+  // T109-T110：根据用户选择的复权类型显示结果
   if (result.success) {
-    showToast(`下载完成，共获取 ${result.count} 条K线数据`, 'success', 3000);
+    const parts: string[] = [];
+    if (payload.adjustTypes.includes('') && result.unadjustedCount !== undefined) {
+      parts.push(`${result.unadjustedCount} 条不复权数据`);
+    }
+    if (payload.adjustTypes.includes('qfq') && result.adjustedCount !== undefined) {
+      parts.push(`${result.adjustedCount} 条前复权数据`);
+    }
+    const message = `下载完成，共获取 ${parts.join('，')}`;
+    showToast(message, 'success', 3000);
   } else {
-    showToast(`下载失败：${result.error}`, 'error', 0);
+    // 部分失败或全部失败
+    const errors: string[] = [];
+    if (result.unadjustedError) {
+      errors.push(`不复权：${result.unadjustedError}`);
+    }
+    if (result.adjustedError) {
+      errors.push(`前复权：${result.adjustedError}`);
+    }
+    const errorMessage = errors.length > 0 ? errors.join('；') : (result.error || '未知错误');
+    showToast(`下载失败：${errorMessage}`, 'error', 0);
   }
 }
 

@@ -225,7 +225,7 @@ graph TD
 - [x] T055 [P] 在迁移脚本中添加验证查询注释，用于检查迁移前后数据完整性
 - [x] T056 执行数据库迁移脚本，验证adjust_type字段正确添加且已有数据设置为''
 - [x] T057 验证迁移脚本可重复执行（运行两次无错误）
-- [x] T058 [P] 更新shared/types/index.ts中的KlineData接口，添加adjustType字段（'none' | 'qfq'）
+- [x] T058 [P] 更新shared/types/index.ts中的KlineData接口，添加adjustType字段（'' | 'qfq'）
 - [x] T059 [P] 更新shared/types/index.ts中的KlineDownloadResult接口，添加unadjustedCount和adjustedCount字段
 - [x] T060 [P] 更新src/types.ts重新导出更新后的类型定义
 
@@ -297,6 +297,67 @@ graph TD
 
 ---
 
+## Phase 9: 手动下载弹窗增加复权类型选择功能 (Priority: P1) 🆕 最新变更
+
+**Goal**: 在手动下载弹窗中增加复权类型复选框组，支持用户自主选择下载前复权、不复权或两者都下载
+
+**Background**: 根据 2026-05-13 的需求变更，用户需要更灵活地控制下载的复权类型。原有功能默认同时下载两种复权类型，现在需要让用户可以自由选择。
+
+**Independent Test**: 在自选股列表中选择一只股票，点击下载K线按钮，验证对话框是否显示复权类型复选框且默认全选；取消其中一个复选框后下载，验证数据库中仅包含所选复权类型的数据。
+
+### 9.1 UI层修改
+
+- [x] T100 [P] 修改src/components/KlineDownloadDialog.vue，在日期选择器下方增加复权类型复选框组（使用el-checkbox-group组件）
+- [x] T101 [P] 在KlineDownloadDialog.vue中添加adjustTypes响应式变量，初始值为['', 'qfq']（默认全选，与stock-sdk的adjust参数一致）
+- [x] T102 [P] 在KlineDownloadDialog.vue中添加验证逻辑：提交前检查adjustTypes数组不为空，若为空则禁用确定按钮并显示提示"请至少选择一种复权类型"
+- [x] T103 [P] 修改KlineDownloadDialog.vue的download事件，传递adjustTypes参数给父组件
+- [x] T104 [P] 在KlineDownloadDialog.vue中添加中文注释，说明复权类型选择功能
+
+### 9.2 Store层修改
+
+- [x] T105 [P] 修改src/stores/watchlist.ts中的downloadKline方法签名，接收adjustTypes参数（类型为('' | 'qfq')[]）
+- [x] T106 [P] 修改downloadKline方法实现，将adjustTypes参数传递给window.klineAPI.downloadKline
+- [x] T107 [P] 更新downloadStatusMap的类型定义，支持存储不同复权类型的下载结果
+
+### 9.3 View层修改
+
+- [x] T108 [P] 修改src/views/WatchlistView.vue，在调用store.downloadKline时传递adjustTypes参数
+- [x] T109 [P] 修改Toast通知逻辑，仅显示用户选择的复权类型的统计信息
+- [x] T110 [P] 处理部分成功情况：一种复权类型成功、另一种失败时，分别显示结果
+
+### 9.4 后端服务层修改
+
+- [x] T111 [P] 修改electron/services/klineDownloadService.ts中的downloadKline函数签名，接收adjustTypes参数
+- [x] T112 [P] 修改downloadKline函数实现：遍历adjustTypes数组，依次下载每种复权类型（adjustType直接作为stock-sdk的adjust参数，无需转换）
+- [x] T113 [P] adjustType参数直接使用stock-sdk的adjust参数值（''表示不复权，'qfq'表示前复权），无需映射转换
+- [x] T114 [P] 修改返回值结构，返回{ success, unadjustedCount?, adjustedCount?, unadjustedError?, adjustedError? }
+- [x] T115 [P] 添加错误处理：一种复权类型失败不影响另一种，分别记录结果
+
+### 9.5 IPC层修改
+
+- [x] T116 [P] 修改electron/index.ts中的kline:download IPC handler，接收adjustTypes参数
+- [x] T116a [P] 在IPC handler中添加验证：adjustTypes不能为空数组
+- [x] T117 [P] 更新IPC handler返回值，包含两种复权类型的统计信息
+
+### 9.6 类型定义更新
+
+- [x] T118 [P] 更新shared/types/index.ts中的KlineDownloadInput接口，添加adjustTypes字段（可选，类型为('' | 'qfq')[]，与stock-sdk的adjust参数一致）
+- [x] T119 [P] 更新KlineDownloadResult接口，添加unadjustedCount、adjustedCount、unadjustedError、adjustedError字段
+- [x] T120 [P] 更新src/types.ts重新导出更新后的类型定义
+
+### 9.7 测试与验证
+
+- [ ] T121 [P] 功能测试：验证默认全选情况下下载两种复权类型数据
+- [ ] T122 [P] 功能测试：验证仅选择不复权时只下载不复权数据
+- [ ] T123 [P] 功能测试：验证仅选择前复权时只下载前复权数据
+- [ ] T124 [P] 功能测试：验证未选择任何复权类型时禁止提交
+- [ ] T125 [P] 向后兼容性测试：验证默认行为与原有功能一致（默认全选）
+- [ ] T126 [P] 边缘情况测试：一种复权类型成功、另一种失败时的处理
+
+**Checkpoint**: Phase 9完成 - 手动下载弹窗支持复权类型选择，用户可灵活控制下载的复权类型
+
+---
+
 ## Updated Summary
 
 | Phase | Tasks | Story | Description |
@@ -308,11 +369,15 @@ graph TD
 | Phase 5: US3 | T032-T034 (3) | US3 | 下载进度与结果反馈 ✅ |
 | Phase 6: Polish | T035-T040 (6) | - | 边界情况与优化 ✅ |
 | Phase 7: US4 | T041-T048 (8) | US4 | K线弹窗展示 ✅ |
-| **Phase 8: 扩展前复权** | **T049-T099 (51)** | **US1-4 EXT** | **双复权类型支持** 🆕 |
-| **Total** | **99** | | |
+| **Phase 8: 扩展前复权** | **T049-T099 (51)** | **US1-4 EXT** | **双复权类型支持** ✅ |
+| **Phase 9: 复权类型选择** | **T100-T126 (27)** | **UI增强** | **手动下载弹窗增加复权类型复选框** 🆕 |
+| **Total** | **126** | | |
 
 **Original Completed Tasks**: T001-T048 (48 tasks) ✅  
-**New Extension Tasks**: T049-T099 (51 tasks) 🆕  
+**Extension Completed Tasks**: T049-T099 (51 tasks) ✅  
+**New UI Enhancement Tasks**: T100-T126 (27 tasks) 🆕  
 **Parallel Opportunities in Extension**: T049-T055, T058-T060, T065, T090-T097 (15+ tasks marked [P])
 
 **Extension MVP Scope**: T049-T060 (数据库迁移与类型更新) + T066-T074 (手动下载双复权) = 26 tasks
+
+**Latest Change MVP Scope**: T100-T104 (UI层修改) + T105-T107 (Store层修改) + T111-T115 (后端服务层修改) = 15 tasks

@@ -13,7 +13,7 @@ const props = defineProps<Props>();
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
-  download: [payload: { stockCode: string; startDate: string; endDate: string }];
+  download: [payload: { stockCode: string; startDate: string; endDate: string; adjustTypes: ('' | 'qfq')[] }];
 }>();
 
 /** 计算默认开始日期：当日 */
@@ -34,10 +34,13 @@ const dateRange = ref<{ startDate: string; endDate: string }>({
   endDate: getDefaultEndDate(),
 });
 
+/** 复权类型选择（T101：默认全选，与stock-sdk的adjust参数一致） */
+const adjustTypes = ref<('' | 'qfq')[]>(['', 'qfq']);
+
 /** 验证错误信息 */
 const validationError = ref('');
 
-/** 是否可以提交 */
+/** 是否可以提交（T102：增加复权类型验证） */
 const canSubmit = computed(() => {
   const { startDate, endDate } = dateRange.value;
   if (!startDate || !endDate) return false;
@@ -45,12 +48,19 @@ const canSubmit = computed(() => {
   // 结束日期不能晚于当前日期
   const today = new Date().toISOString().slice(0, 10);
   if (endDate > today) return false;
+  // 至少选择一种复权类型
+  if (adjustTypes.value.length === 0) return false;
   return true;
 });
 
 /** 处理日期范围变更 */
 function handleDateChange(value: { startDate: string; endDate: string }) {
   dateRange.value = value;
+  validationError.value = '';
+}
+
+/** 处理复权类型变更 */
+function handleAdjustTypeChange() {
   validationError.value = '';
 }
 
@@ -75,14 +85,22 @@ function handleConfirm() {
     return;
   }
 
+  // 验证至少选择一种复权类型（T102）
+  if (adjustTypes.value.length === 0) {
+    validationError.value = '请至少选择一种复权类型';
+    return;
+  }
+
   // 将 YYYY-MM-DD 转换为 YYYYMMDD（stock-sdk参数格式）
   const startDateParam = startDate.replace(/-/g, '');
   const endDateParam = endDate.replace(/-/g, '');
 
+  // T103：传递adjustTypes参数给父组件
   emit('download', {
     stockCode: props.stockCode,
     startDate: startDateParam,
     endDate: endDateParam,
+    adjustTypes: [...adjustTypes.value],
   });
 
   // 关闭对话框
@@ -111,6 +129,31 @@ function handleCancel() {
         :model-value="dateRange"
         @change="handleDateChange"
       />
+
+      <!-- T100：复权类型复选框组 -->
+      <div class="adjust-type-section">
+        <label class="section-label">复权类型：</label>
+        <div class="checkbox-group">
+          <label class="checkbox-item">
+            <input
+              type="checkbox"
+              value=""
+              v-model="adjustTypes"
+              @change="handleAdjustTypeChange"
+            />
+            <span>不复权</span>
+          </label>
+          <label class="checkbox-item">
+            <input
+              type="checkbox"
+              value="qfq"
+              v-model="adjustTypes"
+              @change="handleAdjustTypeChange"
+            />
+            <span>前复权</span>
+          </label>
+        </div>
+      </div>
 
       <span v-if="validationError" class="error-message">{{ validationError }}</span>
 
@@ -147,6 +190,48 @@ function handleCancel() {
   .stock-name {
     font-size: 14px;
     color: #6b7280;
+  }
+}
+
+/* T100：复权类型选择区域样式 */
+.adjust-type-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .section-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #374151;
+  }
+
+  .checkbox-group {
+    display: flex;
+    gap: 16px;
+
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      color: #374151;
+
+      input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+        accent-color: var(--color-primary);
+      }
+
+      span {
+        user-select: none;
+      }
+
+      &:hover {
+        color: var(--color-primary);
+      }
+    }
   }
 }
 

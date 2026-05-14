@@ -15,7 +15,7 @@
 | id | number | 唯一标识符（自增主键） |
 | stockCode | string | 股票代码（纯数字，与自选股表一致） |
 | tradeDate | string | 交易日期 (YYYY-MM-DD) |
-| **adjustType** | **'none' \| 'qfq'** | **复权类型：'none' 不复权 \| 'qfq' 前复权** |
+| **adjustType** | **'' \| 'qfq'** | **复权类型：'' 不复权 \| 'qfq' 前复权** |
 | open | number \| null | 开盘价 |
 | close | number \| null | 收盘价 |
 | high | number \| null | 最高价 |
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS kline_data (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   stock_code TEXT NOT NULL,
   trade_date TEXT NOT NULL,
-  adjust_type TEXT NOT NULL DEFAULT 'none',
+  adjust_type TEXT NOT NULL DEFAULT '',
   open REAL,
   close REAL,
   high REAL,
@@ -159,27 +159,26 @@ ON kline_data(adjust_type);
 ### 1. 手动下载K线数据流程
 
 ```
-用户点击"下载K线"按钮
+用户点击“下载K线”按钮
        ↓
-弹出日期选择对话框（默认1个月前~前一天）
+弹出日期和复权类型选择对话框（默认1个月前~前一天，复权类型默认全选）
        ↓
-用户选择日期范围并确认
+用户选择日期范围和复权类型（前复权、不复权，可多选）
        ↓
-前端验证日期有效性（开始≤结束，结束≤今天）
+前端验证：日期有效性（开始≤结束，结束≤今天），至少选择一个复权类型
        ↓
-IPC调用 kline:download { stockCode, startDate, endDate }
+IPC调用 kline:download { stockCode, startDate, endDate, adjustTypes: ['', 'qfq'] }
        ↓
-主进程调用 stock-sdk getHistoryKline(symbol, { adjust: '', startDate, endDate }) 获取不复权数据
+主进程遍历 adjustTypes 数组：
+  for each adjustType in adjustTypes:
+    // adjustType 已经是 stock-sdk 所需的参数值，无需转换
+    调用 stock-sdk getHistoryKline(symbol, { adjust: adjustType, startDate, endDate })
+    获取 HistoryKline[] 数据
+    转换为 KlineData 格式，批量 UPSERT 写入数据库
        ↓
-主进程调用 stock-sdk getHistoryKline(symbol, { adjust: 'qfq', startDate, endDate }) 获取前复权数据
+返回下载结果 { success, unadjustedCount?, adjustedCount?, unadjustedError?, adjustedError? }
        ↓
-获取 HistoryKline[] 数据（不复权和前复权）
-       ↓
-转换为 KlineData 格式，批量 UPSERT 写入数据库（分别存储不复权和前复权数据）
-       ↓
-返回下载结果 { success, count, error? }
-       ↓
-前端显示 Toast 通知
+前端显示 Toast 通知（仅显示用户选择的复权类型的统计信息）
 ```
 
 **数据转换映射**:
@@ -218,7 +217,7 @@ HistoryKline.turnoverRate → KlineData.turnoverRate
     try:
       // 获取不复权数据
       klines_none = await sdk.getHistoryKline(stockCode, { adjust: '', startDate: today, endDate: today })
-      saveKlineData(klines_none, 'none')
+      saveKlineData(klines_none, '')
       
       // 获取前复权数据
       klines_qfq = await sdk.getHistoryKline(stockCode, { adjust: 'qfq', startDate: today, endDate: today })
@@ -229,7 +228,7 @@ HistoryKline.turnoverRate → KlineData.turnoverRate
       // 重试1次
       try:
         klines_none = await sdk.getHistoryKline(stockCode, { adjust: '', startDate: today, endDate: today })
-        saveKlineData(klines_none, 'none')
+        saveKlineData(klines_none, '')
         
         klines_qfq = await sdk.getHistoryKline(stockCode, { adjust: 'qfq', startDate: today, endDate: today })
         saveKlineData(klines_qfq, 'qfq')
@@ -287,7 +286,7 @@ IPC调用 kline:get-trade-records { stockCode }
   - 在对应日期位置叠加绘制交易标注（B/S/D）
        ↓
 用户交互：
-  - 切换复权方式 → IPC调用 kline:get-chart-data { stockCode, adjustType: 'none' }，从数据库读取不复权数据并重新渲染
+  - 切换复权方式 → IPC调用 kline:get-chart-data { stockCode, adjustType: '' }，从数据库读取不复权数据并重新渲染
   - 鼠标拖动 → 更新偏移量并重绘
   - 悬停交易标注 → 显示交易详情tooltip
 ```
@@ -309,9 +308,9 @@ DIVIDEND → 蓝色"D"标注在蜡烛图上方
 ```
 用户选择"不复权"
        ↓
-IPC调用 kline:get-chart-data { stockCode, adjustType: 'none' }
+IPC调用 kline:get-chart-data { stockCode, adjustType: '' }
        ↓
-主进程从数据库查询 kline_data 表，获取不复权K线数据（adjust_type = 'none'）
+主进程从数据库查询 kline_data 表，获取不复权K线数据（adjust_type = ''）
        ↓
 返回 KlineData[] (不复权) → 重新渲染K线图
 ```
@@ -333,8 +332,8 @@ export interface KlineData {
   stockCode: string;
   /** 交易日期 (YYYY-MM-DD) */
   tradeDate: string;
-  /** 复权类型：'none' 不复权 | 'qfq' 前复权 */
-  adjustType: 'none' | 'qfq';
+  /** 复权类型：'' 不复权 | 'qfq' 前复权 */
+  adjustType: '' | 'qfq';
   /** 开盘价 */
   open: number | null;
   /** 收盘价 */

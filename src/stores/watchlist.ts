@@ -10,8 +10,8 @@ export const useWatchlistStore = defineStore('watchlist', () => {
   const alerts = ref<Alert[]>([]);
   const priceMap = ref<Map<string, PriceUpdate>>(new Map());
 
-  // K线下载状态管理
-  const downloadStatusMap = ref<Map<string, { isDownloading: boolean; result?: { success: boolean; count?: number; error?: string } | null }>>(new Map());
+  // K线下载状态管理（T107：更新类型定义，支持存储不同复权类型的下载结果）
+  const downloadStatusMap = ref<Map<string, { isDownloading: boolean; result?: KlineDownloadResult | null }>>(new Map());
 
   // K线弹窗状态
   const klineChartDialog = ref<{
@@ -95,19 +95,31 @@ export const useWatchlistStore = defineStore('watchlist', () => {
   }
 
   /**
-   * 下载指定股票的K线数据
+   * 下载指定股票的K线数据（T105-T106：接收adjustTypes参数）
    * @param stockCode 股票代码
    * @param startDate 开始日期 (YYYYMMDD)
    * @param endDate 结束日期 (YYYYMMDD)
+   * @param adjustTypes 复权类型数组（可选，默认 ['', 'qfq']）
    * @returns 下载结果
    */
-  async function downloadKline(stockCode: string, startDate: string, endDate: string): Promise<KlineDownloadResult> {
+  async function downloadKline(
+    stockCode: string,
+    startDate: string,
+    endDate: string,
+    adjustTypes?: ('' | 'qfq')[]
+  ): Promise<KlineDownloadResult> {
     // 设置下载中状态
     downloadStatusMap.value.set(stockCode, { isDownloading: true, result: null });
     downloadStatusMap.value = new Map(downloadStatusMap.value);
 
     try {
-      const result = await window.klineAPI.downloadKline({ stockCode, startDate, endDate });
+      // T106：将adjustTypes参数传递给window.klineAPI.downloadKline
+      const result = await window.klineAPI.downloadKline({
+        stockCode,
+        startDate,
+        endDate,
+        adjustTypes,
+      });
       downloadStatusMap.value.set(stockCode, { isDownloading: false, result });
       downloadStatusMap.value = new Map(downloadStatusMap.value);
       return result;

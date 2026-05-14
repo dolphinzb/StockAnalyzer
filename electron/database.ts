@@ -590,10 +590,10 @@ interface HistoryKlineItem {
  * 使用事务批量INSERT OR REPLACE，按股票代码+交易日期+复权类型去重
  * @param stockCode 股票代码（纯数字）
  * @param klines stock-sdk返回的K线数据数组
- * @param adjustType 复权类型：'none' 不复权 | 'qfq' 前复权
+ * @param adjustType 复权类型：'' 不复权 | 'qfq' 前复权
  * @returns 保存的数据条数
  */
-export function saveKlineData(stockCode: string, klines: HistoryKlineItem[], adjustType: 'none' | 'qfq' = 'none'): number {
+export function saveKlineData(stockCode: string, klines: HistoryKlineItem[], adjustType: '' | 'qfq' = ''): number {
   const database = getDb();
   const now = new Date().toISOString();
 
@@ -651,7 +651,7 @@ function rowToKlineData(row: any[]): import('../shared/types').KlineData {
     id: row[0] as number,
     stockCode: row[1] as string,
     tradeDate: row[2] as string,
-    adjustType: row[3] as 'none' | 'qfq',
+    adjustType: row[3] as '' | 'qfq',
     open: row[4] as number | null,
     close: row[5] as number | null,
     high: row[6] as number | null,
@@ -705,10 +705,10 @@ export function getKlineData(stockCode: string, startDate?: string, endDate?: st
 /**
  * 获取K线图展示数据（从数据库查询，支持前复权/不复权切换）
  * @param stockCode 股票代码
- * @param adjustType 复权类型：'none' 不复权 | 'qfq' 前复权
+ * @param adjustType 复权类型：'' 不复权 | 'qfq' 前复权
  * @returns K线数据数组，按交易日期升序排列
  */
-export function getChartData(stockCode: string, adjustType: 'none' | 'qfq'): import('../shared/types').KlineData[] {
+export function getChartData(stockCode: string, adjustType: '' | 'qfq'): import('../shared/types').KlineData[] {
   const database = getDb();
 
   const query = `SELECT id, stock_code, trade_date, adjust_type, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at

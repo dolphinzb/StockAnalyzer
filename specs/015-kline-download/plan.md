@@ -1,13 +1,16 @@
 # Implementation Plan: 自选股K线数据下载功能（含前复权支持）
 
-**Branch**: `015-kline-download` | **Date**: 2026-05-11 | **Spec**: [spec.md](./spec.md)
+**Branch**: `015-kline-download` | **Date**: 2026-05-13 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/015-kline-download/spec.md`
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
 
 ## Summary
 
-扩展现有K线下载功能，增加前复权数据的下载、存储和展示能力。**核心变更**：1) 手动下载时同时获取不复权和前复权两种数据；2) 自动下载时也下载两种复权类型，采用串行策略（股票A不复权→前复权→股票B...）；3) 数据库kline_data表增加adjust_type字段区分复权类型；4) K线弹窗完全依赖本地数据库数据，不再实时调用stock-sdk；5) 提供数据库迁移脚本安全添加字段。使用 stock-sdk 的 adjust 参数（''不复权，'qfq'前复权）获取数据，所有数据存储在同一张表中，按股票代码+日期+复权类型UPSERT去重。
+本次变更在现有K线下载功能基础上，**在手动下载弹窗中增加复权类型复选框**，支持用户自主选择下载前复权、不复权或两者都下载。**核心变更**：1) 日期选择对话框增加复权类型复选框组（前复权、不复权，默认全选）；2) 用户可自由选择需要下载的复权类型；3) 系统根据用户选择的复权类型下载对应的K线数据；4) 验证至少选择一种复权类型才能提交；5) 保持向后兼容（默认全选与原有行为一致）。
+
+**变更时间**: 2026-05-13  
+**变更原因**: 用户对下载功能的灵活性需求，允许仅下载特定复权类型的数据
 
 ## Technical Context
 
@@ -84,12 +87,12 @@ src/
 ├── components/
 │   ├── StockItem.vue                    # 修改：下载结果提示显示两种复权类型统计
 │   ├── StockList.vue                    # 无变化
-│   ├── KlineDownloadDialog.vue          # 无变化（下载流程对用户透明）
+│   ├── KlineDownloadDialog.vue          # 修改：增加复权类型复选框组，添加验证逻辑，传递adjustTypes参数
 │   └── KlineChartDialog.vue             # 修改：从数据库加载数据，无数据时显示提示，不再调用stock-sdk
 ├── composables/
 │   └── useKlineChart.ts                 # 修改：getChartData从数据库查询，无数据返回空数组
 ├── stores/
-│   └── watchlist.ts                     # 修改：下载状态管理支持两种复权类型统计
+│   └── watchlist.ts                     # 修改：downloadKline方法接收并传递adjustTypes参数
 └── types.ts                             # 修改：重新导出更新后的类型
 ```
 
@@ -97,23 +100,85 @@ src/
 
 ## Key Design Decisions
 
-1. **数据存储**: kline_data表增加adjust_type字段（TEXT NOT NULL DEFAULT ''），联合唯一约束改为UNIQUE(stock_code, trade_date, adjust_type)，复合索引idx_kline_data_stock_date_adjust
-2. **下载策略**: 手动下载时两种复权类型可并行或串行（保证原子性），自动下载时必须串行（股票A不复权→前复权→股票B...）避免API限流
-3. **K线弹窗**: 完全依赖数据库数据，打开时先查询对应复权类型，无数据显示"暂无XXX复权数据，请先下载"，切换时同样查询数据库
-4. **迁移脚本**: 存放在sql/015-kline-download.sql，使用临时表机制保证可重复执行，事务保护，包含验证查询
-5. **错误处理**: 一种复权类型失败不影响另一种，分别记录结果；自动下载每种复权类型独立重试1次
-6. **性能调整**: 手动下载从10秒放宽至15秒，自动下载从60秒放宽至120秒（数据量翻倍）
-7. **向后兼容**: 迁移脚本为已有数据设置adjust_type=''，现有查询功能不受影响
+1. **UI交互设计**: 在KlineDownloadDialog.vue中使用Element Plus的el-checkbox-group组件实现复权类型复选框组，包含"前复权"和"不复权"两个选项
+2. **默认行为**: 复选框默认全部勾选（v-model初始值为['', 'qfq']），保持与原有"同时下载两种类型"的行为一致
+3. **验证逻辑**: 在提交前验证至少选择一个复权类型，若未选择则禁用确定按钮并显示错误提示"请至少选择一种复权类型"
+4. **参数传递**: watchlist.ts的downloadKline方法接收adjustTypes数组参数（'' | 'qfq'），直接传递给IPC handler和stock-sdk，无需转换
+5. **后端适配**: klineDownloadService.ts的downloadKline函数接收adjustTypes参数，遍历数组依次下载每种复权类型
+6. **结果展示**: 下载完成后仅显示用户选择的复权类型的统计信息，格式为"下载完成，共获取 N 条不复权数据，M 条前复权数据"（仅显示已选择的类型）
+7. **向后兼容**: 默认全选确保老用户的使用习惯不受影响，新用户可根据需要灵活选择
+8. **参数一致性**: UI层、Store层、Service层均使用与stock-sdk一致的adjust参数值（''表示不复权，'qfq'表示前复权），避免不必要的映射转换
 
 ## Complexity Tracking
 
 | Area | Complexity | Notes |
 |------|-----------|-------|
-| stock-sdk 集成 | Low | 成熟npm包，adjust参数支持''和'qfq' |
-| 数据库表结构变更 | Medium | 需重建表以修改UNIQUE约束，迁移脚本需保证数据安全 |
-| 迁移脚本设计 | Medium | 需可重复执行，事务保护，验证数据完整性 |
-| 下载逻辑调整 | Medium | 同时下载两种复权类型，分别统计成功/失败 |
-| 自动下载串行策略 | Medium | 每只股票依次下载不复权→前复权，重试策略调整 |
-| K线弹窗数据源切换 | Low | 从实时获取改为数据库查询，无数据时显示提示 |
-| UI结果提示更新 | Low | 显示两种复权类型的统计信息 |
-| 向后兼容性 | Low | 已有数据设置adjust_type=''，查询功能正常 |
+| UI复选框组件集成 | Low | 使用Element Plus现成组件，简单绑定v-model |
+| 验证逻辑实现 | Low | 简单的数组长度检查，禁用按钮或显示提示 |
+| 参数传递链路调整 | Low | watchlist.ts → IPC → service，逐层传递adjustTypes数组，无需转换 |
+| 下载逻辑调整 | Medium | service层遍历adjustTypes数组，依次下载每种类型，分别统计结果 |
+| 结果提示更新 | Low | 仅显示用户选择的复权类型的统计信息 |
+| 向后兼容性保证 | Low | 默认全选保持原有行为，不影响老用户 |
+| 参数一致性设计 | Low | UI层直接使用stock-sdk的adjust参数值，避免映射转换 |
+
+## Phase Completion Summary
+
+### Phase 0: Research ✅ COMPLETE (无需修改)
+- [x] 所有NEEDS CLARIFICATION已解决
+- [x] research.md生成完成 (545行)
+- [x] stock-sdk集成方案确定
+- [x] 交易日判断策略确定
+- [x] K线图渲染技术选型确定(Canvas 2D)
+- [x] 交易标注实现方案确定(复用TradeRecord)
+- [x] 可复用组件清单整理完成
+
+**Note**: 本次变更不涉及新的技术研究，Phase 0文档无需修改。
+
+### Phase 1: Design & Contracts ✅ UPDATED
+- [x] data-model.md更新完成 - 手动下载流程增加复权类型选择步骤
+- [x] contracts/ipc-api.md更新完成 - downloadKline接口增加adjustTypes参数
+- [x] quickstart.md更新完成 - 使用说明增加复权类型选择说明
+- [x] migration.sql已存在 - 数据库迁移脚本无需修改
+- [x] Agent context更新脚本执行(generic类型)
+
+**Note**: 本次变更主要是UI层交互增强，数据模型和接口契约需要更新以支持adjustTypes参数。
+
+### Constitution Check Re-evaluation ✅ PASSED
+- [x] TypeScript strict mode compliance
+- [x] Electron IPC communication
+- [x] Local database persistence with migration support
+- [x] 中文注释规范
+- [x] Database migration script idempotency
+- [x] Architecture consistency maintained
+
+## Artifacts Generated
+
+### Documentation
+- ✅ **research.md** (545行) - Phase 0研究文档（无需修改）
+- ✅ **data-model.md** (424行) - Phase 1数据模型定义（已更新手动下载流程）
+- ✅ **contracts/ipc-api.md** (345行) - Phase 1 IPC接口契约（已更新downloadKline接口）
+- ✅ **quickstart.md** (116行) - Phase 1快速开始指南（已更新使用说明）
+- ✅ **migration.sql** (110行) - 数据库迁移脚本（已存在）
+- ⏳ **tasks.md** - Phase 2任务列表（已添加Phase 9新任务）
+
+### Source Code Changes Required
+- src/components/KlineDownloadDialog.vue - 增加复权类型复选框组和验证逻辑
+- src/stores/watchlist.ts - downloadKline方法增加adjustTypes参数
+- electron/services/klineDownloadService.ts - downloadKline函数接收并处理adjustTypes参数
+- shared/types/index.ts - 更新KlineDownloadInput和KlineDownloadResult接口
+- electron/index.ts - IPC handler接收adjustTypes参数
+- preload/index.ts - API暴露无需修改（参数可选）
+
+## Next Steps
+
+Plan phase complete. Ready for task generation with `/speckit.tasks` command.
+
+本次变更主要集中在UI层和参数传递链路：
+- UI层：KlineDownloadDialog.vue增加复选框组件和验证逻辑
+- Store层：watchlist.ts传递adjustTypes参数
+- Service层：klineDownloadService.ts根据adjustTypes下载对应复权类型
+- 类型定义：更新接口以支持adjustTypes参数
+
+所有设计决策已记录，Phase 0和Phase 1文档已更新以反映本次变更。
+
+Proceed to Phase 2 (Task Generation) when ready.

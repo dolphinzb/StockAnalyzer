@@ -13,16 +13,17 @@
 
 #### downloadKline
 
-下载指定股票在指定时间段内的日K线数据（不复权原始数据）
+下载指定股票在指定时间段内的日K线数据（支持用户选择复权类型）
 
 **Request**:
 ```typescript
 {
   channel: 'kline:download',
   args: [{
-    stockCode: string,    // 股票代码（纯数字，如 '000001'）
-    startDate: string,    // 开始日期 (YYYYMMDD)
-    endDate: string       // 结束日期 (YYYYMMDD)
+    stockCode: string,          // 股票代码（纯数字，如 '000001'）
+    startDate: string,          // 开始日期 (YYYYMMDD)
+    endDate: string,            // 结束日期 (YYYYMMDD)
+    adjustTypes?: ('' | 'qfq')[]  // 复权类型数组，可选，默认 ['', 'qfq']（与stock-sdk的adjust参数一致）
   }]
 }
 ```
@@ -34,18 +35,25 @@ KlineDownloadResult
 interface KlineDownloadResult {
   /** 是否成功 */
   success: boolean;
-  /** 获取的数据条数 */
-  count?: number;
-  /** 失败原因 */
-  error?: string;
+  /** 不复权数据条数 */
+  unadjustedCount?: number;
+  /** 前复权数据条数 */
+  adjustedCount?: number;
+  /** 不复权失败原因 */
+  unadjustedError?: string;
+  /** 前复权失败原因 */
+  adjustedError?: string;
 }
 ```
 
 **Errors**:
 - `INVALID_DATE_RANGE`: 日期范围无效（开始日期晚于结束日期，或结束日期晚于当前日期）
 - `INVALID_STOCK_CODE`: 股票代码无效
+- `NO_ADJUST_TYPE_SELECTED`: 未选择任何复权类型
 - `DOWNLOAD_ERROR`: stock-sdk 请求失败
 - `DATABASE_ERROR`: 数据库写入失败
+
+**Note**: adjustTypes 参数可选，默认为 ['', 'qfq']，与 stock-sdk 的 adjust 参数保持一致。系统会根据用户选择的复权类型下载对应的数据，返回结果中仅包含已选择的复权类型的统计信息。
 
 ---
 
@@ -103,7 +111,7 @@ interface KlineData {
   channel: 'kline:get-chart-data',
   args: [
     stockCode: string,          // 股票代码
-    adjustType: 'none' | 'qfq'  // 复权方式：'none'不复权 | 'qfq'前复权
+    adjustType: '' | 'qfq'  // 复权方式：''不复权 | 'qfq'前复权
   ]
 }
 ```
@@ -116,7 +124,7 @@ interface KlineData {
   id: number;
   stockCode: string;
   tradeDate: string;        // YYYY-MM-DD
-  adjustType: 'none' | 'qfq';
+  adjustType: '' | 'qfq';
   open: number | null;
   close: number | null;
   high: number | null;
@@ -187,7 +195,7 @@ interface TradeRecord {
 
 ```typescript
 contextBridge.exposeInMainWorld('klineAPI', {
-  // 下载K线数据
+  // 下载K线数据（支持选择复权类型）
   downloadKline: (input: KlineDownloadInput) => 
     ipcRenderer.invoke('kline:download', input),
   
@@ -196,7 +204,7 @@ contextBridge.exposeInMainWorld('klineAPI', {
     ipcRenderer.invoke('kline:get-data', stockCode, startDate, endDate),
   
   // 获取K线图展示数据（从数据库读取）
-  getChartData: (stockCode: string, adjustType: 'none' | 'qfq') => 
+  getChartData: (stockCode: string, adjustType: '' | 'qfq') => 
     ipcRenderer.invoke('kline:get-chart-data', stockCode, adjustType),
   
   // 获取交易记录数据
@@ -232,8 +240,10 @@ export interface KlineData {
 /** K线数据下载结果 */
 export interface KlineDownloadResult {
   success: boolean;
-  count?: number;
-  error?: string;
+  unadjustedCount?: number;
+  adjustedCount?: number;
+  unadjustedError?: string;
+  adjustedError?: string;
 }
 
 /** K线数据下载输入参数 */
@@ -241,13 +251,14 @@ export interface KlineDownloadInput {
   stockCode: string;
   startDate: string;    // YYYYMMDD
   endDate: string;      // YYYYMMDD
+  adjustTypes?: ('' | 'qfq')[];  // 复权类型数组，可选，默认 ['', 'qfq']（与stock-sdk的adjust参数一致）
 }
 
 /** K线数据API类型 */
 export interface KlineAPI {
   downloadKline(input: KlineDownloadInput): Promise<KlineDownloadResult>;
   getKlineData(stockCode: string, startDate?: string, endDate?: string): Promise<KlineData[]>;
-  getChartData(stockCode: string, adjustType: 'none' | 'qfq'): Promise<KlineData[]>;
+  getChartData(stockCode: string, adjustType: '' | 'qfq'): Promise<KlineData[]>;
   getTradeRecords(stockCode: string): Promise<TradeRecord[]>;
 }
 ```
@@ -268,14 +279,24 @@ declare global {
 ```typescript
 // 主进程 (electron/services/klineDownloadService.ts)
 try {
-  const klines = await sdk.getHistoryKline(stockCode, options);
-  saveKlineData(klines);
-  return { success: true, count: klines.length };
+  // 遍历 adjustTypes 数组，依次下载每种复权类型
+  const results = [];
+  for (const adjustType of input.adjustTypes || ['', 'qfq']) {
+    // adjustType 已经是 stock-sdk 所需的参数值，无需转换
+    const klines = await sdk.getHistoryKline(stockCode, { adjust: adjustType, startDate, endDate });
+    saveKlineData(klines, adjustType);
+    results.push({ type: adjustType, count: klines.length });
+  }
+  return { 
+    success: true, 
+    unadjustedCount: results.find(r => r.type === '')?.count,
+    adjustedCount: results.find(r => r.type === 'qfq')?.count
+  };
 } catch (error) {
   log.error('K线数据下载失败:', error);
   return { 
     success: false, 
-    error: error instanceof Error ? error.message : '未知错误' 
+    unadjustedError: error instanceof Error ? error.message : '未知错误'
   };
 }
 
@@ -285,11 +306,19 @@ try {
     stockCode: '000001',
     startDate: '20260408',
     endDate: '20260508',
+    adjustTypes: ['', 'qfq']  // 用户选择的复权类型（与stock-sdk的adjust参数一致）
   });
   if (result.success) {
-    showToast(`下载完成，共获取 ${result.count} 条K线数据`, 'success');
+    const messages = [];
+    if (result.unadjustedCount !== undefined) {
+      messages.push(`${result.unadjustedCount} 条不复权数据`);
+    }
+    if (result.adjustedCount !== undefined) {
+      messages.push(`${result.adjustedCount} 条前复权数据`);
+    }
+    showToast(`下载完成，共获取 ${messages.join('，')}`, 'success');
   } else {
-    showToast(`下载失败：${result.error}`, 'error');
+    showToast(`下载失败：${result.unadjustedError || result.adjustedError}`, 'error');
   }
 } catch (error) {
   showToast('下载异常，请重试', 'error');
@@ -321,6 +350,19 @@ function validateDownloadInput(input: KlineDownloadInput): void {
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   if (input.endDate > today) {
     throw new Error('INVALID_DATE_RANGE: 结束日期不能晚于当前日期');
+  }
+  
+  // 验证复权类型
+  const adjustTypes = input.adjustTypes || ['', 'qfq'];
+  if (!Array.isArray(adjustTypes) || adjustTypes.length === 0) {
+    throw new Error('NO_ADJUST_TYPE_SELECTED: 请至少选择一种复权类型');
+  }
+  
+  const validTypes = ['', 'qfq'];
+  for (const type of adjustTypes) {
+    if (!validTypes.includes(type)) {
+      throw new Error('INVALID_ADJUST_TYPE: 无效的复权类型');
+    }
   }
 }
 ```

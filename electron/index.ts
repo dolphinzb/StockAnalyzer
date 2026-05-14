@@ -702,13 +702,22 @@ ipcMain.handle('backup:manual', async () => {
 });
 
 /**
- * 下载K线数据
+ * 下载K线数据（T116-T117：接收adjustTypes参数）
  */
-ipcMain.handle('kline:download', async (_event, input: { stockCode: string; startDate: string; endDate: string }) => {
+ipcMain.handle('kline:download', async (_event, input: {
+  stockCode: string;
+  startDate: string;
+  endDate: string;
+  adjustTypes?: ('' | 'qfq')[];
+}) => {
   log.info('IPC: kline:download', JSON.stringify(input));
   try {
     validateDownloadInput(input.stockCode, input.startDate, input.endDate);
-    return await downloadKline(input.stockCode, input.startDate, input.endDate);
+    // T116a：验证adjustTypes不能为空数组
+    if (input.adjustTypes && input.adjustTypes.length === 0) {
+      throw new Error('请至少选择一种复权类型');
+    }
+    return await downloadKline(input.stockCode, input.startDate, input.endDate, input.adjustTypes);
   } catch (error) {
     log.error('IPC kline:download error:', error);
     return {
@@ -734,7 +743,7 @@ ipcMain.handle('kline:get-data', async (_event, stockCode: string, startDate?: s
 /**
  * 获取K线图展示数据（支持前复权/不复权）
  */
-ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjustType: 'none' | 'qfq') => {
+ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjustType: '' | 'qfq') => {
   log.info('IPC: kline:get-chart-data', stockCode, adjustType);
   try {
     return dbGetChartData(stockCode, adjustType);

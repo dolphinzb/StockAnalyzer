@@ -35,10 +35,12 @@ npm run dev
 ### 手动下载K线数据
 
 1. 打开自选股列表页面
-2. 找到目标股票，点击操作列的"下载K线"按钮
-3. 在弹出的日期选择对话框中，确认或修改日期范围（默认1个月前~前一天）
-4. 点击"确定"开始下载
-5. 下载完成后，Toast通知显示结果
+2. 找到目标股票，点击操作列的“下载K线”按钮
+3. 在弹出的对话框中：
+   - 确认或修改日期范围（默认1个月前~前一天）
+   - 选择需要下载的复权类型（前复权、不复权，默认全选）
+4. 点击“确定”开始下载
+5. 下载完成后，Toast通知显示结果（仅显示已选择的复权类型的统计信息）
 
 ### 自动下载K线数据
 
@@ -79,7 +81,7 @@ CREATE TABLE IF NOT EXISTS kline_data (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   stock_code TEXT NOT NULL,
   trade_date TEXT NOT NULL,
-  adjust_type TEXT NOT NULL DEFAULT 'none',
+  adjust_type TEXT NOT NULL DEFAULT '',
   open REAL,
   close REAL,
   high REAL,
@@ -100,7 +102,7 @@ CREATE TABLE IF NOT EXISTS kline_data (
 
 | Channel | Direction | Description |
 |---------|-----------|-------------|
-| `kline:download` | R → M | 手动下载K线数据（同时获取不复权和前复权） |
+| `kline:download` | R → M | 手动下载K线数据（支持选择复权类型，默认同时下载不复权和前复权） |
 | `kline:get-data` | R → M | 查询本地K线数据 |
 | `kline:get-chart-data` | R → M | 获取K线图展示数据（支持前复权/不复权） |
 | `kline:get-trade-records` | R → M | 获取交易记录数据（复用已有TradeRecord） |

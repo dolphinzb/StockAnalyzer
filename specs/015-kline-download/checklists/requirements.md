@@ -1,8 +1,7 @@
-# Specification Quality Checklist: 自选股K线数据下载功能（含前复权支持）
+# Specification Quality Checklist: 变更015-kline-download中需求 - 增加复权类型复选框
 
-**Purpose**: 验证规范完整性和质量，确保在进入计划阶段前符合前复权扩展功能的要求  
-**Created**: 2026-05-11  
-**Updated**: 2026-05-11  
+**Purpose**: Validate specification completeness and quality before proceeding to planning
+**Created**: 2026-05-13
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
@@ -30,24 +29,22 @@
 - [x] Feature meets measurable outcomes defined in Success Criteria
 - [x] No implementation details leak into specification
 
-## Extended Functionality Validation (前复权扩展功能专项验证)
+## Change-Specific Validation (本次变更专项验证)
 
-- [x] 数据库表结构明确包含 adjust_type 字段（TEXT类型，NOT NULL，DEFAULT ''）
-- [x] UNIQUE 约束定义为 (stock_code, trade_date, adjust_type)
-- [x] 手动下载逻辑明确要求同时获取两种复权数据（不复权和前复权）
-- [x] 自动下载逻辑明确要求串行下载两种复权类型（股票A不复权→股票A前复权→股票B...）
-- [x] K线弹窗展示逻辑明确从数据库读取，不再调用stock-sdk实时获取
-- [x] 复权切换时若无数据显示明确提示信息
-- [x] 下载结果提示分别显示两种复权类型的成功/失败状态
-- [x] 日志记录格式明确区分不复权和前复权的统计信息
-- [x] 数据库迁移脚本要求明确（添加字段、更新数据、重建约束、创建索引）
-- [x] 迁移脚本可重复执行要求明确
-- [x] 性能指标已更新（手动下载15秒，自动下载120秒）
-- [x] 向后兼容性要求明确
+- [x] Change Summary 章节清晰描述了本次变更的内容
+- [x] User Story 1 明确说明了复权类型复选框的交互方式
+- [x] 验收场景覆盖了默认全选的行为（场景2）
+- [x] 验收场景覆盖了用户取消部分复选框的情况（场景4、5）
+- [x] 验收场景覆盖了未选择任何复权类型的边界情况（场景10）
+- [x] FR-002b 明确要求复选框默认全部勾选
+- [x] FR-002c 明确要求至少选择一种复权类型
+- [x] FR-004 更新为根据用户选择的复权类型下载数据
+- [x] FR-007 更新为显示用户选择的各复权类型的结果
+- [x] Clarifications 章节记录了本次变更的关键决策
+- [x] 向后兼容性得到保证（默认全选保持原有行为）
 
 ## Notes
 
 - ✅ 所有检查项已通过
-- ✅ 前复权扩展功能规范已完成：数据库存储两种复权数据，展示时完全依赖本地数据
-- ✅ 数据库迁移脚本要求已明确，存放在specs/015-kline-download/migration.sql
+- ✅ 本次变更规范已清晰描述：在手动下载弹窗中增加复权类型复选框，支持前复权、不复权，默认全选
 - ✅ 规范已准备好进入 `/speckit.plan` 阶段

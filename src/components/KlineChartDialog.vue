@@ -32,7 +32,7 @@ const emit = defineEmits<{
 /** Canvas 元素引用 */
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 /** 当前复权方式 */
-const adjustType = ref<'none' | 'qfq'>('qfq');
+const adjustType = ref<'' | 'qfq'>('qfq');
 /** 是否正在加载数据 */
 const isLoading = ref(false);
 /** 是否无数据 */
@@ -96,7 +96,7 @@ async function loadChartData(showEmptyMsg = true): Promise<void> {
 /**
  * 切换复权方式
  */
-async function switchAdjustType(type: 'none' | 'qfq'): Promise<void> {
+async function switchAdjustType(type: '' | 'qfq'): Promise<void> {
   if (adjustType.value === type) return;
   
   // 保存当前状态
@@ -117,10 +117,6 @@ async function switchAdjustType(type: 'none' | 'qfq'): Promise<void> {
     klineChart.drawChart();
   }
 }
-
-/**
- * 关闭弹窗
- */
 function handleClose(): void {
   klineChart.destroy();
   emit('update:modelValue', false);
@@ -171,8 +167,8 @@ onBeforeUnmount(() => {
         </button>
         <button
           class="adjust-btn"
-          :class="{ active: adjustType === 'none' }"
-          @click="switchAdjustType('none')"
+          :class="{ active: adjustType === '' }"
+          @click="switchAdjustType('')"
         >
           不复权
         </button>

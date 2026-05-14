@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS kline_data (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   stock_code TEXT NOT NULL,
   trade_date TEXT NOT NULL,
-  adjust_type TEXT NOT NULL DEFAULT 'none',
+  adjust_type TEXT NOT NULL DEFAULT '',
   open REAL,
   close REAL,
   high REAL,
@@ -492,7 +492,7 @@ function drawTradeMarkers(ctx, klines, tradeRecords, offsetX) {
 **Implementation approach**:
 ```typescript
 // 主进程：从数据库获取K线图展示数据（electron/database.ts）
-export function getChartData(stockCode: string, adjustType: 'none' | 'qfq'): KlineData[] {
+export function getChartData(stockCode: string, adjustType: '' | 'qfq'): KlineData[] {
   const stmt = db.prepare(
     'SELECT * FROM kline_data WHERE stock_code = ? AND adjust_type = ? ORDER BY trade_date ASC'
   );
@@ -501,13 +501,13 @@ export function getChartData(stockCode: string, adjustType: 'none' | 'qfq'): Kli
 }
 
 // IPC handler (electron/index.ts)
-ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjustType: 'none' | 'qfq') => {
+ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjustType: '' | 'qfq') => {
   const klines = getChartData(stockCode, adjustType);
   return klines;
 });
 
 // 渲染进程：切换复权方式
-async function switchAdjustType(adjustType: 'none' | 'qfq') {
+async function switchAdjustType(adjustType: '' | 'qfq') {
   const klines = await window.klineAPI.getChartData(stockCode, adjustType);
   drawChart(klines, tradeMarkers);
 }

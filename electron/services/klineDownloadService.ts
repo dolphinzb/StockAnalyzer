@@ -86,23 +86,23 @@ export function validateDownloadInput(stockCode: string, startDate: string, endD
  * @param stockCode 股票代码
  * @param startDate 开始日期 (YYYYMMDD)
  * @param endDate 结束日期 (YYYYMMDD)
- * @param adjustType 复权类型：'none' 不复权 | 'qfq' 前复权
+ * @param adjustType 复权类型：'' 不复权 | 'qfq' 前复权
  * @returns 下载结果
  */
 async function downloadSingleAdjust(
   stockCode: string,
   startDate: string,
   endDate: string,
-  adjustType: 'none' | 'qfq'
+  adjustType: '' | 'qfq'
 ): Promise<{ success: boolean; count?: number; error?: string }> {
   try {
-    const adjustParam = adjustType === 'qfq' ? 'qfq' : '';
+    // adjustType 已经是 stock-sdk 所需的参数值，无需转换
     log.info(`开始下载${adjustType === 'qfq' ? '前复权' : '不复权'}K线数据: ${stockCode}, ${startDate} ~ ${endDate}`);
 
     // 调用 stock-sdk 获取K线数据
     const klines = await sdk.getHistoryKline(stockCode, {
       period: 'daily',
-      adjust: adjustParam,
+      adjust: adjustType,
       startDate,
       endDate,
     });
@@ -120,43 +120,77 @@ async function downloadSingleAdjust(
 }
 
 /**
- * 手动下载K线数据（同时下载不复权和前复权两种类型）
+ * 手动下载K线数据（T111-T115：根据用户选择的复权类型下载）
  * @param stockCode 股票代码
  * @param startDate 开始日期 (YYYYMMDD)
  * @param endDate 结束日期 (YYYYMMDD)
- * @returns 下载结果（包含两种复权类型的统计）
+ * @param adjustTypes 复权类型数组（可选，默认 ['', 'qfq']）
+ * @returns 下载结果（包含所选复权类型的统计）
  */
-export async function downloadKline(stockCode: string, startDate: string, endDate: string): Promise<KlineDownloadResult> {
-  log.info(`开始下载双复权类型K线数据: ${stockCode}, ${startDate} ~ ${endDate}`);
+export async function downloadKline(
+  stockCode: string,
+  startDate: string,
+  endDate: string,
+  adjustTypes?: ('' | 'qfq')[]
+): Promise<KlineDownloadResult> {
+  // T112：如果未指定adjustTypes，默认下载两种类型
+  const typesToDownload = adjustTypes && adjustTypes.length > 0 ? adjustTypes : ['', 'qfq'];
+  
+  log.info(`开始下载K线数据: ${stockCode}, ${startDate} ~ ${endDate}, 复权类型: ${typesToDownload.map(t => t === '' ? '不复权' : '前复权').join(', ')}`);
 
-  // 串行下载：先下载不复权，再下载前复权
-  const unadjustedResult = await downloadSingleAdjust(stockCode, startDate, endDate, 'none');
-  const adjustedResult = await downloadSingleAdjust(stockCode, startDate, endDate, 'qfq');
+  // T112：遍历adjustTypes数组，依次下载每种复权类型
+  let unadjustedCount: number | undefined;
+  let adjustedCount: number | undefined;
+  let unadjustedError: string | undefined;
+  let adjustedError: string | undefined;
+  let overallSuccess = false;
 
-  // 至少一种成功即为整体成功
-  const overallSuccess = unadjustedResult.success || adjustedResult.success;
+  for (const adjustType of typesToDownload) {
+    const result = await downloadSingleAdjust(stockCode, startDate, endDate, adjustType as '' | 'qfq');
+    
+    if (adjustType === '') {
+      // 不复权
+      if (result.success) {
+        unadjustedCount = result.count;
+        overallSuccess = true;
+      } else {
+        unadjustedError = result.error;
+      }
+    } else if (adjustType === 'qfq') {
+      // 前复权
+      if (result.success) {
+        adjustedCount = result.count;
+        overallSuccess = true;
+      } else {
+        adjustedError = result.error;
+      }
+    }
+  }
 
   const result: KlineDownloadResult = {
     success: overallSuccess,
-    unadjustedCount: unadjustedResult.count,
-    adjustedCount: adjustedResult.count,
+    unadjustedCount,
+    adjustedCount,
   };
 
-  // 记录失败原因
-  if (!unadjustedResult.success && unadjustedResult.error) {
-    result.unadjustedError = unadjustedResult.error;
+  // T114：记录失败原因
+  if (unadjustedError) {
+    result.unadjustedError = unadjustedError;
   }
-  if (!adjustedResult.success && adjustedResult.error) {
-    result.adjustedError = adjustedResult.error;
+  if (adjustedError) {
+    result.adjustedError = adjustedError;
   }
 
   // 兼容旧版字段
-  result.count = (unadjustedResult.count || 0) + (adjustedResult.count || 0);
+  result.count = (unadjustedCount || 0) + (adjustedCount || 0);
   if (!overallSuccess) {
-    result.error = `不复权: ${unadjustedResult.error || '未知错误'}; 前复权: ${adjustedResult.error || '未知错误'}`;
+    const errors: string[] = [];
+    if (unadjustedError) errors.push(`不复权: ${unadjustedError}`);
+    if (adjustedError) errors.push(`前复权: ${adjustedError}`);
+    result.error = errors.join('; ') || '未知错误';
   }
 
-  log.info(`双复权类型K线数据下载完成: ${stockCode}, 不复权=${unadjustedResult.count || 0}条, 前复权=${adjustedResult.count || 0}条`);
+  log.info(`K线数据下载完成: ${stockCode}, 不复权=${unadjustedCount || 0}条, 前复权=${adjustedCount || 0}条`);
   return result;
 }
 
@@ -381,13 +415,11 @@ export function stopKlineDownloadScheduler(): void {
  */
 export async function getChartData(stockCode: string, adjust: 'qfq' | ''): Promise<KlineData[]> {
   try {
-    // 将adjust参数转换为数据库使用的格式
-    const adjustType = adjust === 'qfq' ? 'qfq' : 'none';
-    
-    log.info(`获取K线图展示数据（从数据库）: ${stockCode}, 复权方式: ${adjustType}`);
+    // adjust 参数已经是数据库使用的格式，无需转换
+    log.info(`获取K线图展示数据（从数据库）: ${stockCode}, 复权方式: ${adjust}`);
 
     // 从数据库查询对应复权类型的K线数据
-    const result = dbGetChartData(stockCode, adjustType);
+    const result = dbGetChartData(stockCode, adjust);
 
     log.info(`K线图展示数据获取成功: ${stockCode}, 共 ${result.length} 条`);
     return result;

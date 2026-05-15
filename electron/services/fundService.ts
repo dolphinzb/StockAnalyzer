@@ -198,9 +198,9 @@ export class FundService {
         log.info(`未设置手动余额，开始重算从 ${recalcStartDate} 开始的记录`);
         this.recalculateBalancesAfterDate(recalcStartDate);
       } else {
-        // 如果用户手动设置了余额，使用手动设置的余额作为起始点，重算后续记录
-        log.info(`使用手动余额 ${data.accountBalance}，重算 ${updateDate} 之后的记录`);
-        this.recalculateBalancesAfterDate(updateDate, Number(data.accountBalance));
+        // 如果用户手动设置了余额，使用手动设置的余额作为起始点，重算ID大于当前记录的所有后续记录
+        log.info(`使用手动余额 ${data.accountBalance}，重算 ID > ${id} 的后续记录`);
+        this.recalculateBalancesAfterId(id, Number(data.accountBalance));
       }
 
       log.info(`更新资金明细记录成功，ID: ${id}`);
@@ -426,6 +426,53 @@ export class FundService {
       log.info(`成功重算 ${result[0].values.length} 条记录的账户余额，最终余额: ${currentBalance}`);
     } catch (error) {
       log.error('recalculateBalancesAfterDate error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 重新计算指定ID之后的所有记录的账户余额（基于ID而非日期）
+   * @param afterId 从此ID之后开始重算（不包含此ID）
+   * @param startBalance 起始余额，使用该值作为第一条后续记录的上一笔余额
+   */
+  private recalculateBalancesAfterId(afterId: number, startBalance: number): void {
+    try {
+      // 获取需要重算的记录（按日期和ID升序）
+      const result = this.db.exec(`
+        SELECT id, amount, type 
+        FROM transfer_records 
+        WHERE id > ?
+        ORDER BY transfer_date ASC, id ASC
+      `, [afterId]);
+
+      if (result.length === 0 || result[0].values.length === 0) {
+        log.info('没有记录需要重算');
+        return;
+      }
+
+      let currentBalance = startBalance;
+      log.info(`开始重算 ${result[0].values.length} 条记录，起始余额: ${currentBalance}`);
+
+      // 逐条更新余额
+      for (const row of result[0].values) {
+        const id = row[0] as number;
+        const amount = row[1] as number;
+        const type = row[2] as string;
+
+        currentBalance = this.calculateBalance(currentBalance, amount, type);
+
+        // 确保保存前消除 -0
+        const normalizedBalance = currentBalance === 0 ? 0 : currentBalance;
+
+        this.db.run(
+          `UPDATE transfer_records SET account_balance = ? WHERE id = ?`,
+          [normalizedBalance, id]
+        );
+      }
+
+      log.info(`成功重算 ${result[0].values.length} 条记录的账户余额，最终余额: ${currentBalance}`);
+    } catch (error) {
+      log.error('recalculateBalancesAfterId error:', error);
       throw error;
     }
   }

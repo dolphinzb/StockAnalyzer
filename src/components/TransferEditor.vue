@@ -54,7 +54,7 @@
         <label for="accountBalance">账户余额（可选，留空则自动计算）</label>
         <input
           id="accountBalance"
-          v-model="formattedAccountBalance"
+          v-model.number="formattedAccountBalance"
           type="number"
           step="0.01"
           class="form-input"
@@ -110,19 +110,20 @@ const formData = ref({
   accountBalance: undefined as number | undefined,
 });
 
-// 格式化账户余额显示（保留2位小数）
+// 账户余额输入处理（不自动补齐小数）
 const formattedAccountBalance = computed({
   get: () => {
     if (formData.value.accountBalance === undefined || formData.value.accountBalance === null) {
       return '';
     }
-    return Number(formData.value.accountBalance).toFixed(2);
+    // 直接返回数值，不进行格式化
+    return formData.value.accountBalance;
   },
-  set: (value: string) => {
+  set: (value: string | number) => {
     if (value === '' || value === null || value === undefined) {
       formData.value.accountBalance = undefined;
     } else {
-      const numValue = parseFloat(value);
+      const numValue = typeof value === 'string' ? parseFloat(value) : value;
       formData.value.accountBalance = isNaN(numValue) ? undefined : numValue;
     }
   },
@@ -191,11 +192,15 @@ const handleSubmit = async () => {
   try {
     isSubmitting.value = true;
     
-    // 确保账户余额保留2位小数
+    // 准备提交数据
     const submitData = { ...formData.value };
+    
+    // 如果账户余额有值，保留2位小数
     if (submitData.accountBalance !== undefined && submitData.accountBalance !== null) {
       submitData.accountBalance = Number(submitData.accountBalance.toFixed(2));
     }
+    
+    console.log('提交数据:', submitData);
     
     await emit('save', submitData);
     handleClose();

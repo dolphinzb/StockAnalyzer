@@ -130,6 +130,7 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
       isLoading.value = true;
       error.value = null;
 
+      console.log('Store更新记录:', id, data);
       await window.fundManagementAPI.updateTransferRecord(id, data);
 
       // 刷新列表

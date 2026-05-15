@@ -367,11 +367,14 @@ export class FundService {
   private recalculateBalancesAfterDate(afterDate: string, startBalance?: number): void {
     try {
       // 获取需要重算的记录（按日期升序）
-      // 注意：包括 afterDate 当天及之后的所有记录
+      // 如果提供了startBalance，说明afterDate当天的记录已经手动设置过余额，只重算之后的记录
+      // 否则重算afterDate当天及之后的所有记录
+      const dateCondition = startBalance !== undefined ? 'transfer_date > ?' : 'transfer_date >= ?';
+      
       const result = this.db.exec(`
         SELECT id, amount, type 
         FROM transfer_records 
-        WHERE transfer_date >= ?
+        WHERE ${dateCondition}
         ORDER BY transfer_date ASC, id ASC
       `, [afterDate]);
 

@@ -200,8 +200,6 @@ const handleSubmit = async () => {
       submitData.accountBalance = Number(submitData.accountBalance.toFixed(2));
     }
     
-    console.log('提交数据:', submitData);
-    
     await emit('save', submitData);
     handleClose();
   } catch (error) {

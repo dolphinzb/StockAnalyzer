@@ -486,7 +486,7 @@ ipcMain.handle('add-transfer-record', async (_event, record: { transferDate: str
 /**
  * 更新转账记录
  */
-ipcMain.handle('update-transfer-record', async (_event, id: number, data: { transferDate?: string; amount?: number; type?: string }) => {
+ipcMain.handle('update-transfer-record', async (_event, id: number, data: { transferDate?: string; amount?: number; type?: string; accountBalance?: number }) => {
   log.debug('IPC: update-transfer-record', { id, data });
   try {
     if (!fundService) {

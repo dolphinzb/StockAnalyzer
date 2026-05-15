@@ -198,9 +198,9 @@ export class FundService {
         log.info(`未设置手动余额，开始重算从 ${recalcStartDate} 开始的记录`);
         this.recalculateBalancesAfterDate(recalcStartDate);
       } else {
-        // 如果用户手动设置了余额，只重算后续记录
-        log.info(`使用手动余额 ${data.accountBalance}，只重算后续记录`);
-        this.recalculateBalancesAfterDate(originalDate);
+        // 如果用户手动设置了余额，使用手动设置的余额作为起始点，重算后续记录
+        log.info(`使用手动余额 ${data.accountBalance}，重算 ${updateDate} 之后的记录`);
+        this.recalculateBalancesAfterDate(updateDate, Number(data.accountBalance));
       }
 
       log.info(`更新资金明细记录成功，ID: ${id}`);
@@ -362,8 +362,9 @@ export class FundService {
   /**
    * 重新计算指定日期之后的所有记录的账户余额
    * @param afterDate 从此日期之后开始重算（不包含此日期）
+   * @param startBalance 可选的起始余额，如果提供则使用该值作为起始余额，否则查询数据库
    */
-  private recalculateBalancesAfterDate(afterDate: string): void {
+  private recalculateBalancesAfterDate(afterDate: string, startBalance?: number): void {
     try {
       // 获取需要重算的记录（按日期升序）
       // 注意：包括 afterDate 当天及之后的所有记录
@@ -380,16 +381,24 @@ export class FundService {
       }
 
       // 获取重算起始点之前的余额（作为初始余额）
-      const prevBalanceResult = this.db.exec(`
-        SELECT account_balance FROM transfer_records 
-        WHERE transfer_date < ? 
-        ORDER BY transfer_date DESC, id DESC 
-        LIMIT 1
-      `, [afterDate]);
+      let currentBalance: number;
+      if (startBalance !== undefined) {
+        // 如果提供了起始余额，直接使用
+        currentBalance = startBalance;
+        log.info(`使用提供的起始余额: ${currentBalance}`);
+      } else {
+        // 否则从数据库中获取
+        const prevBalanceResult = this.db.exec(`
+          SELECT account_balance FROM transfer_records 
+          WHERE transfer_date < ? 
+          ORDER BY transfer_date DESC, id DESC 
+          LIMIT 1
+        `, [afterDate]);
 
-      let currentBalance = 0;
-      if (prevBalanceResult.length > 0 && prevBalanceResult[0].values.length > 0) {
-        currentBalance = prevBalanceResult[0].values[0][0] as number;
+        currentBalance = 0;
+        if (prevBalanceResult.length > 0 && prevBalanceResult[0].values.length > 0) {
+          currentBalance = prevBalanceResult[0].values[0][0] as number;
+        }
       }
 
       log.info(`开始重算 ${result[0].values.length} 条记录，起始余额: ${currentBalance}`);

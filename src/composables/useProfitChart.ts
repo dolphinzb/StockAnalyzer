@@ -463,10 +463,11 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
         return;
       }
 
-      // 计算鼠标角度（从12点钟方向顺时针）
-      let angle = Math.atan2(dy, dx);
-      // 标准化到 [0, 2π) 范围
-      if (angle < -Math.PI / 2) {
+      // 计算鼠标角度（从12点钟方向顺时针，范围 [0, 2π)）
+      // Math.atan2 返回 [-π, π]，0在3点钟方向，逆时针为正
+      // 需要转换为：0在12点钟方向，顺时针为正
+      let angle = Math.atan2(dy, dx) + Math.PI / 2;
+      if (angle < 0) {
         angle += Math.PI * 2;
       }
 

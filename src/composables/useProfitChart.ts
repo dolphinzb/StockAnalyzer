@@ -376,16 +376,16 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
     }> = [];
 
     // 绘制扇区
-    let startAngle = -Math.PI / 2; // 从12点钟方向开始
+    let currentStartAngle = -Math.PI / 2; // 从12点钟方向开始
     data.forEach((item) => {
       const percentage = item.value / totalValue;
       const sliceAngle = percentage * Math.PI * 2;
-      const endAngle = startAngle + sliceAngle;
+      const currentEndAngle = currentStartAngle + sliceAngle;
 
       // 绘制扇区
       ctx.beginPath();
       ctx.moveTo(centerX, centerY);
-      ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+      ctx.arc(centerX, centerY, radius, currentStartAngle, currentEndAngle);
       ctx.closePath();
       ctx.fillStyle = item.color;
       ctx.fill();
@@ -395,10 +395,15 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // 存储扇区信息
+      // 标准化角度到 [0, 2π) 范围并存储
+      let normalizedStart = currentStartAngle;
+      let normalizedEnd = currentEndAngle;
+      if (normalizedStart < 0) normalizedStart += Math.PI * 2;
+      if (normalizedEnd < 0) normalizedEnd += Math.PI * 2;
+
       sectors.push({
-        startAngle,
-        endAngle,
+        startAngle: normalizedStart,
+        endAngle: normalizedEnd,
         data: {
           label: item.label,
           value: item.value,
@@ -409,7 +414,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
 
       // 绘制标签和百分比
       if (showLabels || showPercentages) {
-        const midAngle = startAngle + sliceAngle / 2;
+        const midAngle = currentStartAngle + sliceAngle / 2;
         const labelRadius = radius * 0.7;
         const labelX = centerX + Math.cos(midAngle) * labelRadius;
         const labelY = centerY + Math.sin(midAngle) * labelRadius;
@@ -425,7 +430,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
         }
       }
 
-      startAngle = endAngle;
+      currentStartAngle = currentEndAngle;
     });
 
     // 设置饼图鼠标事件
@@ -463,10 +468,10 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
         return;
       }
 
-      // 计算鼠标角度（从12点钟方向顺时针，范围 [0, 2π)）
-      // Math.atan2 返回 [-π, π]，0在3点钟方向，逆时针为正
-      // 需要转换为：0在12点钟方向，顺时针为正
-      let angle = Math.atan2(dy, dx) + Math.PI / 2;
+      // 计算鼠标角度（Canvas坐标系，Y向下为正）
+      // Math.atan2(dy, dx) 返回 [-π, π]
+      // 需要转换到 [0, 2π) 范围以便与扇区角度比较
+      let angle = Math.atan2(dy, dx);
       if (angle < 0) {
         angle += Math.PI * 2;
       }
@@ -474,16 +479,20 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
       // 查找鼠标所在的扇区
       let found = false;
       for (const sector of sectors) {
-        let startAngle = sector.startAngle;
-        let endAngle = sector.endAngle;
+        const startAngle = sector.startAngle;
+        const endAngle = sector.endAngle;
 
-        // 标准化角度
-        if (startAngle < 0) startAngle += Math.PI * 2;
-        if (endAngle < 0) endAngle += Math.PI * 2;
+        // 调试日志
+        console.log('[PieChart] Sector:', sector.data.label, 
+          'startAngle:', (startAngle * 180 / Math.PI).toFixed(1), '°',
+          'endAngle:', (endAngle * 180 / Math.PI).toFixed(1), '°',
+          'mouseAngle:', (angle * 180 / Math.PI).toFixed(1), '°');
 
-        // 处理跨越0度的情况
+        // 判断鼠标角度是否在扇区范围内
         if (startAngle <= endAngle) {
+          // 正常情况：扇区不跨越0度线
           if (angle >= startAngle && angle <= endAngle) {
+            console.log('[PieChart] Matched sector:', sector.data.label);
             found = true;
             tooltipInfo.value = {
               visible: true,
@@ -495,8 +504,9 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
             break;
           }
         } else {
-          // 跨越0度的情况
+          // 扇区跨越0度线（3点钟方向）
           if (angle >= startAngle || angle <= endAngle) {
+            console.log('[PieChart] Matched sector (crossing 0):', sector.data.label);
             found = true;
             tooltipInfo.value = {
               visible: true,

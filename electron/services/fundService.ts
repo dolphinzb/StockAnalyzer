@@ -12,17 +12,28 @@ export class FundService {
    * 获取分页的资金明细记录列表（按日期倒序）
    * @param limit 每页数量
    * @param offset 偏移量
+   * @param types 可选的类型筛选数组
    * @returns 资金明细记录数组（包含accountBalance）
    */
-  async getTransferRecords(limit: number, offset: number): Promise<any[]> {
+  async getTransferRecords(limit: number, offset: number, types?: string[]): Promise<any[]> {
     try {
-      const result = this.db.exec(
-        `SELECT id, transfer_date, amount, type, account_balance, created_at, updated_at
-         FROM transfer_records
-         ORDER BY transfer_date DESC, id DESC
-         LIMIT ? OFFSET ?`,
-        [limit, offset]
-      );
+      let sql = `SELECT id, transfer_date, amount, type, account_balance, created_at, updated_at
+         FROM transfer_records`;
+      
+      const params: any[] = [];
+      
+      // 如果提供了类型筛选，添加WHERE子句
+      if (types && types.length > 0) {
+        const placeholders = types.map(() => '?').join(', ');
+        sql += ` WHERE type IN (${placeholders})`;
+        params.push(...types);
+      }
+      
+      sql += ` ORDER BY transfer_date DESC, id DESC
+         LIMIT ? OFFSET ?`;
+      params.push(limit, offset);
+      
+      const result = this.db.exec(sql, params);
 
       if (result.length === 0 || result[0].values.length === 0) {
         return [];

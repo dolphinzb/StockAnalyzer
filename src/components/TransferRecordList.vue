@@ -8,6 +8,29 @@
       </button>
     </div>
 
+    <!-- 类型筛选器 -->
+    <div class="filter-bar">
+      <div class="filter-label">类型筛选：</div>
+      <div class="filter-types">
+        <button
+          v-for="type in store.availableTypes"
+          :key="type.value"
+          class="filter-type-btn"
+          :class="{ active: store.selectedTypes.has(type.value) }"
+          @click="store.toggleType(type.value)"
+        >
+          {{ type.label }}
+        </button>
+      </div>
+      <button
+        v-if="store.hasFilter"
+        class="btn-clear-filter"
+        @click="store.clearFilter"
+      >
+        清除筛选
+      </button>
+    </div>
+
     <!-- 加载状态 -->
     <div v-if="store.isLoading && store.isEmpty" class="loading-state">
       <p>加载中...</p>
@@ -19,22 +42,31 @@
       <button class="btn-add-first" @click="$emit('add')">添加第一条记录</button>
     </div>
 
-    <!-- 记录列表 -->
-    <div v-else ref="recordsContainerRef" class="records-container" @scroll="handleScroll">
-      <TransferRecordItem
-        v-for="record in store.transferRecords"
-        :key="record.id"
-        :record="record"
-        @edit="$emit('edit', $event)"
-        @delete="$emit('delete', $event)"
-      />
-      
-      <!-- 加载更多提示 -->
-      <div v-if="isLoadingMore" class="loading-more">
-        <p>加载中...</p>
+    <!-- 记录列表 - 表格形式 -->
+    <div v-else class="records-table-container">
+      <div class="records-table-header">
+        <span class="col-date">日期</span>
+        <span class="col-type">类型</span>
+        <span class="col-amount">金额</span>
+        <span class="col-balance">账户余额</span>
+        <span class="col-actions">操作</span>
       </div>
-      <div v-else-if="!store.hasMore" class="loading-more">
-        <p>已加载全部</p>
+      <div ref="recordsContainerRef" class="records-table-body" @scroll="handleScroll">
+        <TransferRecordItem
+          v-for="record in store.transferRecords"
+          :key="record.id"
+          :record="record"
+          @edit="$emit('edit', $event)"
+          @delete="$emit('delete', $event)"
+        />
+        
+        <!-- 加载更多提示 -->
+        <div v-if="isLoadingMore" class="loading-more">
+          <p>加载中...</p>
+        </div>
+        <div v-else-if="!store.hasMore" class="loading-more">
+          <p>已加载全部</p>
+        </div>
       </div>
     </div>
 
@@ -73,7 +105,6 @@ function handleScroll(event: Event) {
   // 判断是否滚动到底部（距离底部不超过50px时触发加载）
   const { scrollTop, scrollHeight, clientHeight } = container;
   if (scrollHeight - scrollTop - clientHeight <= 50) {
-    console.log('Scroll reached bottom, loading more...');
     loadMore();
   }
 }
@@ -116,20 +147,83 @@ defineEmits<{
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid #e5e7eb;
-  background-color: #f9fafb;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
 
   h2 {
     margin: 0;
     font-size: 20px;
     font-weight: 600;
-    color: #111827;
+    color: var(--text-primary);
+  }
+}
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.filter-types {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.filter-type-btn {
+  padding: 4px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background-color: var(--bg-highlight);
+    border-color: var(--color-primary);
+  }
+
+  &.active {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    color: white;
+  }
+}
+
+.btn-clear-filter {
+  padding: 4px 12px;
+  font-size: 13px;
+  border: 1px solid var(--color-danger, #f44336);
+  border-radius: 4px;
+  background-color: transparent;
+  color: var(--color-danger, #f44336);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+
+  &:hover {
+    background-color: var(--color-danger, #f44336);
+    color: white;
   }
 }
 
 .btn-add {
   padding: 8px 16px;
-  background-color: #3b82f6;
+  background-color: var(--color-primary);
   color: white;
   border: none;
   border-radius: 6px;
@@ -139,7 +233,7 @@ defineEmits<{
   transition: all 0.2s;
 
   &:hover {
-    background-color: #2563eb;
+    background-color: var(--color-primary-dark);
   }
 }
 
@@ -151,7 +245,7 @@ defineEmits<{
   align-items: center;
   justify-content: center;
   padding: 40px;
-  color: #6b7280;
+  color: var(--text-secondary);
 
   p {
     margin-bottom: 16px;
@@ -161,7 +255,7 @@ defineEmits<{
 
 .btn-add-first {
   padding: 10px 20px;
-  background-color: #3b82f6;
+  background-color: var(--color-primary);
   color: white;
   border: none;
   border-radius: 6px;
@@ -170,23 +264,44 @@ defineEmits<{
   transition: all 0.2s;
 
   &:hover {
-    background-color: #2563eb;
+    background-color: var(--color-primary-dark);
   }
 }
 
-.records-container {
+.records-table-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.records-table-header {
+  display: grid;
+  grid-template-columns: 100px 120px 120px 120px 100px;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background-color: var(--bg-secondary);
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.records-table-body {
   flex: 1;
   overflow-y: auto;
 }
 
-.scroll-sentinel {
-  height: 20px;
+.records-table-header span {
+  text-align: center;
 }
 
 .loading-more {
   text-align: center;
   padding: 16px;
-  color: #6b7280;
+  color: var(--text-secondary);
 
   p {
     margin: 0;

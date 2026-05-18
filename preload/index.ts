@@ -260,8 +260,8 @@ const gridStrategyAPI: GridStrategyAPI = {
 
 // 资金管理 API
 const fundManagementAPI: FundManagementAPI = {
-  getTransferRecords: (limit: number, offset: number) =>
-    ipcRenderer.invoke('get-transfer-records', limit, offset),
+  getTransferRecords: (limit: number, offset: number, types?: string[]) =>
+    ipcRenderer.invoke('get-transfer-records', limit, offset, types),
   addTransferRecord: (record: TransferRecordInput) =>
     ipcRenderer.invoke('add-transfer-record', record),
   updateTransferRecord: (id: number, data: TransferRecordUpdate) =>

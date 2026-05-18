@@ -9,6 +9,9 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   const isLoading = ref(false);
   const error = ref<string | null>(null);
 
+  // 筛选相关状态
+  const selectedTypes = ref<Set<string>>(new Set()); // 选中的类型集合
+
   // 图表相关状态
   const annualProfitData = ref<AnnualProfitData[]>([]);
   const monthlyProfitData = ref<MonthlyProfitData[]>([]);
@@ -30,6 +33,55 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
   // Getters
   const recordsCount = computed(() => transferRecords.value.length);
   const isEmpty = computed(() => transferRecords.value.length === 0);
+
+  /**
+   * 获取所有可用的资金类型
+   */
+  const availableTypes = computed(() => [
+    { value: 'IN', label: '转入' },
+    { value: 'OUT', label: '转出' },
+    { value: 'DIVIDEND', label: '股息' },
+    { value: 'DIVIDEND_TAX', label: '股息扣税' },
+    { value: 'STOCK_BUY', label: '股票买入' },
+    { value: 'STOCK_SELL', label: '股票卖出' },
+    { value: 'INTEREST', label: '利息' },
+  ]);
+
+  /**
+   * 检查是否有筛选条件
+   */
+  const hasFilter = computed(() => selectedTypes.value.size > 0);
+
+  /**
+   * 切换类型选中状态
+   */
+  function toggleType(type: string): void {
+    if (selectedTypes.value.has(type)) {
+      selectedTypes.value.delete(type);
+    } else {
+      selectedTypes.value.add(type);
+    }
+    // 触发响应式更新
+    selectedTypes.value = new Set(selectedTypes.value);
+    applyFilter();
+  }
+
+  /**
+   * 清除所有筛选
+   */
+  function clearFilter(): void {
+    selectedTypes.value.clear();
+    selectedTypes.value = new Set();
+    applyFilter();
+  }
+
+  /**
+   * 应用筛选条件 - 重新从后端加载数据
+   */
+  async function applyFilter(): Promise<void> {
+    // 重置分页并重新加载
+    await fetchTransferRecords(true);
+  }
 
   // Actions
 
@@ -66,10 +118,11 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
         hasMore.value = true;
       }
 
-      console.log('Fetching records:', { reset, currentPage: currentPage.value, pageSize: pageSize.value, hasMore: hasMore.value });
+      console.log('Fetching records:', { reset, currentPage: currentPage.value, pageSize: pageSize.value, hasMore: hasMore.value, types: Array.from(selectedTypes.value) });
 
       const offset = currentPage.value * pageSize.value;
-      const records = await window.fundManagementAPI.getTransferRecords(pageSize.value, offset);
+      const types = selectedTypes.value.size > 0 ? Array.from(selectedTypes.value) : undefined;
+      const records = await window.fundManagementAPI.getTransferRecords(pageSize.value, offset, types);
 
       console.log('Fetched records count:', records.length);
 
@@ -290,6 +343,8 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     pageSize,
     hasMore,
     totalRecords,
+    // 筛选相关状态
+    selectedTypes,
     // 图表相关状态
     annualProfitData,
     monthlyProfitData,
@@ -304,6 +359,8 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     // Getters
     recordsCount,
     isEmpty,
+    availableTypes,
+    hasFilter,
 
     // Actions
     fetchTransferRecords,
@@ -317,5 +374,9 @@ export const useFundManagementStore = defineStore('fundManagement', () => {
     fetchMonthlyProfitData,
     fetchFundOverview,
     fetchMonthlyFundData,
+    // 筛选相关 Actions
+    toggleType,
+    clearFilter,
+    applyFilter,
   };
 });

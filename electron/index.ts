@@ -452,13 +452,13 @@ ipcMain.handle('log:getPath', () => {
 /**
  * 获取分页的转账记录列表
  */
-ipcMain.handle('get-transfer-records', async (_event, limit: number, offset: number) => {
-  log.debug('IPC: get-transfer-records', { limit, offset });
+ipcMain.handle('get-transfer-records', async (_event, limit: number, offset: number, types?: string[]) => {
+  log.debug('IPC: get-transfer-records', { limit, offset, types });
   try {
     if (!fundService) {
       throw new Error('FundService not initialized');
     }
-    return await fundService.getTransferRecords(limit, offset);
+    return await fundService.getTransferRecords(limit, offset, types);
   } catch (error) {
     log.error('IPC get-transfer-records error:', error);
     throw error;

@@ -592,7 +592,7 @@ export interface PieChartDataItem {
  */
 export interface FundManagementAPI {
   /** 获取分页的转账记录列表 */
-  getTransferRecords(limit: number, offset: number): Promise<TransferRecord[]>;
+  getTransferRecords(limit: number, offset: number, types?: string[]): Promise<TransferRecord[]>;
   /** 新增转账记录 */
   addTransferRecord(record: TransferRecordInput): Promise<{ id: number }>;
   /** 更新转账记录 */

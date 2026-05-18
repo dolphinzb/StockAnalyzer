@@ -8,6 +8,29 @@
       </button>
     </div>
 
+    <!-- 类型筛选器 -->
+    <div class="filter-bar">
+      <div class="filter-label">类型筛选：</div>
+      <div class="filter-types">
+        <button
+          v-for="type in store.availableTypes"
+          :key="type.value"
+          class="filter-type-btn"
+          :class="{ active: store.selectedTypes.has(type.value) }"
+          @click="store.toggleType(type.value)"
+        >
+          {{ type.label }}
+        </button>
+      </div>
+      <button
+        v-if="store.hasFilter"
+        class="btn-clear-filter"
+        @click="store.clearFilter"
+      >
+        清除筛选
+      </button>
+    </div>
+
     <!-- 加载状态 -->
     <div v-if="store.isLoading && store.isEmpty" class="loading-state">
       <p>加载中...</p>
@@ -28,7 +51,7 @@
         <span class="col-balance">账户余额</span>
         <span class="col-actions">操作</span>
       </div>
-      <div class="records-table-body">
+      <div ref="recordsContainerRef" class="records-table-body" @scroll="handleScroll">
         <TransferRecordItem
           v-for="record in store.transferRecords"
           :key="record.id"
@@ -36,14 +59,14 @@
           @edit="$emit('edit', $event)"
           @delete="$emit('delete', $event)"
         />
-      </div>
-      
-      <!-- 加载更多提示 -->
-      <div v-if="isLoadingMore" class="loading-more">
-        <p>加载中...</p>
-      </div>
-      <div v-else-if="!store.hasMore" class="loading-more">
-        <p>已加载全部</p>
+        
+        <!-- 加载更多提示 -->
+        <div v-if="isLoadingMore" class="loading-more">
+          <p>加载中...</p>
+        </div>
+        <div v-else-if="!store.hasMore" class="loading-more">
+          <p>已加载全部</p>
+        </div>
       </div>
     </div>
 
@@ -56,27 +79,47 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { onMounted, ref } from 'vue';
 import { useFundManagementStore } from '../stores/fundManagement';
 import TransferRecordItem from './TransferRecordItem.vue';
 import type { TransferRecord } from '../../shared/types';
 
 const store = useFundManagementStore();
 
+// 滚动容器引用
+const recordsContainerRef = ref<HTMLElement | null>(null);
+
 // 加载更多标志
-const isLoadingMore = false;
+const isLoadingMore = ref(false);
+
+/**
+ * 处理滚动事件
+ * 当滚动到底部且还有更多数据时，自动加载下一页
+ */
+function handleScroll(event: Event) {
+  const container = event.target as HTMLElement;
+  if (!container || !store.hasMore || isLoadingMore.value || store.isLoading) {
+    return;
+  }
+
+  // 判断是否滚动到底部（距离底部不超过50px时触发加载）
+  const { scrollTop, scrollHeight, clientHeight } = container;
+  if (scrollHeight - scrollTop - clientHeight <= 50) {
+    loadMore();
+  }
+}
 
 /**
  * 加载更多数据
  */
 async function loadMore() {
-  if (isLoadingMore || !store.hasMore) return;
+  if (isLoadingMore.value || !store.hasMore) return;
   
-  // isLoadingMore.value = true;
+  isLoadingMore.value = true;
   try {
     await store.fetchTransferRecords(false);
   } finally {
-    // isLoadingMore.value = false;
+    isLoadingMore.value = false;
   }
 }
 
@@ -112,6 +155,69 @@ defineEmits<{
     font-size: 20px;
     font-weight: 600;
     color: var(--text-primary);
+  }
+}
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.filter-types {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.filter-type-btn {
+  padding: 4px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background-color: var(--bg-highlight);
+    border-color: var(--color-primary);
+  }
+
+  &.active {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    color: white;
+  }
+}
+
+.btn-clear-filter {
+  padding: 4px 12px;
+  font-size: 13px;
+  border: 1px solid var(--color-danger, #f44336);
+  border-radius: 4px;
+  background-color: transparent;
+  color: var(--color-danger, #f44336);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+
+  &:hover {
+    background-color: var(--color-danger, #f44336);
+    color: white;
   }
 }
 

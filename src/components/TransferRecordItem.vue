@@ -6,7 +6,7 @@
         {{ getTypeLabel(record.type) }}
       </span>
     </span>
-    <span class="col-amount amount-positive">¥{{ formatAmount(record.amount) }}</span>
+    <span class="col-amount" :class="getAmountColorClass(record.type)">¥{{ formatAmount(record.amount) }}</span>
     <span class="col-balance">¥{{ formatAmount(record.accountBalance) }}</span>
     <span class="col-actions">
       <button class="btn-edit" @click="$emit('edit', record)" title="编辑">
@@ -46,6 +46,16 @@ const formatAmount = (amount: number | undefined | null | string): string => {
   }
   
   return numAmount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+
+/**
+ * 根据资金类型获取金额颜色类
+ * 增加余额的类型使用红色，减少余额的类型使用绿色
+ */
+const getAmountColorClass = (type: string): string => {
+  // 增加余额的类型：转入、股票卖出、利息、股息
+  const increaseTypes = ['IN', 'STOCK_SELL', 'INTEREST', 'DIVIDEND'];
+  return increaseTypes.includes(type) ? 'amount-increase' : 'amount-decrease';
 };
 
 const getTypeLabel = (type: string): string => {
@@ -97,39 +107,46 @@ const getTypeLabel = (type: string): string => {
   font-size: 12px;
   font-weight: 500;
 
-  &.IN {
-    background-color: #d1fae5;
-    color: #065f46;
-  }
-
-  &.OUT {
-    background-color: #fee2e2;
-    color: #991b1b;
-  }
-
-  &.DIVIDEND {
-    background-color: #dbeafe;
-    color: #1e40af;
-  }
-
-  &.DIVIDEND_TAX {
-    background-color: #fef3c7;
-    color: #92400e;
-  }
-
+  /* 股票买入 - 原来股票卖出的样式 */
   &.STOCK_BUY {
-    background-color: #fce7f3;
-    color: #9f1239;
-  }
-
-  &.STOCK_SELL {
     background-color: #dcfce7;
     color: #166534;
   }
 
+  /* 股票卖出 - 原来股票买入的样式 */
+  &.STOCK_SELL {
+    background-color: #fce7f3;
+    color: #9f1239;
+  }
+
+  /* 转入 - 原来转出的样式 */
+  &.IN {
+    background-color: #fee2e2;
+    color: #991b1b;
+  }
+
+  /* 转出 - 原来转入的样式 */
+  &.OUT {
+    background-color: #d1fae5;
+    color: #065f46;
+  }
+
+  /* 股息 - 原来股息扣税的样式 */
+  &.DIVIDEND {
+    background-color: #fef3c7;
+    color: #92400e;
+  }
+
+  /* 股息扣税 - 原来股息的样式 */
+  &.DIVIDEND_TAX {
+    background-color: #dbeafe;
+    color: #1e40af;
+  }
+
+  /* 利息 - 原来股息扣税的样式（与股息相同） */
   &.INTEREST {
-    background-color: #e0e7ff;
-    color: #3730a3;
+    background-color: #fef3c7;
+    color: #92400e;
   }
 }
 
@@ -137,12 +154,13 @@ const getTypeLabel = (type: string): string => {
   font-weight: 600;
 }
 
-.amount-positive {
-  color: #e53935; /* A股红涨 */
+/* A股红涨绿跌：增加余额用红色，减少余额用绿色 */
+.amount-increase {
+  color: #e53935; /* 红色 - 增加余额 */
 }
 
-.amount-negative {
-  color: #43a047; /* A股绿跌 */
+.amount-decrease {
+  color: #43a047; /* 绿色 - 减少余额 */
 }
 
 .col-actions {
@@ -154,27 +172,15 @@ const getTypeLabel = (type: string): string => {
 .btn-edit,
 .btn-delete {
   padding: 0.25rem 0.5rem;
-  font-size: 0.75rem;
+  font-size: 1.125rem;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-}
-
-.btn-edit {
-  background-color: var(--color-primary);
-  color: white;
+  background-color: transparent;
+  transition: all 0.2s;
 
   &:hover {
-    background-color: var(--color-primary-dark);
-  }
-}
-
-.btn-delete {
-  background-color: var(--color-danger, #f44336);
-  color: white;
-
-  &:hover {
-    background-color: var(--color-danger-dark);
+    background-color: var(--bg-highlight);
   }
 }
 </style>

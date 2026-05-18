@@ -19,15 +19,24 @@
       <button class="btn-add-first" @click="$emit('add')">添加第一条记录</button>
     </div>
 
-    <!-- 记录列表 -->
-    <div v-else ref="recordsContainerRef" class="records-container" @scroll="handleScroll">
-      <TransferRecordItem
-        v-for="record in store.transferRecords"
-        :key="record.id"
-        :record="record"
-        @edit="$emit('edit', $event)"
-        @delete="$emit('delete', $event)"
-      />
+    <!-- 记录列表 - 表格形式 -->
+    <div v-else class="records-table-container">
+      <div class="records-table-header">
+        <span class="col-date">日期</span>
+        <span class="col-type">类型</span>
+        <span class="col-amount">金额</span>
+        <span class="col-balance">账户余额</span>
+        <span class="col-actions">操作</span>
+      </div>
+      <div class="records-table-body">
+        <TransferRecordItem
+          v-for="record in store.transferRecords"
+          :key="record.id"
+          :record="record"
+          @edit="$emit('edit', $event)"
+          @delete="$emit('delete', $event)"
+        />
+      </div>
       
       <!-- 加载更多提示 -->
       <div v-if="isLoadingMore" class="loading-more">
@@ -47,48 +56,27 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted } from 'vue';
 import { useFundManagementStore } from '../stores/fundManagement';
 import TransferRecordItem from './TransferRecordItem.vue';
 import type { TransferRecord } from '../../shared/types';
 
 const store = useFundManagementStore();
 
-// 滚动容器引用
-const recordsContainerRef = ref<HTMLElement | null>(null);
-
 // 加载更多标志
-const isLoadingMore = ref(false);
-
-/**
- * 处理滚动事件
- * 当滚动到底部且还有更多数据时，自动加载下一页
- */
-function handleScroll(event: Event) {
-  const container = event.target as HTMLElement;
-  if (!container || !store.hasMore || isLoadingMore.value || store.isLoading) {
-    return;
-  }
-
-  // 判断是否滚动到底部（距离底部不超过50px时触发加载）
-  const { scrollTop, scrollHeight, clientHeight } = container;
-  if (scrollHeight - scrollTop - clientHeight <= 50) {
-    console.log('Scroll reached bottom, loading more...');
-    loadMore();
-  }
-}
+const isLoadingMore = false;
 
 /**
  * 加载更多数据
  */
 async function loadMore() {
-  if (isLoadingMore.value || !store.hasMore) return;
+  if (isLoadingMore || !store.hasMore) return;
   
-  isLoadingMore.value = true;
+  // isLoadingMore.value = true;
   try {
     await store.fetchTransferRecords(false);
   } finally {
-    isLoadingMore.value = false;
+    // isLoadingMore.value = false;
   }
 }
 
@@ -116,20 +104,20 @@ defineEmits<{
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid #e5e7eb;
-  background-color: #f9fafb;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
 
   h2 {
     margin: 0;
     font-size: 20px;
     font-weight: 600;
-    color: #111827;
+    color: var(--text-primary);
   }
 }
 
 .btn-add {
   padding: 8px 16px;
-  background-color: #3b82f6;
+  background-color: var(--color-primary);
   color: white;
   border: none;
   border-radius: 6px;
@@ -139,7 +127,7 @@ defineEmits<{
   transition: all 0.2s;
 
   &:hover {
-    background-color: #2563eb;
+    background-color: var(--color-primary-dark);
   }
 }
 
@@ -151,7 +139,7 @@ defineEmits<{
   align-items: center;
   justify-content: center;
   padding: 40px;
-  color: #6b7280;
+  color: var(--text-secondary);
 
   p {
     margin-bottom: 16px;
@@ -161,7 +149,7 @@ defineEmits<{
 
 .btn-add-first {
   padding: 10px 20px;
-  background-color: #3b82f6;
+  background-color: var(--color-primary);
   color: white;
   border: none;
   border-radius: 6px;
@@ -170,23 +158,44 @@ defineEmits<{
   transition: all 0.2s;
 
   &:hover {
-    background-color: #2563eb;
+    background-color: var(--color-primary-dark);
   }
 }
 
-.records-container {
+.records-table-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.records-table-header {
+  display: grid;
+  grid-template-columns: 100px 120px 120px 120px 100px;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background-color: var(--bg-secondary);
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.records-table-body {
   flex: 1;
   overflow-y: auto;
 }
 
-.scroll-sentinel {
-  height: 20px;
+.records-table-header span {
+  text-align: center;
 }
 
 .loading-more {
   text-align: center;
   padding: 16px;
-  color: #6b7280;
+  color: var(--text-secondary);
 
   p {
     margin: 0;

@@ -1,23 +1,21 @@
 <template>
   <div class="transfer-record-item">
-    <div class="record-info">
-      <div class="record-date">{{ record.transferDate }}</div>
-      <div class="record-details">
-        <span class="record-type" :class="record.type">
-          {{ getTypeLabel(record.type) }}
-        </span>
-        <span class="record-amount">¥{{ formatAmount(record.amount) }}</span>
-        <span class="record-balance">余额: ¥{{ formatAmount(record.accountBalance) }}</span>
-      </div>
-    </div>
-    <div class="record-actions">
+    <span class="col-date">{{ record.transferDate }}</span>
+    <span class="col-type">
+      <span class="type-badge" :class="record.type">
+        {{ getTypeLabel(record.type) }}
+      </span>
+    </span>
+    <span class="col-amount amount-positive">¥{{ formatAmount(record.amount) }}</span>
+    <span class="col-balance">¥{{ formatAmount(record.accountBalance) }}</span>
+    <span class="col-actions">
       <button class="btn-edit" @click="$emit('edit', record)" title="编辑">
         ✏️
       </button>
       <button class="btn-delete" @click="$emit('delete', record)" title="删除">
         🗑️
       </button>
-    </div>
+    </span>
   </div>
 </template>
 
@@ -66,39 +64,34 @@ const getTypeLabel = (type: string): string => {
 
 <style scoped lang="scss">
 .transfer-record-item {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 100px 120px 120px 120px 100px;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
   align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #e5e7eb;
-  transition: background-color 0.2s;
-
-  &:hover {
-    background-color: #f9fafb;
-  }
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.875rem;
 
   &:last-child {
     border-bottom: none;
   }
+
+  &:hover {
+    background-color: var(--bg-highlight);
+  }
 }
 
-.record-info {
-  flex: 1;
+.transfer-record-item > span {
+  text-align: center;
+  font-family: monospace;
 }
 
-.record-date {
-  font-size: 14px;
-  color: #6b7280;
-  margin-bottom: 4px;
-}
-
-.record-details {
+.col-type {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  justify-content: center;
 }
 
-.record-type {
+.type-badge {
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 12px;
@@ -140,39 +133,48 @@ const getTypeLabel = (type: string): string => {
   }
 }
 
-.record-amount {
-  font-size: 16px;
+.col-amount {
   font-weight: 600;
-  color: #111827;
 }
 
-.record-balance {
-  font-size: 13px;
-  color: #6b7280;
-  margin-left: auto;
+.amount-positive {
+  color: #e53935; /* A股红涨 */
 }
 
-.record-actions {
+.amount-negative {
+  color: #43a047; /* A股绿跌 */
+}
+
+.col-actions {
   display: flex;
-  gap: 8px;
+  gap: 0.5rem;
+  justify-content: center;
 }
 
 .btn-edit,
 .btn-delete {
-  background: none;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
   border: none;
-  font-size: 18px;
-  cursor: pointer;
-  padding: 4px 8px;
   border-radius: 4px;
-  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.btn-edit {
+  background-color: var(--color-primary);
+  color: white;
 
   &:hover {
-    background-color: #e5e7eb;
+    background-color: var(--color-primary-dark);
   }
 }
 
-.btn-delete:hover {
-  background-color: #fee2e2;
+.btn-delete {
+  background-color: var(--color-danger, #f44336);
+  color: white;
+
+  &:hover {
+    background-color: var(--color-danger-dark);
+  }
 }
 </style>

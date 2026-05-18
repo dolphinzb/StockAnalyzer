@@ -482,17 +482,10 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
         const startAngle = sector.startAngle;
         const endAngle = sector.endAngle;
 
-        // 调试日志
-        console.log('[PieChart] Sector:', sector.data.label, 
-          'startAngle:', (startAngle * 180 / Math.PI).toFixed(1), '°',
-          'endAngle:', (endAngle * 180 / Math.PI).toFixed(1), '°',
-          'mouseAngle:', (angle * 180 / Math.PI).toFixed(1), '°');
-
         // 判断鼠标角度是否在扇区范围内
         if (startAngle <= endAngle) {
           // 正常情况：扇区不跨越0度线
           if (angle >= startAngle && angle <= endAngle) {
-            console.log('[PieChart] Matched sector:', sector.data.label);
             found = true;
             tooltipInfo.value = {
               visible: true,
@@ -506,7 +499,6 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
         } else {
           // 扇区跨越0度线（3点钟方向）
           if (angle >= startAngle || angle <= endAngle) {
-            console.log('[PieChart] Matched sector (crossing 0):', sector.data.label);
             found = true;
             tooltipInfo.value = {
               visible: true,

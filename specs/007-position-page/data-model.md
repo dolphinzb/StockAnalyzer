@@ -110,10 +110,10 @@ export interface UpdateTradeInput {
 ## 交易常量
 
 ```typescript
-export const TRADE_FEE_RATE = 0.0003;           // 交易费率 0.03%
-export const MIN_FEE = 5;                        // 最低手续费 5 元
-export const HUATAI_OTHER_FEE_RATE = 0.00002;   // 华泰其他费率 0.002%
-export const SHENZHEN_STAMP_TAX_RATE = 0.001;    // 深交所印花税率 0.1%
+export const TRADE_FEE_RATE = 0.0003;          // 交易费率 0.03%
+export const MIN_FEE = 5;                       // 最低手续费 5 元
+export const TRANSFER_FEE_RATE = 0.00001;       // 过户费率 0.001% (十万分之一)，沪深两市双向收取
+export const SHENZHEN_STAMP_TAX_RATE = 0.001;   // 深交所印花税率 0.1%
 export const SHANGHAI_STAMP_TAX_RATE = 0.001;   // 上交所印花税率 0.1%
 ```
 

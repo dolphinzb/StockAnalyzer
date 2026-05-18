@@ -3,7 +3,7 @@ import type { TradeRecord } from '../database';
 
 export const TRADE_FEE_RATE = 0.0003;
 export const MIN_FEE = 5;
-export const HUATAI_OTHER_FEE_RATE = 0.00002;
+export const TRANSFER_FEE_RATE = 0.00001;  // 过户费率 0.001% (十万分之一)，沪深两市双向收取
 export const SHENZHEN_STAMP_TAX_RATE = 0.001;
 export const SHANGHAI_STAMP_TAX_RATE = 0.001;
 
@@ -40,49 +40,41 @@ export interface BuyBatch {
 }
 
 /**
- * 计算买入交易的资金流出金额（买入金额+手续费）
+ * 计算买入交易的资金流出金额（买入金额+手续费+过户费）
  * 复用现有手续费常量，与calcHoldingPrice中的手续费计算逻辑保持一致
  * @param tradePrice 交易单价
  * @param tradeCount 交易数量
  * @param stockCode 股票代码（用于判断交易所）
- * @returns 买入金额+手续费
+ * @returns 买入金额+手续费+过户费
  */
 export function calcStockBuyAmount(tradePrice: number, tradeCount: number, stockCode: string): number {
   const absCount = Math.abs(tradeCount);
   const exchange = getExchange(stockCode);
   const tradeFee = Math.max(absCount * tradePrice * TRADE_FEE_RATE, MIN_FEE);
-  const huaTaiFee = absCount * tradePrice * HUATAI_OTHER_FEE_RATE;
+  const transferFee = absCount * tradePrice * TRANSFER_FEE_RATE;  // 过户费：沪深两市都收取
   const tradeAmount = absCount * tradePrice;
 
-  let totalFee = tradeFee;
-  if (exchange === 'SHENZHEN') {
-    totalFee += huaTaiFee;
-  }
+  let totalFee = tradeFee + transferFee;
   return tradeAmount + totalFee;
 }
 
 /**
- * 计算卖出交易的资金流入金额（卖出金额-手续费-印花税）
+ * 计算卖出交易的资金流入金额（卖出金额-手续费-印花税-过户费）
  * 复用现有手续费常量，与calcHoldingPrice中的手续费计算逻辑保持一致
  * @param tradePrice 交易单价
  * @param tradeCount 交易数量
  * @param stockCode 股票代码（用于判断交易所）
- * @returns 卖出金额-手续费-印花税
+ * @returns 卖出金额-手续费-印花税-过户费
  */
 export function calcStockSellAmount(tradePrice: number, tradeCount: number, stockCode: string): number {
   const absCount = Math.abs(tradeCount);
   const exchange = getExchange(stockCode);
   const tradeFee = Math.max(absCount * tradePrice * TRADE_FEE_RATE, MIN_FEE);
-  const huaTaiFee = absCount * tradePrice * HUATAI_OTHER_FEE_RATE;
+  const transferFee = absCount * tradePrice * TRANSFER_FEE_RATE;  // 过户费：沪深两市都收取
   const tradeAmount = absCount * tradePrice;
   const stampTax = tradeAmount * (exchange === 'BEIJING' ? 0 : SHANGHAI_STAMP_TAX_RATE);
 
-  let totalFee = tradeFee + stampTax;
-  if (exchange === 'SHENZHEN') {
-    totalFee += huaTaiFee;
-  } else if (exchange === 'SHANGHAI') {
-    totalFee += huaTaiFee;
-  }
+  let totalFee = tradeFee + stampTax + transferFee;
   return tradeAmount - totalFee;
 }
 
@@ -216,14 +208,9 @@ export function calcHoldingPrice(
   if (!preRecord) {
     const exchange = getExchange(stockCode);
     const tradeFee = Math.max(tradeCount * tradePrice * TRADE_FEE_RATE, MIN_FEE);
-    const huaTaiFee = tradeCount * tradePrice * HUATAI_OTHER_FEE_RATE;
+    const transferFee = tradeCount * tradePrice * TRANSFER_FEE_RATE;  // 过户费：沪深两市都收取
 
-    let totalCost = tradeCount * tradePrice;
-    if (exchange === 'SHANGHAI') {
-      totalCost += tradeFee;
-    } else if (exchange === 'SHENZHEN') {
-      totalCost += tradeFee + huaTaiFee;
-    }
+    let totalCost = tradeCount * tradePrice + tradeFee + transferFee;
 
     const newHoldingPrice = Math.round((totalCost * 1000) / tradeCount) / 1000;
     return {
@@ -234,47 +221,22 @@ export function calcHoldingPrice(
 
   const exchange = getExchange(stockCode);
   const tradeFee = Math.max(tradeCount * tradePrice * TRADE_FEE_RATE, MIN_FEE);
-  const huaTaiFee = tradeCount * tradePrice * HUATAI_OTHER_FEE_RATE;
+  const transferFee = tradeCount * tradePrice * TRANSFER_FEE_RATE;  // 过户费：沪深两市都收取
 
   if (tradeType === 'BUY') {
-    if (exchange === 'SHANGHAI') {
-      const newHoldingPrice = Math.round(
-        (preRecord.holdingCount * preRecord.holdingPrice +
-          tradeCount * tradePrice +
-          tradeFee) *
-        1000 /
-        (preRecord.holdingCount + tradeCount)
-      ) / 1000;
-      return {
-        holdingCount: preRecord.holdingCount + tradeCount,
-        holdingPrice: newHoldingPrice,
-      };
-    } else if (exchange === 'SHENZHEN') {
-      const newHoldingPrice = Math.round(
-        (preRecord.holdingCount * preRecord.holdingPrice +
-          tradeCount * tradePrice +
-          tradeFee +
-          huaTaiFee) *
-        1000 /
-        (preRecord.holdingCount + tradeCount)
-      ) / 1000;
-      return {
-        holdingCount: preRecord.holdingCount + tradeCount,
-        holdingPrice: newHoldingPrice,
-      };
-    } else {
-      log.warn(`北交所股票 ${stockCode} 暂不支持买入费用计算`);
-      const newHoldingPrice = Math.round(
-        (preRecord.holdingCount * preRecord.holdingPrice +
-          tradeCount * tradePrice) *
-        1000 /
-        (preRecord.holdingCount + tradeCount)
-      ) / 1000;
-      return {
-        holdingCount: preRecord.holdingCount + tradeCount,
-        holdingPrice: newHoldingPrice,
-      };
-    }
+    // 买入：沪深两市都收取佣金和过户费
+    const newHoldingPrice = Math.round(
+      (preRecord.holdingCount * preRecord.holdingPrice +
+        tradeCount * tradePrice +
+        tradeFee +
+        transferFee) *
+      1000 /
+      (preRecord.holdingCount + tradeCount)
+    ) / 1000;
+    return {
+      holdingCount: preRecord.holdingCount + tradeCount,
+      holdingPrice: newHoldingPrice,
+    };
   }
 
   if (tradeType === 'SELL') {
@@ -286,47 +248,20 @@ export function calcHoldingPrice(
     }
     const tax = -tradeCount * tradePrice * taxRate;
 
-    if (exchange === 'SHANGHAI') {
-      const newHoldingPrice = Math.round(
-        (preRecord.holdingCount * preRecord.holdingPrice +
-          tradeCount * tradePrice +
-          tradeFee +
-          tax +
-          huaTaiFee) *
-        1000 /
-        (preRecord.holdingCount + tradeCount)
-      ) / 1000;
-      return {
-        holdingCount: preRecord.holdingCount + tradeCount,
-        holdingPrice: newHoldingPrice,
-      };
-    } else if (exchange === 'SHENZHEN') {
-      const newHoldingPrice = Math.round(
-        (preRecord.holdingCount * preRecord.holdingPrice +
-          tradeCount * tradePrice +
-          tradeFee +
-          tax +
-          huaTaiFee) *
-        1000 /
-        (preRecord.holdingCount + tradeCount)
-      ) / 1000;
-      return {
-        holdingCount: preRecord.holdingCount + tradeCount,
-        holdingPrice: newHoldingPrice,
-      };
-    } else {
-      log.warn(`北交所股票 ${stockCode} 暂不支持卖出费用计算`);
-      const newHoldingPrice = Math.round(
-        (preRecord.holdingCount * preRecord.holdingPrice +
-          tradeCount * tradePrice) *
-        1000 /
-        (preRecord.holdingCount + tradeCount)
-      ) / 1000;
-      return {
-        holdingCount: preRecord.holdingCount + tradeCount,
-        holdingPrice: newHoldingPrice,
-      };
-    }
+    // 卖出：沪深两市都收取佣金、印花税和过户费
+    const newHoldingPrice = Math.round(
+      (preRecord.holdingCount * preRecord.holdingPrice +
+        tradeCount * tradePrice +
+        tradeFee +
+        tax +
+        transferFee) *
+      1000 /
+      (preRecord.holdingCount + tradeCount)
+    ) / 1000;
+    return {
+      holdingCount: preRecord.holdingCount + tradeCount,
+      holdingPrice: newHoldingPrice,
+    };
   }
 
   return {

@@ -11,7 +11,7 @@
 |--------|-----|------|
 | TRADE_FEE_RATE | 0.0003 | 交易费率 0.03% |
 | MIN_FEE | 5 | 最低手续费 5 元 |
-| HUATAI_OTHER_FEE_RATE | 0.00002 | 华泰其他费率 0.002% |
+| TRANSFER_FEE_RATE | 0.00001 | 过户费率 0.001% (十万分之一)，沪深两市双向收取 |
 | SHENZHEN_STAMP_TAX_RATE | 0.001 | 深交所印花税率 0.1% |
 | SHANGHAI_STAMP_TAX_RATE | 0.001 | 上交所印花税率 0.1% |
 
@@ -30,11 +30,11 @@ holding_count = pre_holding_count (不变)
 ```
 trade_fee = trade_count * trade_price * TRADE_FEE_RATE
 trade_fee = max(trade_fee, MIN_FEE)  // 最低5元
-hua_tai_fee = trade_count * trade_price * HUATAI_OTHER_FEE_RATE
+transfer_fee = trade_count * trade_price * TRANSFER_FEE_RATE  // 过户费：沪深两市都收取
 
 holding_price = round((pre_holding_count * pre_holding_price
                       + trade_count * trade_price
-                      + trade_fee + hua_tai_fee) * 1000
+                      + trade_fee + transfer_fee) * 1000
                       / (pre_holding_count + trade_count)) / 1000
 holding_count = pre_holding_count + trade_count
 ```
@@ -43,12 +43,12 @@ holding_count = pre_holding_count + trade_count
 ```
 trade_fee = trade_count * trade_price * TRADE_FEE_RATE
 trade_fee = max(trade_fee, MIN_FEE)
-hua_tai_fee = trade_count * trade_price * HUATAI_OTHER_FEE_RATE
+transfer_fee = trade_count * trade_price * TRANSFER_FEE_RATE  // 过户费：沪深两市都收取
 tax = -trade_count * trade_price * SHENZHEN_STAMP_TAX_RATE
 
 holding_price = round((pre_holding_count * pre_holding_price
                       + trade_count * trade_price
-                      + trade_fee + tax + hua_tai_fee) * 1000
+                      + trade_fee + tax + transfer_fee) * 1000
                       / (pre_holding_count + trade_count)) / 1000
 holding_count = pre_holding_count - trade_count
 ```
@@ -57,12 +57,12 @@ holding_count = pre_holding_count - trade_count
 ```
 trade_fee = trade_count * trade_price * TRADE_FEE_RATE
 trade_fee = max(trade_fee, MIN_FEE)
-hua_tai_fee = trade_count * trade_price * HUATAI_OTHER_FEE_RATE
+transfer_fee = trade_count * trade_price * TRANSFER_FEE_RATE  // 过户费：沪深两市都收取
 tax = -trade_count * trade_price * SHANGHAI_STAMP_TAX_RATE
 
 holding_price = round((pre_holding_count * pre_holding_price
                       + trade_count * trade_price
-                      + trade_fee + tax + hua_tai_fee) * 1000
+                      + trade_fee + tax + transfer_fee) * 1000
                       / (pre_holding_count + trade_count)) / 1000
 holding_count = pre_holding_count - trade_count
 ```

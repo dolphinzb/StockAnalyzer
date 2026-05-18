@@ -9,7 +9,7 @@
 
 - [x] T001 更新 TypeScript 类型定义，在 `src/types.ts` 添加 TradeRecord、Position、AddTradeInput、UpdateTradeInput 类型；添加 PositionAPI 接口定义
 - [x] T002 添加数据库操作函数，在 `electron/database.ts` 添加 getPositions()、getTradeRecords()、getLastZeroTrade()、addTradeRecord()、updateTradeRecord()、deleteTradeRecord() 函数
-- [x] T003 创建交易计算服务，在 `electron/services/tradeService.ts` 实现 calcHoldingPrice() 函数，包含交易费率常量（TRADE_FEE_RATE、MIN_FEE、HUATAI_OTHER_FEE_RATE、SHENZHEN_STAMP_TAX_RATE、SHANGHAI_STAMP_TAX_RATE）和 getExchange() 函数
+- [x] T003 创建交易计算服务，在 `electron/services/tradeService.ts` 实现 calcHoldingPrice() 函数，包含交易费率常量（TRADE_FEE_RATE、MIN_FEE、TRANSFER_FEE_RATE、SHENZHEN_STAMP_TAX_RATE、SHANGHAI_STAMP_TAX_RATE）和 getExchange() 函数
 - [x] T004 添加 IPC 处理器，在 `electron/index.ts` 添加 position:get-list、position:get-records、position:add-record、position:update-record、position:delete-record 处理器
 - [x] T005 暴露 PositionAPI，在 `preload/index.ts` 添加 window.positionApi 对象，包含 getPositions()、getTradeRecords()、addTradeRecord()、updateTradeRecord()、deleteTradeRecord() 方法
 

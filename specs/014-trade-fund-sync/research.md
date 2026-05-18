@@ -45,21 +45,21 @@ export function addTradeRecord(input: AddTradeInput): TradeRecord {
 **Decision**: 直接复用 `tradeService.ts` 中已有的手续费计算常量和逻辑，在同步函数中内联计算
 
 **Rationale**:
-- 现有 `calcHoldingPrice` 函数内部已包含完整的手续费计算逻辑（佣金、华泰费、印花税）
-- 已有常量：`TRADE_FEE_RATE`（万三）、`MIN_FEE`（5元）、`HUATAI_OTHER_FEE_RATE`、`SHENZHEN_STAMP_TAX_RATE`、`SHANGHAI_STAMP_TAX_RATE`
+- 现有 `calcHoldingPrice` 函数内部已包含完整的手续费计算逻辑（佣金、过户费、印花税）
+- 已有常量：`TRADE_FEE_RATE`（万三）、`MIN_FEE`（5元）、`TRANSFER_FEE_RATE`（过户费）、`SHENZHEN_STAMP_TAX_RATE`、`SHANGHAI_STAMP_TAX_RATE`
 - 已有函数：`getExchange()` 判断交易所
-- STOCK_BUY金额 = 买入金额 + 手续费；STOCK_SELL金额 = 卖出金额 - 手续费 - 印花税
+- STOCK_BUY金额 = 买入金额 + 手续费 + 过户费；STOCK_SELL金额 = 卖出金额 - 手续费 - 印花税 - 过户费
 - 直接使用现有常量和 `getExchange` 函数计算即可，无需新建独立函数
 
 **Implementation approach**:
 ```typescript
 // 在同步函数中直接使用 tradeService 已有的常量和函数
-import { getExchange, TRADE_FEE_RATE, MIN_FEE, HUATAI_OTHER_FEE_RATE, SHANGHAI_STAMP_TAX_RATE, SHENZHEN_STAMP_TAX_RATE } from './services/tradeService';
+import { getExchange, TRADE_FEE_RATE, MIN_FEE, TRANSFER_FEE_RATE, SHANGHAI_STAMP_TAX_RATE, SHENZHEN_STAMP_TAX_RATE } from './services/tradeService';
 
 function calcStockBuyAmount(tradePrice: number, tradeCount: number, stockCode: string): number {
   const exchange = getExchange(stockCode);
   const tradeFee = Math.max(tradeCount * tradePrice * TRADE_FEE_RATE, MIN_FEE);
-  const huaTaiFee = tradeCount * tradePrice * HUATAI_OTHER_FEE_RATE;
+  const transferFee = tradeCount * tradePrice * TRANSFER_FEE_RATE;
   const tradeAmount = tradeCount * tradePrice;
   
   let totalFee = tradeFee;
@@ -72,7 +72,7 @@ function calcStockBuyAmount(tradePrice: number, tradeCount: number, stockCode: s
 function calcStockSellAmount(tradePrice: number, tradeCount: number, stockCode: string): number {
   const exchange = getExchange(stockCode);
   const tradeFee = Math.max(tradeCount * tradePrice * TRADE_FEE_RATE, MIN_FEE);
-  const huaTaiFee = tradeCount * tradePrice * HUATAI_OTHER_FEE_RATE;
+  const transferFee = tradeCount * tradePrice * TRANSFER_FEE_RATE;
   const tradeAmount = tradeCount * tradePrice;
   const stampTax = tradeAmount * (exchange === 'SHENZHEN' ? SHENZHEN_STAMP_TAX_RATE : SHANGHAI_STAMP_TAX_RATE);
   

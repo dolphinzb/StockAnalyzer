@@ -457,7 +457,7 @@ export function getTradeRecords(stockCode: string, page: number = 1, pageSize: n
       dataQuery = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
                    FROM trade_record
                    WHERE stock_code = ? AND trade_date >= ?
-                   ORDER BY trade_date DESC
+                   ORDER BY trade_date DESC, id DESC
                    LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`;
       dataParams = [stockCode, firstOpenAfterZero.tradeDate];
     } else {
@@ -471,7 +471,7 @@ export function getTradeRecords(stockCode: string, page: number = 1, pageSize: n
     dataQuery = `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
                  FROM trade_record
                  WHERE stock_code = ?
-                 ORDER BY trade_date DESC
+                 ORDER BY trade_date DESC, id DESC
                  LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`;
     dataParams = [stockCode];
   }

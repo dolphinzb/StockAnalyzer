@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS transfer_records (
   amount REAL NOT NULL CHECK(amount > 0),
   type TEXT NOT NULL CHECK(type IN ('IN', 'OUT', 'DIVIDEND', 'DIVIDEND_TAX', 'STOCK_BUY', 'STOCK_SELL', 'INTEREST')),
   account_balance REAL NOT NULL DEFAULT 0,
+  trade_record_id INTEGER,  -- 新增:关联的交易记录ID,可为NULL
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
   updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
 );
@@ -64,12 +65,13 @@ CREATE INDEX IF NOT EXISTS idx_transfer_date_desc ON transfer_records(transfer_d
 CREATE INDEX IF NOT EXISTS idx_transfer_type_date ON transfer_records(type, transfer_date);
 
 -- ============================================
--- 5. K线数据表
+-- 5. K线数据表（支持前复权）
 -- ============================================
 CREATE TABLE IF NOT EXISTS kline_data (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   stock_code TEXT NOT NULL,
   trade_date TEXT NOT NULL,
+  adjust_type TEXT NOT NULL DEFAULT '',
   open REAL,
   close REAL,
   high REAL,
@@ -82,13 +84,13 @@ CREATE TABLE IF NOT EXISTS kline_data (
   turnover_rate REAL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE(stock_code, trade_date)
+  UNIQUE(stock_code, trade_date, adjust_type)
 );
 
 -- 创建索引优化查询性能
 CREATE INDEX IF NOT EXISTS idx_kline_data_stock_code ON kline_data(stock_code);
 CREATE INDEX IF NOT EXISTS idx_kline_data_trade_date ON kline_data(trade_date);
-CREATE INDEX IF NOT EXISTS idx_kline_data_stock_date ON kline_data(stock_code, trade_date);
+CREATE INDEX IF NOT EXISTS idx_kline_data_stock_date_adjust ON kline_data(stock_code, trade_date, adjust_type);
 
 -- ============================================
 -- 6. 初始化默认配置

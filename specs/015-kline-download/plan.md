@@ -75,7 +75,7 @@ electron/
     └── klineDownloadService.ts          # 修改：downloadKline同时下载两种复权类型，新增downloadSingleAdjust内部函数，自动下载串行策略调整
 
 sql/
-└── 015-kline-download.sql               # 新增：数据库迁移脚本（添加adjust_type字段，重建约束和索引）
+└── init.sql                             # 修改：整合所有DDL语句，包括kline_data表的adjust_type字段
 
 shared/types/
 └── index.ts                             # 修改：KlineData增加adjustType字段，KlineDownloadResult增加unadjustedCount/adjustedCount

@@ -17,7 +17,7 @@ export class FundService {
    */
   async getTransferRecords(limit: number, offset: number, types?: string[]): Promise<any[]> {
     try {
-      let sql = `SELECT id, transfer_date, amount, type, account_balance, created_at, updated_at
+      let sql = `SELECT id, transfer_date, amount, type, account_balance, trade_record_id, created_at, updated_at
          FROM transfer_records`;
       
       const params: any[] = [];
@@ -52,6 +52,7 @@ export class FundService {
           amount: record.amount || 0,
           type: record.type,
           accountBalance: typeof record.account_balance === 'number' ? record.account_balance : 0,
+          tradeRecordId: record.trade_record_id,  // 新增字段
           createdAt: record.created_at,
           updatedAt: record.updated_at,
         };
@@ -67,7 +68,12 @@ export class FundService {
    * @param record 资金明细记录数据
    * @returns 新记录的ID
    */
-  async addTransferRecord(record: { transferDate: string; amount: number; type: string }): Promise<number> {
+  async addTransferRecord(record: { 
+    transferDate: string; 
+    amount: number; 
+    type: string;
+    tradeRecordId?: number | null;  // 新增参数
+  }): Promise<number> {
     try {
       // 验证金额必须为正数
       if (record.amount <= 0) {
@@ -101,11 +107,11 @@ export class FundService {
       // 确保保存前消除 -0
       const normalizedBalance = newBalance === 0 ? 0 : newBalance;
 
-      // 插入新记录（包含account_balance）
+      // 插入新记录（包含account_balance和trade_record_id）
       this.db.run(
-        `INSERT INTO transfer_records (transfer_date, amount, type, account_balance)
-         VALUES (?, ?, ?, ?)`,
-        [record.transferDate, record.amount, record.type, normalizedBalance]
+        `INSERT INTO transfer_records (transfer_date, amount, type, account_balance, trade_record_id)
+         VALUES (?, ?, ?, ?, ?)`,
+        [record.transferDate, record.amount, record.type, normalizedBalance, record.tradeRecordId || null]
       );
 
       // 获取最后插入的ID

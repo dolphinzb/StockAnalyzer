@@ -447,6 +447,8 @@ export interface TransferRecord {
   type: 'IN' | 'OUT' | 'DIVIDEND' | 'DIVIDEND_TAX' | 'STOCK_BUY' | 'STOCK_SELL' | 'INTEREST';
   /** 账户余额（自动计算或手动设置） */
   accountBalance: number;
+  /** 关联的交易记录ID(可选,仅股票交易相关记录有值) */
+  tradeRecordId?: number | null;
   /** 创建时间 (ISO 8601) */
   createdAt?: string;
   /** 更新时间 (ISO 8601) */

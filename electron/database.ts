@@ -410,7 +410,13 @@ export function updateTradeRecord(input: UpdateTradeInput): TradeRecord {
 
 export function deleteTradeRecord(id: number): void {
   const database = getDb();
+  
+  // 先删除关联的资金明细记录
+  database.run(`DELETE FROM transfer_records WHERE trade_record_id = ?`, [id]);
+  
+  // 再删除交易记录
   database.run(`DELETE FROM trade_record WHERE id = ?`, [id]);
+  
   saveDatabase();
 }
 

@@ -326,6 +326,9 @@ ipcMain.handle('position:add-record', async (_event, input: AddTradeInput) => {
         throw new Error('fundService未初始化');
       }
 
+      // 获取新创建的 trade_record 的 ID
+      const tradeRecordId = result.record.id;
+
       if (input.tradeType === 'BUY') {
         // 买入：创建STOCK_BUY记录，金额=买入金额+手续费
         const { calcStockBuyAmount } = await import('./services/tradeService');
@@ -334,6 +337,7 @@ ipcMain.handle('position:add-record', async (_event, input: AddTradeInput) => {
           transferDate: input.tradeDate,
           amount: buyAmount,
           type: 'STOCK_BUY',
+          tradeRecordId: tradeRecordId,  // 传入关联ID
         });
       } else if (input.tradeType === 'SELL') {
         // 卖出：创建STOCK_SELL记录，金额=卖出金额-手续费-印花税
@@ -343,6 +347,7 @@ ipcMain.handle('position:add-record', async (_event, input: AddTradeInput) => {
           transferDate: input.tradeDate,
           amount: sellAmount,
           type: 'STOCK_SELL',
+          tradeRecordId: tradeRecordId,  // 传入关联ID
         });
 
         // 计算FIFO股息税，如果金额>0则创建DIVIDEND_TAX记录
@@ -354,6 +359,7 @@ ipcMain.handle('position:add-record', async (_event, input: AddTradeInput) => {
             transferDate: getNextDay(input.tradeDate),
             amount: dividendTax,
             type: 'DIVIDEND_TAX',
+            tradeRecordId: tradeRecordId,  // 传入关联ID
           });
         }
       } else if (input.tradeType === 'DIVIDEND') {
@@ -364,6 +370,7 @@ ipcMain.handle('position:add-record', async (_event, input: AddTradeInput) => {
             transferDate: input.tradeDate,
             amount: dividendAmount,
             type: 'DIVIDEND',
+            tradeRecordId: tradeRecordId,  // 传入关联ID
           });
         }
       }

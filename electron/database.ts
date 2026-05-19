@@ -319,15 +319,15 @@ function rowToTradeRecord(row: any[]): TradeRecord {
 
 export function getPositions(): Position[] {
   const database = getDb();
-  // 先获取每个股票的最新交易记录，然后过滤出持仓数量大于0的股票
+  // 获取每个股票的最新交易记录（按id最大），然后过滤出持仓数量大于0的股票
   const result = database.exec(`
     SELECT t1.stock_code, t1.stock_name, t1.holding_count, t1.holding_price, t1.trade_date
     FROM trade_record t1
     INNER JOIN (
-      SELECT stock_code, MAX(trade_date) as max_date
+      SELECT stock_code, MAX(id) as max_id
       FROM trade_record
       GROUP BY stock_code
-    ) t2 ON t1.stock_code = t2.stock_code AND t1.trade_date = t2.max_date
+    ) t2 ON t1.id = t2.max_id
     WHERE t1.holding_count > 0
   `);
   if (result.length === 0 || result[0].values.length === 0) {

@@ -17,7 +17,7 @@ export class FundService {
    */
   async getTransferRecords(limit: number, offset: number, types?: string[]): Promise<any[]> {
     try {
-      let sql = `SELECT id, transfer_date, amount, type, account_balance, created_at, updated_at
+      let sql = `SELECT id, transfer_date, amount, type, account_balance, trade_record_id, created_at, updated_at
          FROM transfer_records`;
       
       const params: any[] = [];
@@ -52,6 +52,7 @@ export class FundService {
           amount: record.amount || 0,
           type: record.type,
           accountBalance: typeof record.account_balance === 'number' ? record.account_balance : 0,
+          tradeRecordId: record.trade_record_id,  // 新增字段
           createdAt: record.created_at,
           updatedAt: record.updated_at,
         };

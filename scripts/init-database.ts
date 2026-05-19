@@ -1,11 +1,11 @@
 /**
- * 数据库迁移脚本
+ * 数据库初始化脚本
  * 
  * 使用方法：
  * 1. 备份数据库文件（重要！）
- * 2. 运行: npm run migrate
+ * 2. 运行: npm run init-db
  * 
- * 注意：此脚本会修改数据库结构，执行前请务必备份！
+ * 注意：此脚本会重新初始化数据库结构，执行前请务必备份！
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'fs';
@@ -63,29 +63,38 @@ function getDb(): Database {
 }
 
 /**
- * 检查是否需要迁移
+ * 获取init.sql文件路径
+ */
+function getInitSqlPath(): string {
+  // 假设脚本在项目根目录的scripts目录下
+  const projectRoot = join(__dirname, '..');
+  return join(projectRoot, 'sql', 'init.sql');
+}
+
+/**
+ * 检查是否需要重新初始化
  */
 function needsMigration(): boolean {
   const database = getDb();
   
   try {
-    // 检查表是否存在
-    const tableExists = database.exec(`
-      SELECT name FROM sqlite_master 
-      WHERE type='table' AND name='transfer_records'
-    `);
+    // 检查kline_data表是否有adjust_type字段
+    const klineColumns = database.exec(`PRAGMA table_info(kline_data)`);
+    const hasAdjustType = klineColumns.length > 0 && 
+      klineColumns[0].values.some((col: any) => col[1] === 'adjust_type');
     
-    if (tableExists.length === 0) {
-      console.log('❌ transfer_records 表不存在，无需迁移');
-      return false;
+    if (!hasAdjustType) {
+      console.log('✅ 检测到需要迁移：kline_data表缺少 adjust_type 字段');
+      return true;
     }
     
-    // 检查account_balance字段
-    const columns = database.exec(`PRAGMA table_info(transfer_records)`);
-    const hasAccountBalance = columns[0].values.some((col: any) => col[1] === 'account_balance');
+    // 检查transfer_records表的account_balance字段
+    const transferColumns = database.exec(`PRAGMA table_info(transfer_records)`);
+    const hasAccountBalance = transferColumns.length > 0 && 
+      transferColumns[0].values.some((col: any) => col[1] === 'account_balance');
     
     if (!hasAccountBalance) {
-      console.log('✅ 检测到需要迁移：缺少 account_balance 字段');
+      console.log('✅ 检测到需要迁移：transfer_records表缺少 account_balance 字段');
       return true;
     }
     
@@ -99,7 +108,7 @@ function needsMigration(): boolean {
       
       database.run(`DELETE FROM transfer_records WHERE transfer_date = ? AND amount = 0.01 AND type = 'INTEREST'`, [testDate]);
       
-      console.log('✅ 数据库已是最新版本，无需迁移');
+      console.log('✅ 数据库已是最新版本，无需重新初始化');
       return false;
     } catch (error) {
       console.log('✅ 检测到需要迁移：type约束不支持新类型');
@@ -112,60 +121,25 @@ function needsMigration(): boolean {
 }
 
 /**
- * 添加account_balance字段
+ * 从init.sql文件执行数据库初始化
  */
-function addAccountBalanceColumn(): void {
+function executeInitSql(): void {
   const database = getDb();
-  console.log('正在添加 account_balance 字段...');
+  const initSqlPath = getInitSqlPath();
   
-  database.run(`ALTER TABLE transfer_records ADD COLUMN account_balance REAL NOT NULL DEFAULT 0`);
+  console.log(`正在读取初始化SQL文件: ${initSqlPath}`);
   
-  console.log('✅ account_balance 字段添加成功');
-}
-
-/**
- * 重建表以更新type约束
- */
-function recreateTableWithNewConstraint(): void {
-  const database = getDb();
-  console.log('正在重建表以更新type约束...');
+  if (!existsSync(initSqlPath)) {
+    throw new Error(`初始化SQL文件不存在: ${initSqlPath}`);
+  }
   
-  // 1. 创建临时表
-  database.run(`
-    CREATE TABLE transfer_records_temp (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      transfer_date TEXT NOT NULL,
-      amount REAL NOT NULL CHECK(amount > 0),
-      type TEXT NOT NULL CHECK(type IN ('IN', 'OUT', 'DIVIDEND', 'DIVIDEND_TAX', 'STOCK_BUY', 'STOCK_SELL', 'INTEREST')),
-      account_balance REAL NOT NULL DEFAULT 0,
-      created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
-      updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
-    )
-  `);
-  console.log('  ✓ 临时表创建成功');
+  const sqlContent = readFileSync(initSqlPath, 'utf-8');
+  console.log('✅ SQL文件读取成功');
   
-  // 2. 复制数据
-  database.run(`
-    INSERT INTO transfer_records_temp (id, transfer_date, amount, type, account_balance, created_at, updated_at)
-    SELECT id, transfer_date, amount, type, account_balance, created_at, updated_at
-    FROM transfer_records
-  `);
-  console.log('  ✓ 数据复制成功');
-  
-  // 3. 删除旧表
-  database.run(`DROP TABLE transfer_records`);
-  console.log('  ✓ 旧表删除成功');
-  
-  // 4. 重命名临时表
-  database.run(`ALTER TABLE transfer_records_temp RENAME TO transfer_records`);
-  console.log('  ✓ 表重命名成功');
-  
-  // 5. 重新创建索引
-  database.run(`CREATE INDEX idx_transfer_date_desc ON transfer_records(transfer_date DESC)`);
-  database.run(`CREATE INDEX idx_transfer_type_date ON transfer_records(type, transfer_date)`);
-  console.log('  ✓ 索引重建成功');
-  
-  console.log('✅ 表重建完成，type约束已更新为7种类型');
+  // 执行SQL语句
+  console.log('正在执行数据库初始化...');
+  database.run(sqlContent);
+  console.log('✅ 数据库初始化完成');
 }
 
 /**
@@ -218,7 +192,7 @@ function recalculateAllBalances(): void {
  */
 async function runMigration(): Promise<void> {
   console.log('\n========================================');
-  console.log('  数据库迁移工具');
+  console.log('  数据库初始化工具');
   console.log('========================================\n');
   
   // 初始化数据库
@@ -235,8 +209,8 @@ async function runMigration(): Promise<void> {
   console.log();
   
   // 警告用户
-  console.log('⚠️  警告：即将执行数据库迁移操作');
-  console.log('⚠️  此操作会修改数据库结构');
+  console.log('⚠️  警告：即将执行数据库初始化操作');
+  console.log('⚠️  此操作会删除并重建所有表结构');
   console.log('⚠️  请确保已备份数据库文件！\n');
   
   // 询问确认（在命令行环境中）
@@ -245,52 +219,136 @@ async function runMigration(): Promise<void> {
     output: process.stdout
   });
   
-  readline.question('是否继续执行迁移？(yes/no): ', async (answer: string) => {
+  readline.question('是否继续执行初始化？(yes/no): ', async (answer: string) => {
     readline.close();
     
     if (answer.toLowerCase() !== 'yes' && answer.toLowerCase() !== 'y') {
-      console.log('\n❌ 迁移已取消\n');
+      console.log('\n❌ 初始化已取消\n');
       process.exit(0);
     }
     
     try {
-      console.log('\n3️⃣  开始执行迁移...\n');
+      console.log('\n3️⃣  开始执行初始化...\n');
       
+      // 备份现有数据
+      console.log('正在备份现有数据...');
       const database = getDb();
       
-      // 检查account_balance字段
-      const columns = database.exec(`PRAGMA table_info(transfer_records)`);
-      const hasAccountBalance = columns[0].values.some((col: any) => col[1] === 'account_balance');
+      // 备份transfer_records表数据
+      const transferData = database.exec('SELECT * FROM transfer_records ORDER BY id ASC');
+      const transferRecordsBackup = transferData.length > 0 ? transferData[0].values : [];
+      console.log(`  ✓ 备份了 ${transferRecordsBackup.length} 条转账记录`);
       
-      if (!hasAccountBalance) {
-        addAccountBalanceColumn();
+      // 备份kline_data表数据
+      const klineData = database.exec('SELECT * FROM kline_data ORDER BY id ASC');
+      const klineDataBackup = klineData.length > 0 ? klineData[0].values : [];
+      console.log(`  ✓ 备份了 ${klineDataBackup.length} 条K线数据`);
+      
+      // 备份watchlist_stocks表数据
+      const watchlistData = database.exec('SELECT * FROM watchlist_stocks ORDER BY id ASC');
+      const watchlistBackup = watchlistData.length > 0 ? watchlistData[0].values : [];
+      console.log(`  ✓ 备份了 ${watchlistBackup.length} 条自选股记录`);
+      
+      // 备份trade_record表数据
+      const tradeData = database.exec('SELECT * FROM trade_record ORDER BY id ASC');
+      const tradeBackup = tradeData.length > 0 ? tradeData[0].values : [];
+      console.log(`  ✓ 备份了 ${tradeBackup.length} 条交易记录`);
+      
+      // 备份config表数据
+      const configData = database.exec("SELECT * FROM config WHERE key = 'app_config'");
+      const configBackup = configData.length > 0 ? configData[0].values : [];
+      console.log(`  ✓ 备份了配置数据`);
+      
+      // 删除所有表（按依赖顺序）
+      console.log('\n正在清理旧表结构...');
+      database.run('DROP TABLE IF EXISTS kline_data');
+      database.run('DROP TABLE IF EXISTS transfer_records');
+      database.run('DROP TABLE IF EXISTS watchlist_stocks');
+      database.run('DROP TABLE IF EXISTS trade_record');
+      database.run('DROP TABLE IF EXISTS config');
+      console.log('  ✓ 旧表已清理');
+      
+      // 执行init.sql初始化新表结构
+      executeInitSql();
+      
+      // 恢复数据
+      console.log('\n正在恢复数据...');
+      
+      // 恢复config数据
+      if (configBackup.length > 0) {
+        const row = configBackup[0];
+        database.run(
+          "INSERT OR IGNORE INTO config (key, value, updated_at) VALUES (?, ?, ?)",
+          [row[0], row[1], row[2]]
+        );
+        console.log('  ✓ 配置数据已恢复');
       }
       
-      // 检查并更新type约束
-      const testDate = new Date().toISOString().split('T')[0];
-      let needsRecreate = false;
-      try {
-        database.run(`
-          INSERT INTO transfer_records (transfer_date, amount, type, account_balance)
-          VALUES (?, 0.01, 'INTEREST', 0)
-        `, [testDate]);
-        database.run(`DELETE FROM transfer_records WHERE transfer_date = ? AND amount = 0.01 AND type = 'INTEREST'`, [testDate]);
-      } catch (error) {
-        needsRecreate = true;
+      // 恢复watchlist_stocks数据
+      if (watchlistBackup.length > 0) {
+        for (const row of watchlistBackup) {
+          database.run(
+            `INSERT OR IGNORE INTO watchlist_stocks (id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7]]
+          );
+        }
+        console.log(`  ✓ 恢复了 ${watchlistBackup.length} 条自选股记录`);
       }
       
-      if (needsRecreate) {
-        recreateTableWithNewConstraint();
+      // 恢复transfer_records数据（需要重新计算account_balance）
+      if (transferRecordsBackup.length > 0) {
+        let currentBalance = 0;
+        for (const row of transferRecordsBackup) {
+          const amount = row[2] as number;
+          const type = row[3] as string;
+          
+          // 根据类型计算余额
+          if (type === 'IN' || type === 'DIVIDEND' || type === 'STOCK_SELL' || type === 'INTEREST') {
+            currentBalance += amount;
+          } else if (type === 'OUT' || type === 'DIVIDEND_TAX' || type === 'STOCK_BUY') {
+            currentBalance -= amount;
+          }
+          
+          database.run(
+            `INSERT OR IGNORE INTO transfer_records (id, transfer_date, amount, type, account_balance, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [row[0], row[1], row[2], row[3], currentBalance, row[5], row[6]]
+          );
+        }
+        console.log(`  ✓ 恢复了 ${transferRecordsBackup.length} 条转账记录（已重新计算余额）`);
       }
       
-      // 重新计算余额
-      recalculateAllBalances();
+      // 恢复trade_record数据
+      if (tradeBackup.length > 0) {
+        for (const row of tradeBackup) {
+          database.run(
+            `INSERT OR IGNORE INTO trade_record (id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8]]
+          );
+        }
+        console.log(`  ✓ 恢复了 ${tradeBackup.length} 条交易记录`);
+      }
+      
+      // 恢复kline_data数据
+      if (klineDataBackup.length > 0) {
+        for (const row of klineDataBackup) {
+          // 旧数据没有adjust_type字段，设置为默认值''
+          database.run(
+            `INSERT OR IGNORE INTO kline_data (id, stock_code, trade_date, adjust_type, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at)
+             VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [row[0], row[1], row[2], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14], row[15]]
+          );
+        }
+        console.log(`  ✓ 恢复了 ${klineDataBackup.length} 条K线数据`);
+      }
       
       // 保存数据库
       saveDatabase();
       
       console.log('\n========================================');
-      console.log('  ✨ 迁移完成！');
+      console.log('  ✨ 初始化完成！');
       console.log('========================================\n');
       console.log('建议操作：');
       console.log('1. 启动应用验证功能是否正常');
@@ -299,7 +357,7 @@ async function runMigration(): Promise<void> {
       
       process.exit(0);
     } catch (error) {
-      console.error('\n❌ 迁移失败:', error);
+      console.error('\n❌ 初始化失败:', error);
       console.error('\n建议操作：');
       console.error('1. 从备份恢复数据库');
       console.error('2. 检查错误信息');

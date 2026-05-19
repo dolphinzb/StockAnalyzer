@@ -216,13 +216,11 @@ graph TD
 
 ### 8.1 数据库迁移与类型更新
 
-- [x] T049 [P] 创建sql/015-kline-download.sql迁移脚本，使用临时表机制为kline_data表添加adjust_type字段（TEXT NOT NULL DEFAULT ''）
-- [x] T050 [P] 在迁移脚本中添加临时表机制，保证可重复执行（IF NOT EXISTS检查）
-- [x] T051 [P] 在迁移脚本中实现事务保护（BEGIN TRANSACTION / COMMIT）
-- [x] T052 [P] 在迁移脚本中为已有记录设置adjust_type = ''（不复权）
-- [x] T053 [P] 在迁移脚本中删除原有UNIQUE(stock_code, trade_date)约束并重建为UNIQUE(stock_code, trade_date, adjust_type）
-- [x] T054 [P] 在迁移脚本中创建复合索引idx_kline_data_stock_date_adjust ON kline_data(stock_code, trade_date, adjust_type)
-- [x] T055 [P] 在迁移脚本中添加验证查询注释，用于检查迁移前后数据完整性
+- [x] T049 [P] 在sql/init.sql中为kline_data表添加adjust_type字段（TEXT NOT NULL DEFAULT ''）
+- [x] T050 [P] 在sql/init.sql中使用UNIQUE(stock_code, trade_date, adjust_type)约束
+- [x] T051 [P] 在sql/init.sql中创建复合索引idx_kline_data_stock_date_adjust ON kline_data(stock_code, trade_date, adjust_type)
+- [x] T052 [P] 重构scripts/migrate-database.ts，从init.sql读取并执行DDL语句，移除代码中的硬编码DDL
+- [x] T053 [P] 删除冗余的SQL脚本文件（sql/015-kline-download.sql和specs/015-kline-download/migration.sql）
 - [x] T056 执行数据库迁移脚本，验证adjust_type字段正确添加且已有数据设置为''
 - [x] T057 验证迁移脚本可重复执行（运行两次无错误）
 - [x] T058 [P] 更新shared/types/index.ts中的KlineData接口，添加adjustType字段（'' | 'qfq'）

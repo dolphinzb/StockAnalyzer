@@ -2,9 +2,14 @@
   <div class="profit-statistics">
     <h2>盈亏统计</h2>
 
-    <!-- 日期范围选择器 + 计算按钮 + 重置按钮 -->
+    <!-- 日期范围选择器 + 快捷按钮 + 计算按钮 + 重置按钮 -->
     <div class="query-bar">
       <DateRangePicker v-model="dateRange" />
+      <div class="shortcuts-group">
+        <button class="btn-shortcut" @click="handleSetThisYear">今年</button>
+        <button class="btn-shortcut" @click="handleSetLastYear">去年</button>
+        <button class="btn-shortcut" @click="handleSetLastYearStart">去年开始</button>
+      </div>
       <button
         class="btn-calculate"
         :disabled="!canCalculate || store.isLoading"
@@ -138,6 +143,66 @@ const handleReset = () => {
 };
 
 /**
+ * 获取今年的日期范围（今年1月1日到今天）
+ * @returns 日期范围对象
+ */
+const getThisYearRange = (): { startDate: string; endDate: string } => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const startDate = `${year}-01-01`;
+  const endDate = now.toISOString().split('T')[0];
+  return { startDate, endDate };
+};
+
+/**
+ * 获取去年的日期范围（去年1月1日到去年12月31日）
+ * @returns 日期范围对象
+ */
+const getLastYearRange = (): { startDate: string; endDate: string } => {
+  const now = new Date();
+  const lastYear = now.getFullYear() - 1;
+  const startDate = `${lastYear}-01-01`;
+  const endDate = `${lastYear}-12-31`;
+  return { startDate, endDate };
+};
+
+/**
+ * 获取从去年开始的日期范围（去年1月1日到今天）
+ * @returns 日期范围对象
+ */
+const getLastYearStartRange = (): { startDate: string; endDate: string } => {
+  const now = new Date();
+  const lastYear = now.getFullYear() - 1;
+  const startDate = `${lastYear}-01-01`;
+  const endDate = now.toISOString().split('T')[0];
+  return { startDate, endDate };
+};
+
+/**
+ * 设置今年日期范围并自动计算
+ */
+const handleSetThisYear = async () => {
+  dateRange.value = getThisYearRange();
+  await handleCalculate();
+};
+
+/**
+ * 设置去年日期范围并自动计算
+ */
+const handleSetLastYear = async () => {
+  dateRange.value = getLastYearRange();
+  await handleCalculate();
+};
+
+/**
+ * 设置从去年开始的日期范围并自动计算
+ */
+const handleSetLastYearStart = async () => {
+  dateRange.value = getLastYearStartRange();
+  await handleCalculate();
+};
+
+/**
  * 页面初始化时自动计算历史盈亏统计
  */
 onMounted(async () => {
@@ -189,6 +254,34 @@ const getProfitClass = (profit: number): string => {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.shortcuts-group {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-shortcut {
+  padding: 8px 16px;
+  background-color: white;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  height: 36px;
+
+  &:hover {
+    background-color: #f9fafb;
+    border-color: #9ca3af;
+  }
+
+  &:active {
+    background-color: #f3f4f6;
+  }
 }
 
 .btn-calculate {

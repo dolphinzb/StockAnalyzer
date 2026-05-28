@@ -25,7 +25,48 @@ let calendarCacheDate: string | null = null;
 let downloadTimeout: NodeJS.Timeout | null = null;
 
 /**
- * 判断股票代码是否为A股
+ * 判断证券代码是否有效（支持A股和基金）
+ * @param stockCode 证券代码（6位数字）
+ * @returns 是否为支持的证券类型
+ */
+function isValidSecurityCode(stockCode: string): boolean {
+  // A股：深市主板(0)、创业板(3)、沪市主板(6)
+  const isAStock = /^[036]\d{5}$/.test(stockCode);
+  
+  // 基金：上交所ETF(51)、深交所ETF(15)、深交所LOF(16)、上交所LOF(50)、上交所货币基金(52)、上交所债券ETF(511)
+  const isFund = /^(51|15|16|50|52|511)\d{4}$/.test(stockCode);
+  
+  return isAStock || isFund;
+}
+
+/**
+ * 为证券代码添加市场前缀（用于stock-sdk调用）
+ * @param stockCode 证券代码（纯数字）
+ * @returns 带前缀的代码（如 sh510050、sz159915）
+ */
+function getStockCodeWithPrefix(stockCode: string): string {
+  // 如果已经有前缀，直接返回
+  if (stockCode.startsWith('sh') || stockCode.startsWith('sz') || stockCode.startsWith('bj')) {
+    return stockCode;
+  }
+  
+  // 沪市股票和基金（6开头股票、51/50/52/511开头基金）
+  if (/^[6]/.test(stockCode) || /^(51|50|52|511)/.test(stockCode)) {
+    return `sh${stockCode}`;
+  }
+  
+  // 深市股票和基金（0/3开头股票、15/16开头基金）
+  if (/^[03]/.test(stockCode) || /^(15|16)/.test(stockCode)) {
+    return `sz${stockCode}`;
+  }
+  
+  // 默认返回深市格式
+  return `sz${stockCode}`;
+}
+
+/**
+ * 判断股票代码是否为A股（已废弃，使用 isValidSecurityCode 替代）
+ * @deprecated 请使用 isValidSecurityCode()
  * A股代码规则：6位数字，以0（深市主板）、3（创业板）、6（沪市主板）开头
  * @param stockCode 股票代码
  * @returns 是否为A股
@@ -47,9 +88,9 @@ export function validateDownloadInput(stockCode: string, startDate: string, endD
     throw new Error('INVALID_STOCK_CODE: 股票代码必须为6位数字');
   }
 
-  // 验证是否为A股代码
-  if (!isAStockCode(stockCode)) {
-    throw new Error('INVALID_STOCK_CODE: 不支持的股票类型，仅支持A股');
+  // 验证是否为支持的证券类型（A股或基金）
+  if (!isValidSecurityCode(stockCode)) {
+    throw new Error('INVALID_STOCK_CODE: 不支持的证券类型，仅支持A股和基金');
   }
 
   // 验证开始日期格式
@@ -96,21 +137,26 @@ async function downloadSingleAdjust(
   adjustType: '' | 'qfq'
 ): Promise<{ success: boolean; count?: number; error?: string }> {
   try {
-    // adjustType 已经是 stock-sdk 所需的参数值，无需转换
-    log.info(`开始下载${adjustType === 'qfq' ? '前复权' : '不复权'}K线数据: ${stockCode}, ${startDate} ~ ${endDate}`);
+    // 判断证券类型并记录日志
+    const securityType = /^(51|15|16|50|52|511)\d{4}$/.test(stockCode) ? '基金' : '股票';
+    log.info(`开始下载${securityType}${adjustType === 'qfq' ? '前复权' : '不复权'}K线数据: ${stockCode}, ${startDate} ~ ${endDate}`);
+
+    // 为stock-sdk添加市场前缀（基金需要正确的前缀才能获取数据）
+    const codeWithPrefix = getStockCodeWithPrefix(stockCode);
+    log.info(`使用代码格式: ${codeWithPrefix}`);
 
     // 调用 stock-sdk 获取K线数据
-    const klines = await sdk.getHistoryKline(stockCode, {
+    const klines = await sdk.getHistoryKline(codeWithPrefix, {
       period: 'daily',
       adjust: adjustType,
       startDate,
       endDate,
     });
 
-    // 保存到数据库
+    // 保存到数据库（使用纯数字代码）
     const count = saveKlineData(stockCode, klines, adjustType);
 
-    log.info(`${adjustType === 'qfq' ? '前复权' : '不复权'}K线数据下载完成: ${stockCode}, 共 ${count} 条`);
+    log.info(`${securityType}${adjustType === 'qfq' ? '前复权' : '不复权'}K线数据下载完成: ${stockCode}, 共 ${count} 条`);
     return { success: true, count };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '未知错误';

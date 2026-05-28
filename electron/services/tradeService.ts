@@ -54,7 +54,7 @@ export function calcStockBuyAmount(tradePrice: number, tradeCount: number, stock
   const transferFee = absCount * tradePrice * TRANSFER_FEE_RATE;  // 过户费：沪深两市都收取
   const tradeAmount = absCount * tradePrice;
 
-  let totalFee = tradeFee + transferFee;
+  const totalFee = tradeFee + transferFee;
   return tradeAmount + totalFee;
 }
 
@@ -74,7 +74,7 @@ export function calcStockSellAmount(tradePrice: number, tradeCount: number, stoc
   const tradeAmount = absCount * tradePrice;
   const stampTax = tradeAmount * (exchange === 'BEIJING' ? 0 : SHANGHAI_STAMP_TAX_RATE);
 
-  let totalFee = tradeFee + stampTax + transferFee;
+  const totalFee = tradeFee + stampTax + transferFee;
   return tradeAmount - totalFee;
 }
 
@@ -210,7 +210,7 @@ export function calcHoldingPrice(
     const tradeFee = Math.max(tradeCount * tradePrice * TRADE_FEE_RATE, MIN_FEE);
     const transferFee = tradeCount * tradePrice * TRANSFER_FEE_RATE;  // 过户费：沪深两市都收取
 
-    let totalCost = tradeCount * tradePrice + tradeFee + transferFee;
+    const totalCost = tradeCount * tradePrice + tradeFee + transferFee;
 
     const newHoldingPrice = Math.round((totalCost * 1000) / tradeCount) / 1000;
     return {

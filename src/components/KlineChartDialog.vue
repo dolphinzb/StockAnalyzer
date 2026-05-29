@@ -197,6 +197,7 @@ onBeforeUnmount(() => {
           @mousemove="(e: MouseEvent) => { klineChart.onMouseMove(e); syncTooltip(klineChart.tooltipInfo.value); }"
           @mouseup="klineChart.onMouseUp"
           @mouseleave="klineChart.onMouseLeave"
+          @wheel="klineChart.onWheel"
         ></canvas>
 
         <!-- 交易标注 Tooltip -->
@@ -217,8 +218,8 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- 操作提示 -->
-      <div class="chart-hint">
-        💡 按住鼠标左键左右拖动可查看不同日期范围的数据
+      <div v-if="!isEmpty" class="chart-hint">
+        💡 滚轮缩放 | 拖动平移
       </div>
     </div>
   </Modal>

@@ -4,8 +4,8 @@ import type { TradeRecord } from '../database';
 export const TRADE_FEE_RATE = 0.0003;
 export const MIN_FEE = 5;
 export const TRANSFER_FEE_RATE = 0.00001;  // 过户费率 0.001% (十万分之一)，沪深两市双向收取
-export const SHENZHEN_STAMP_TAX_RATE = 0.001;
-export const SHANGHAI_STAMP_TAX_RATE = 0.001;
+export const SHENZHEN_STAMP_TAX_RATE = 0.0005;  // 印花税率 0.05% (万分之五)，仅卖出收取（2023年8月28日起实施）
+export const SHANGHAI_STAMP_TAX_RATE = 0.0005;  // 印花税率 0.05% (万分之五)，仅卖出收取（2023年8月28日起实施）
 
 export type Exchange = 'SHENZHEN' | 'SHANGHAI' | 'BEIJING';
 
@@ -50,8 +50,8 @@ export interface BuyBatch {
 export function calcStockBuyAmount(tradePrice: number, tradeCount: number, stockCode: string): number {
   const absCount = Math.abs(tradeCount);
   const exchange = getExchange(stockCode);
-  const tradeFee = Math.max(absCount * tradePrice * TRADE_FEE_RATE, MIN_FEE);
-  const transferFee = absCount * tradePrice * TRANSFER_FEE_RATE;  // 过户费：沪深两市都收取
+  const tradeFee = Math.round(Math.max(absCount * tradePrice * TRADE_FEE_RATE, MIN_FEE) * 100) / 100;
+  const transferFee = Math.round(absCount * tradePrice * TRANSFER_FEE_RATE * 100) / 100;  // 过户费：沪深两市都收取
   const tradeAmount = absCount * tradePrice;
 
   const totalFee = tradeFee + transferFee;
@@ -69,10 +69,10 @@ export function calcStockBuyAmount(tradePrice: number, tradeCount: number, stock
 export function calcStockSellAmount(tradePrice: number, tradeCount: number, stockCode: string): number {
   const absCount = Math.abs(tradeCount);
   const exchange = getExchange(stockCode);
-  const tradeFee = Math.max(absCount * tradePrice * TRADE_FEE_RATE, MIN_FEE);
-  const transferFee = absCount * tradePrice * TRANSFER_FEE_RATE;  // 过户费：沪深两市都收取
+  const tradeFee = Math.round(Math.max(absCount * tradePrice * TRADE_FEE_RATE, MIN_FEE) * 100) / 100;
+  const transferFee = Math.round(absCount * tradePrice * TRANSFER_FEE_RATE * 100) / 100;  // 过户费：沪深两市都收取
   const tradeAmount = absCount * tradePrice;
-  const stampTax = tradeAmount * (exchange === 'BEIJING' ? 0 : SHANGHAI_STAMP_TAX_RATE);
+  const stampTax = Math.round(tradeAmount * (exchange === 'BEIJING' ? 0 : SHANGHAI_STAMP_TAX_RATE) * 100) / 100;
 
   const totalFee = tradeFee + stampTax + transferFee;
   return tradeAmount - totalFee;
@@ -108,17 +108,17 @@ export function calcDaysBetween(startDateStr: string, endDateStr: string): numbe
 
 /**
  * 根据持股天数判断股息红利税税率
- * 持股期限 ≤ 1个月：税率10%
- * 1个月 < 持股期限 ≤ 1年：税率5%
+ * 持股期限 ≤ 1个月：税率20%
+ * 1个月 < 持股期限 ≤ 1年：税率10%
  * 持股期限 > 1年：税率0%（免税）
  * @param days 持股天数
- * @returns 税率（0~0.1）
+ * @returns 税率（0~0.2）
  */
 export function getDividendTaxRate(days: number): number {
   if (days <= 30) {
-    return 0.10;
+    return 0.20;
   } else if (days <= 365) {
-    return 0.05;
+    return 0.10;
   }
   return 0;
 }
@@ -139,6 +139,8 @@ export function calcDividendTax(
   allTrades: TradeRecord[]
 ): number {
   const absSellCount = Math.abs(sellCount);
+  log.info(`[calcDividendTax] 开始计算: 股票=${stockCode}, 卖出日期=${sellDate}, 卖出数量=${absSellCount}`);
+  
   // 构建FIFO买入批次列表：只取卖出日期之前的买入记录
   const batches: BuyBatch[] = [];
   for (const trade of allTrades) {
@@ -165,6 +167,8 @@ export function calcDividendTax(
     }
   }
 
+  log.info(`[calcDividendTax] FIFO批次构建完成，剩余批次: ${batches.filter(b => b.remainingCount > 0).map(b => `${b.purchaseDate}(${b.remainingCount}股)`).join(', ')}`);
+
   // 按FIFO顺序消耗批次，计算卖出数量对应的股息税
   let remainingSell = absSellCount;
   let totalTax = 0;
@@ -179,13 +183,42 @@ export function calcDividendTax(
     const holdingDays = calcDaysBetween(batch.purchaseDate, sellDate);
     // 获取对应税率
     const taxRate = getDividendTaxRate(holdingDays);
-    // 计算本批次的股息税（每股面值1元 × 卖出数量 × 税率）
-    totalTax += soldFromBatch * 1 * taxRate;
+    
+    log.info(`[calcDividendTax] 处理批次: 买入日期=${batch.purchaseDate}, 卖出数量=${soldFromBatch}, 持股天数=${holdingDays}, 税率=${(taxRate * 100).toFixed(0)}%`);
+    
+    // 如果税率为0（持股超过1年免税），跳过
+    if (taxRate === 0) {
+      remainingSell -= soldFromBatch;
+      continue;
+    }
+    
+    // 查询该批次在持有期间的所有分红记录
+    // 分红金额 = 每股股息(tradePrice) × 持股数量(soldFromBatch)
+    let totalDividendAmount = 0;
+    for (const trade of allTrades) {
+      // 只统计买入日期之后、卖出日期之前（含）的分红记录
+      if (trade.tradeDate > batch.purchaseDate && 
+          trade.tradeDate <= sellDate && 
+          trade.tradeType === 'DIVIDEND') {
+        // 累加该批次的分红金额：每股股息 × 本批次卖出的股数
+        const dividendForBatch = trade.tradePrice * soldFromBatch;
+        totalDividendAmount += dividendForBatch;
+        log.info(`[calcDividendTax] 找到分红记录: 日期=${trade.tradeDate}, 每股股息=${trade.tradePrice}, 本批次分红金额=${dividendForBatch.toFixed(2)}`);
+      }
+    }
+    
+    // 计算本批次的股息税：分红金额 × 税率
+    const batchTax = totalDividendAmount * taxRate;
+    totalTax += batchTax;
+    log.info(`[calcDividendTax] 批次税额: 分红总额=${totalDividendAmount.toFixed(2)}, 税率=${(taxRate * 100).toFixed(0)}%, 税额=${batchTax.toFixed(2)}`);
     remainingSell -= soldFromBatch;
   }
 
+  const finalTax = Math.round(totalTax * 100) / 100;
+  log.info(`[calcDividendTax] 最终结果: 总税额=${totalTax.toFixed(2)}, 四舍五入后=${finalTax}`);
+  
   // 四舍五入到分
-  return Math.round(totalTax * 100) / 100;
+  return finalTax;
 }
 
 export function calcHoldingPrice(
@@ -207,8 +240,8 @@ export function calcHoldingPrice(
 
   if (!preRecord) {
     const exchange = getExchange(stockCode);
-    const tradeFee = Math.max(tradeCount * tradePrice * TRADE_FEE_RATE, MIN_FEE);
-    const transferFee = tradeCount * tradePrice * TRANSFER_FEE_RATE;  // 过户费：沪深两市都收取
+    const tradeFee = Math.round(Math.max(tradeCount * tradePrice * TRADE_FEE_RATE, MIN_FEE) * 100) / 100;
+    const transferFee = Math.round(tradeCount * tradePrice * TRANSFER_FEE_RATE * 100) / 100;  // 过户费：沪深两市都收取
 
     const totalCost = tradeCount * tradePrice + tradeFee + transferFee;
 
@@ -220,8 +253,8 @@ export function calcHoldingPrice(
   }
 
   const exchange = getExchange(stockCode);
-  const tradeFee = Math.max(tradeCount * tradePrice * TRADE_FEE_RATE, MIN_FEE);
-  const transferFee = tradeCount * tradePrice * TRANSFER_FEE_RATE;  // 过户费：沪深两市都收取
+  const tradeFee = Math.round(Math.max(tradeCount * tradePrice * TRADE_FEE_RATE, MIN_FEE) * 100) / 100;
+  const transferFee = Math.round(tradeCount * tradePrice * TRANSFER_FEE_RATE * 100) / 100;  // 过户费：沪深两市都收取
 
   if (tradeType === 'BUY') {
     // 买入：沪深两市都收取佣金和过户费
@@ -246,7 +279,7 @@ export function calcHoldingPrice(
     } else if (exchange === 'SHANGHAI') {
       taxRate = SHANGHAI_STAMP_TAX_RATE;
     }
-    const tax = -tradeCount * tradePrice * taxRate;
+    const tax = -Math.round(tradeCount * tradePrice * taxRate * 100) / 100;
 
     // 卖出：沪深两市都收取佣金、印花税和过户费
     const newHoldingPrice = Math.round(

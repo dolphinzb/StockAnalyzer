@@ -352,15 +352,24 @@ ipcMain.handle('position:add-record', async (_event, input: AddTradeInput) => {
 
         // 计算FIFO股息税，如果金额>0则创建DIVIDEND_TAX记录
         const { getTradeRecordsByStockCode } = await import('./database');
-        const allTrades = getTradeRecordsByStockCode(input.stockCode);
+        let allTrades = getTradeRecordsByStockCode(input.stockCode);
+        // 排除刚刚添加的这条卖出记录，避免影响FIFO计算
+        allTrades = allTrades.filter(trade => trade.id !== tradeRecordId);
+        log.info(`[股息税计算] 股票=${input.stockCode}, 卖出日期=${input.tradeDate}, 卖出数量=${input.tradeCount}`);
+        log.info(`[股息税计算] 交易记录数=${allTrades.length}（已排除当前记录）`);
         const dividendTax = calcDividendTax(input.stockCode, input.tradeDate, input.tradeCount, allTrades);
+        log.info(`[股息税计算] 计算结果=${dividendTax}`);
         if (dividendTax > 0) {
+          log.info(`[股息税记录] 准备插入: 日期=${getNextDay(input.tradeDate)}, 金额=${dividendTax}, 类型=DIVIDEND_TAX`);
           await fundService.addTransferRecord({
             transferDate: getNextDay(input.tradeDate),
             amount: dividendTax,
             type: 'DIVIDEND_TAX',
             tradeRecordId: tradeRecordId,  // 传入关联ID
           });
+          log.info(`[股息税记录] 插入成功`);
+        } else {
+          log.info(`[股息税计算] 税额为0，不插入记录`);
         }
       } else if (input.tradeType === 'DIVIDEND') {
         // 股息：创建DIVIDEND记录，金额=每股股息×持股数量

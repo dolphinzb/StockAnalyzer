@@ -1,5 +1,7 @@
 name: fix-profit-chart-refresh
-phase: build
+phase: verify
 workflow: hotfix
-verify_result: null
+verify_result: pass
 created_at: '2026-07-03'
+verification_report: docs/superpowers/reports/2026-07-03-fix-profit-chart-refresh-verify.md
+branch_status: handled

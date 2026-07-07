@@ -1,0 +1,10 @@
+name: fix-profit-chart-refresh
+phase: archive
+workflow: hotfix
+verify_result: pass
+created_at: '2026-07-03'
+verified_at: '2026-07-03'
+archived_at: '2026-07-03'
+verification_report: docs/superpowers/reports/2026-07-03-fix-profit-chart-refresh-verify.md
+branch_status: handled
+archived: true

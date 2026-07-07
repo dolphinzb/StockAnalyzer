@@ -78,21 +78,6 @@ let monthlyChart: ReturnType<typeof useProfitChart>;
  */
 const loadAnnualChart = async () => {
   try {
-    // 如果已有数据，直接绘制，不再请求
-    if (store.annualProfitData && store.annualProfitData.length > 0) {
-      console.log('[ProfitChart] 使用缓存的年度数据绘制图表');
-      const data = store.annualProfitData.map(item => ({
-        label: String(item.year),
-        value: item.profit,
-      }));
-      annualChart.drawChart(data, {
-        title: '年度盈亏',
-        colorPositive: '#ef4444',
-        colorNegative: '#10b981',
-      });
-      return;
-    }
-
     console.log('[ProfitChart] 开始加载年度图表数据...');
     await store.fetchAnnualProfitData();
     console.log('[ProfitChart] 年度数据:', store.annualProfitData);
@@ -124,21 +109,6 @@ const loadAnnualChart = async () => {
  */
 const loadMonthlyChart = async () => {
   try {
-    // 如果已有数据，直接绘制，不再请求
-    if (store.monthlyProfitData && store.monthlyProfitData.length > 0) {
-      console.log('[ProfitChart] 使用缓存的月度数据绘制图表');
-      const data = store.monthlyProfitData.map(item => ({
-        label: item.month,
-        value: item.profit,
-      }));
-      monthlyChart.drawChart(data, {
-        title: '月度盈亏',
-        colorPositive: '#ef4444',
-        colorNegative: '#10b981',
-      });
-      return;
-    }
-
     console.log('[ProfitChart] 开始加载月度图表数据...');
     await store.fetchMonthlyProfitData();
     console.log('[ProfitChart] 月度数据:', store.monthlyProfitData);

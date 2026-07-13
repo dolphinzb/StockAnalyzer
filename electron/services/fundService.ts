@@ -613,7 +613,7 @@ export class FundService {
         });
       }
 
-      log.info(`获取持仓市值成功，日期: ${date}, 总市值: ${totalMarketValue}, 持股数: ${details.length}, 无K线数据: ${missingKlineStocks.length}`);
+      // log.info(`获取持仓市值成功，日期: ${date}, 总市值: ${totalMarketValue}, 持股数: ${details.length}, 无K线数据: ${missingKlineStocks.length}`);
 
       return {
         marketValue: Number(totalMarketValue.toFixed(2)),
@@ -679,7 +679,7 @@ export class FundService {
       const totalIn = inResult.length > 0 ? (inResult[0].values[0][0] as number) : 0;
       const totalOut = outResult.length > 0 ? (outResult[0].values[0][0] as number) : 0;
 
-      log.info(`获取资金转入转出统计成功，时间段: ${startDate} ~ ${endDate}, 转入: ${totalIn}, 转出: ${totalOut}`);
+      // log.info(`获取资金转入转出统计成功，时间段: ${startDate} ~ ${endDate}, 转入: ${totalIn}, 转出: ${totalOut}`);
 
       return {
         totalIn: Number(totalIn.toFixed(2)),
@@ -732,7 +732,7 @@ export class FundService {
         - (openingAccountBalance + openingHoldingsValue)
         + (tradeStats.totalOut - tradeStats.totalIn);
 
-      log.info(`盈亏统计计算完成，时间段: ${startDate} ~ ${endDate}, 盈亏: ${profit}`);
+      // log.info(`盈亏统计计算完成，时间段: ${startDate} ~ ${endDate}, 盈亏: ${profit}`);
 
       return {
         startDate,

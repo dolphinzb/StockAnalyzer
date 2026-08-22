@@ -63,3 +63,5 @@ graphify*/
 .graphify_run_ast.py
 .graphify_detect.json
 .graphify_uncached.txt
+
+.codegraph/

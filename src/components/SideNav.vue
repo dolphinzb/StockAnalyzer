@@ -32,6 +32,11 @@ const navItems: NavItem[] = [
     iconPath: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z'
   },
   {
+    id: 'grid-simulation',
+    label: '网格仿真',
+    iconPath: 'M3 13h4l2-6 4 12 2-6h6'
+  },
+  {
     id: 'historical-trades',
     label: '历史开仓',
     iconPath: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'

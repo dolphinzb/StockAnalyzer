@@ -6,6 +6,7 @@ import ToastNotification from './components/ToastNotification.vue'
 import { useNavigation, type ViewId } from './composables/useNavigation'
 import { useWatchlistStore } from './stores/watchlist'
 import GridView from './views/GridView.vue'
+import GridSimulationView from './views/GridSimulationView.vue'
 import HistoricalTradesView from './views/HistoricalTradesView.vue'
 import LogPage from './views/LogPage.vue'
 import PositionView from './views/PositionView.vue'
@@ -20,6 +21,7 @@ const viewComponents = {
   watchlist: WatchlistView,
   position: PositionView,
   grid: GridView,
+  'grid-simulation': GridSimulationView,
   'historical-trades': HistoricalTradesView,
   'fund-management': FundManagementView,
   settings: SettingsView,

@@ -770,6 +770,99 @@ export interface KlineAPI {
   getTradeRecords(stockCode: string): Promise<TradeRecord[]>;
 }
 
+/**
+ * 网格仿真间距类型
+ * fixed: 固定金额等差网格；percentage: 等比网格（每档按上一档 × (1+spacing)）
+ */
+export type GridSpacingType = 'fixed' | 'percentage';
+
+/**
+ * 网格交易仿真输入参数
+ */
+export interface GridSimulationInput {
+  /** 开始日期 (YYYY-MM-DD) */
+  startDate: string;
+  /** 股票代码（纯数字） */
+  stockCode: string;
+  /** 初始资金（元） */
+  initialCapital: number;
+  /** 网格上限价格 */
+  upperLimit: number;
+  /** 网格下限价格 */
+  lowerLimit: number;
+  /** 网格间距（fixed 为金额，percentage 为比例，如 0.05 表示 5%） */
+  spacing: number;
+  /** 间距类型 */
+  spacingType: GridSpacingType;
+  /**
+   * 每格交易股数（向下取整到 100）。
+   * 为 null 时由系统按「初始资金 / 档位数 / 触发价」自动估算（再向下取整到 100 股）。
+   */
+  sharesPerGrid: number | null;
+  /** 手续费率（默认 0.00025） */
+  commissionRate: number;
+  /** 最低手续费（默认 5） */
+  minFee: number;
+  /** 印花税（默认 0.0005，仅卖出） */
+  stampTaxRate: number;
+  /** 每股年股息（首版预留，默认 0，算法忽略） */
+  dividendPerShare: number;
+}
+
+/**
+ * 网格仿真单笔操作记录
+ */
+export interface GridSimulationOperation {
+  /** 交易日期 (YYYY-MM-DD) */
+  date: string;
+  /** 操作类型 */
+  type: 'BUY' | 'SELL' | 'DIVIDEND';
+  /** 成交价格 */
+  price: number;
+  /** 成交数量（股） */
+  shares: number;
+  /** 手续费（含印花税） */
+  fee: number;
+  /** 操作后现金 */
+  cashAfter: number;
+  /** 操作后持仓股数 */
+  holdingAfter: number;
+  /** 操作后持仓市值 */
+  holdingValueAfter: number;
+  /**
+   * 是否为虚拟操作（仅占位、不影响现金与持仓）。
+   * 当网格已空仓、价格继续沿原方向穿越多档时，本应"卖出"却无货可卖，
+   * 此时记录一笔 virtual SELL 仅用来标注最近一次操作档位，供后续反向穿越触发真实买入。
+   */
+  virtual?: boolean;
+}
+
+/**
+ * 网格仿真结果
+ */
+export interface GridSimulationResult {
+  /** 操作历史 */
+  operations: GridSimulationOperation[];
+  /** 期末现金 */
+  finalCash: number;
+  /** 期末持仓股数 */
+  finalHolding: number;
+  /** 期末收盘价 */
+  finalPrice: number;
+  /** 期末总资产 */
+  finalTotalAssets: number;
+  /** 总收益 */
+  totalProfit: number;
+  /** 总收益率(%) */
+  totalProfitRate: number;
+  /** 年化收益率(%) - 按自然日口径 */
+  annualizedReturn: number;
+  /** 最大回撤(%) */
+  maxDrawdown: number;
+  /** 交易笔数 */
+  tradeCount: number;
+}
+
 declare global {
   interface Window {
     electronAPI: WindowAPI;

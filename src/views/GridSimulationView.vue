@@ -22,7 +22,7 @@ const form = reactive({
   lowerLimit: '',
   spacing: '',
   spacingType: 'fixed' as GridSpacingType,
-  gridStrategy: 'strategy1' as 'strategy1' | 'strategy2',
+  gridStrategy: 'strategy1' as 'strategy1' | 'strategy2' | 'strategy3',
   sharesPerGrid: '', // 留空表示按 初始资金/档位数/触发价 自动估算
   // 费用（可选，带默认值）
   commissionRate: '0.00025',
@@ -59,6 +59,11 @@ const typeClass = (t: string) => {
   if (t === 'SELL') return 'tag-sell';
   return 'tag-dividend';
 };
+
+const gridStrategyTip =
+  '网格策略1（整批清仓）：上涨穿越时一次性卖出栈顶批次的全部持仓。\n' +
+  '网格策略2（分步减仓）：上涨穿越时，对所有已穿越待减批次各卖出其买入量的一半（分两段减仓）。\n' +
+  '网格策略3（隔两档卖出）：与策略1同为整批清仓，但需上穿「高两档」才卖（如 4.2 买入→上穿 4.6 卖出，4.4 买入→上穿 4.8 卖出）。';
 
 const validate = (): string | null => {
   if (!form.startDate) return '请选择开始日期';
@@ -174,12 +179,17 @@ void totalAssetsSeries;
           </select>
         </div>
         <div class="form-item">
-          <label>网格策略</label>
+          <label>
+            <span>网格策略</span>
+            <span class="help-icon" tabindex="0" aria-label="网格策略说明">?
+              <span class="tooltip-pop">{{ gridStrategyTip }}</span>
+            </span>
+          </label>
           <select v-model="form.gridStrategy">
             <option value="strategy1">网格策略1（整批清仓）</option>
             <option value="strategy2">网格策略2（分步减仓）</option>
+            <option value="strategy3">网格策略3（隔两档卖出）</option>
           </select>
-          <span class="hint">策略2：每次上涨穿越，所有已穿越批次各卖买入量的一半</span>
         </div>
         <div class="form-item">
           <label>每格股数(留空自动)</label>
@@ -258,7 +268,7 @@ void totalAssetsSeries;
             <li>年化收益率按自然日口径（含周末/停牌日）</li>
             <li>首版不含分红：不生成分红记录、不计入现金</li>
             <li>使用不复权数据，忽略除权影响（除权跳变当作普通网格穿越）</li>
-            <li>当前策略：{{ form.gridStrategy === 'strategy2' ? '网格策略2（分步减仓）' : '网格策略1（整批清仓）' }}</li>
+            <li>当前策略：{{ form.gridStrategy === 'strategy2' ? '网格策略2（分步减仓）' : form.gridStrategy === 'strategy3' ? '网格策略3（隔两档卖出）' : '网格策略1（整批清仓）' }}</li>
           </ul>
         </div>
       </div>
@@ -345,6 +355,52 @@ void totalAssetsSeries;
     font-size: 11px;
     color: var(--text-tertiary, #aaa);
     line-height: 1.3;
+  }
+
+  .help-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    margin-left: 4px;
+    border-radius: 50%;
+    background: var(--text-tertiary, #aaa);
+    color: #fff;
+    font-size: 10px;
+    font-weight: bold;
+    cursor: help;
+    position: relative;
+    outline: none;
+
+    .tooltip-pop {
+      visibility: hidden;
+      opacity: 0;
+      position: absolute;
+      top: 150%;
+      right: 0;
+      z-index: 50;
+      width: max-content;
+      max-width: 280px;
+      padding: 0.5rem 0.65rem;
+      border-radius: 6px;
+      background: #303133;
+      color: #fff;
+      font-size: 12px;
+      font-weight: normal;
+      line-height: 1.5;
+      white-space: pre-line;
+      text-align: left;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      transition: opacity 0.15s ease;
+      pointer-events: none;
+    }
+
+    &:hover .tooltip-pop,
+    &:focus .tooltip-pop {
+      visibility: visible;
+      opacity: 1;
+    }
   }
 
   input, select {

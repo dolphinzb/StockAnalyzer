@@ -809,10 +809,11 @@ export interface GridSimulationInput {
   dividendPerShare: number;
   /**
    * 网格卖出策略。
-   * - 'strategy1'（默认）：上涨穿越时一次性卖出栈顶批次的全部持仓（整批清仓）。
-   * - 'strategy2'：上涨穿越时，对所有「已穿越待减」批次各卖出其买入量的一半（分步减仓）。
+   * - 'strategy1'（默认）：上涨穿越时一次性卖出栈顶批次的全部持仓（整批清仓，触发偏移 1 格）。
+   * - 'strategy2'：上涨穿越时，对所有「已穿越待减」批次各卖出其买入量的一半（分步减仓，触发偏移 1 格）。
+   * - 'strategy3'：与 strategy1 同为整批清仓，但触发档位改为「高两格」——在 level[i] 买入、须上穿 level[i+2] 时才整批卖出。
    */
-  gridStrategy?: 'strategy1' | 'strategy2';
+  gridStrategy?: 'strategy1' | 'strategy2' | 'strategy3';
 }
 
 /**

@@ -7,9 +7,10 @@
  * - 游标 + 虚拟卖出占位模型：维护一个"游标档位 cursorIdx"（最近一次操作发生的档位，含虚拟卖出）。
  *   每日用 [low, high] 连续判定穿越：
  *     · 上涨穿：high 触及/涨穿 cursorIdx 的上一档 levels[cursorIdx+1] → 在 levels[cursorIdx+1] 卖出；
- *       卖出采用"批次栈(LIFO)"：只卖最近买入的一批（先买先卖，价格最低者先出清），而非整仓清空，
- *       使每格买入能随价格回升逐格对应卖出；若此时真实持仓耗尽（批次栈为空）则记为"虚拟卖出"(virtual)
- *       仅占位，游标移到 cursorIdx+1。可连续上穿多档。
+ *       卖出采用"批次栈(LIFO)"：使每格买入能随价格回升逐格对应卖出；若此时真实持仓耗尽（批次栈为空）则记为"虚拟卖出"(virtual)
+ *       仅占位，游标移到 cursorIdx+1。可连续上穿多档。具体减仓比例由 gridStrategy 决定：
+ *         - 策略1（默认）：整批清仓，仅卖出栈顶（最近买入）那一批。
+ *         - 策略2：对所有"已穿越待减"批次各卖出其买入量的一半（分步减仓）。
  *     · 下跌穿：low 触及/跌穿 cursorIdx 的下一档 levels[cursorIdx-1] → 在 levels[cursorIdx-1] 真实买入，
  *       游标移到 cursorIdx-1。可连续下穿多档。
  *   虚拟卖出的作用是：空仓后价格继续沿原方向推进时，逐档记录占位，使后续反向穿越能按"最近一次操作档位"触发真实买入。
@@ -20,9 +21,9 @@
 import type {
   GridSimulationInput,
   GridSimulationOperation,
-  GridSimulationResult
-} from '../types';
-import type { KlineData } from '../types';
+  GridSimulationResult,
+  KlineData
+} from '../../shared/types';
 
 // A股最低买卖单位（1手=100股）
 const MIN_TRADE_UNIT = 100;
@@ -117,10 +118,16 @@ export function runGridSimulation(
   const operations: GridSimulationOperation[] = [];
   let cash = input.initialCapital;
   let holding = 0;
-  // 批次栈（LIFO）：记录每次买入的股数。网格交易每下跌一格买入一批（push），
+  // 批次栈（LIFO）：记录每次买入的股数、已卖股数与买入档位。网格交易每下跌一格买入一批（push），
   // 每回升一格只卖出最近买入、价格最低的那一批（pop），而不是整仓清空。
-  // 这是修复"上涨时把多格买入一起卖光"逻辑错误的关键：持仓 = sum(lots)。
-  const lots: number[] = [];
+  // 这是修复"上涨时把多格买入一起卖光"逻辑错误的关键：持仓 = sum(lots.total - lots.sold)。
+  // 策略2 需要按批次记录 sold 与 buyLevel，以在多次上涨穿越时分批减仓、并跨批次判定「已穿越待减」。
+  interface Lot {
+    total: number;
+    sold: number;
+    buyLevel: number;
+  }
+  const lots: Lot[] = [];
 
   if (levels.length === 0 || klines.length === 0) {
     return buildEmptyResult(cash, holding, klines);
@@ -150,7 +157,7 @@ export function runGridSimulation(
       if (cash >= amount + fee) {
         cash -= amount + fee;
         holding += shares;
-        lots.push(shares); // 底仓作为一个批次入栈
+        lots.push({ total: shares, sold: 0, buyLevel }); // 底仓作为一个批次入栈
         operations.push(buildOperation(klines[0].tradeDate, 'BUY', buyLevel, shares, fee, cash, holding));
       } else {
         // 资金不足则放弃建仓，游标回到 -1 表示空仓待跌
@@ -180,18 +187,45 @@ export function runGridSimulation(
     if (cursorIdx >= levelCount - 1) return false;
     if (high < levels[cursorIdx + 1] - 1e-9) return false;
     const sellLevel = levels[cursorIdx + 1];
-    if (lots.length > 0) {
-      // 有真实持仓：只卖出最近买入的那一批（LIFO 出栈），而不是整仓清空。
+    const strategy = input.gridStrategy ?? 'strategy1';
+    if (lots.length === 0) {
+      // 空仓无货可卖：记一笔虚拟卖出仅占位（不影响现金/持仓）
+      operations.push(buildOperation(date, 'SELL', sellLevel, 0, 0, cash, holding, true));
+    } else if (strategy === 'strategy1') {
+      // 策略1：只卖出最近买入的那一批（LIFO 整批出栈），而不是整仓清空。
       // 例：4.8 买入 1000 + 4.6 买入 1000，回升到 4.8 时只卖出 4.6 那一批 1000 股。
-      const soldShares = lots.pop() as number;
+      const lot = lots.pop() as Lot;
+      const soldShares = lot.total;
       holding -= soldShares;
       const amount = soldShares * sellLevel;
       const fee = calcFee(input, amount, true);
       cash += amount - fee;
       operations.push(buildOperation(date, 'SELL', sellLevel, soldShares, fee, cash, holding));
     } else {
-      // 空仓无货可卖：记一笔虚拟卖出仅占位（不影响现金/持仓）
-      operations.push(buildOperation(date, 'SELL', sellLevel, 0, 0, cash, holding, true));
+      // 策略2：对所有「已穿越待减」批次（买入档位低于本次卖出档位且尚未卖光）各减仓。
+      // 每批分两段：首次穿越卖 floorToLot(total/2)（向下取整到 100 股），之后再穿越则卖剩余 (total - sold) 全清；
+      // 例：4.2 买入 2000（已卖半剩 1000）+ 4.4 买入 2000，上穿 4.6 时两批各卖 1000（4.2 批清剩余、4.4 批首次半）。
+      let soldAny = false;
+      for (let i = lots.length - 1; i >= 0; i--) {
+        const lot = lots[i];
+        if (lot.buyLevel < sellLevel - 1e-9 && lot.sold < lot.total - 1e-9) {
+          // 首次穿越卖一半；之后穿越卖剩余全清（尾数兜底，保证单批股数守恒）。
+          const sellShares =
+            lot.sold === 0 ? floorToLot(lot.total / 2) : lot.total - lot.sold;
+          lot.sold += sellShares;
+          holding -= sellShares;
+          const amount = sellShares * sellLevel;
+          const fee = calcFee(input, amount, true);
+          cash += amount - fee;
+          operations.push(buildOperation(date, 'SELL', sellLevel, sellShares, fee, cash, holding));
+          soldAny = true;
+          if (lot.sold >= lot.total - 1e-9) lots.splice(i, 1); // 卖光则弹出
+        }
+      }
+      if (!soldAny) {
+        // 没有任何批次满足「已穿越待减」（如所有批次买入价都 >= sellLevel）：虚拟占位
+        operations.push(buildOperation(date, 'SELL', sellLevel, 0, 0, cash, holding, true));
+      }
     }
     cursorIdx += 1;
     return true;
@@ -209,7 +243,7 @@ export function runGridSimulation(
       if (cash >= amount + fee) {
         cash -= amount + fee;
         holding += shares;
-        lots.push(shares); // 买入一批入栈（LIFO，回升时先进先卖的最低批次）
+        lots.push({ total: shares, sold: 0, buyLevel }); // 买入一批入栈（LIFO，回升时先进先卖的最低批次）
         operations.push(buildOperation(date, 'BUY', buyLevel, shares, fee, cash, holding));
         cursorIdx -= 1;
         return true;
@@ -261,7 +295,7 @@ export function runGridSimulation(
           if (cash >= amount + fee) {
             cash -= amount + fee;
             holding += shares;
-            lots.push(shares); // 空仓归位买入也作为一个批次入栈
+            lots.push({ total: shares, sold: 0, buyLevel: lowest }); // 空仓归位买入也作为一个批次入栈
             cursorIdx = 0;
             operations.push(buildOperation(k.tradeDate, 'BUY', lowest, shares, fee, cash, holding));
           }

@@ -1,0 +1,19 @@
+npm warn exec The following package was not found and will be installed: vitest@4.1.11
+npm warn cleanup Failed to remove some directories [
+npm warn cleanup   [
+npm warn cleanup     'C:\\Users\\AI\\AppData\\Local\\npm-cache\\_npx\\69c381f8ad94b576\\node_modules\\.vitest-7xJG7EbJ',
+npm warn cleanup     Error: [safe-delete] 操作失败: OK C:\Users\AI\AppData\Local\npm-cache\_npx\69c381f8ad94b576\node_modules\.vitest-7xJG7EbJ
+npm warn cleanup         at trashViaBinary (C:\Users\AI\AppData\Local\Programs\CodeBuddy CN\resources\app\extensions\genie\out\vendor\shim\node-safe-delete-shim.cjs:321:15)
+npm warn cleanup         at trashItem (C:\Users\AI\AppData\Local\Programs\CodeBuddy CN\resources\app\extensions\genie\out\vendor\shim\node-safe-delete-shim.cjs:334:9)
+npm warn cleanup         at tryTrash (C:\Users\AI\AppData\Local\Programs\CodeBuddy CN\resources\app\extensions\genie\out\vendor\shim\node-safe-delete-shim.cjs:604:5)
+npm warn cleanup         at tryRm (C:\Users\AI\AppData\Local\Programs\CodeBuddy CN\resources\app\extensions\genie\out\vendor\shim\node-safe-delete-shim.cjs:775:5)
+npm warn cleanup         at wrappedPromisesRm (C:\Users\AI\AppData\Local\Programs\CodeBuddy CN\resources\app\extensions\genie\out\vendor\shim\node-safe-delete-shim.cjs:819:15)
+npm warn cleanup         at _rm (C:\Users\AI\AppData\Roaming\nvm\v22.20.0\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\reify.js:1250:25)
+npm warn cleanup         at [removeTrash] (C:\Users\AI\AppData\Roaming\nvm\v22.20.0\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\reify.js:1253:21)
+npm warn cleanup         at [reifyPackages] (C:\Users\AI\AppData\Roaming\nvm\v22.20.0\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\reify.js:340:29)
+npm warn cleanup         at async Arborist.reify (C:\Users\AI\AppData\Roaming\nvm\v22.20.0\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\reify.js:142:5)
+npm warn cleanup         at async exec (C:\Users\AI\AppData\Roaming\nvm\v22.20.0\node_modules\npm\node_modules\libnpmexec\lib\index.js:290:7)
+npm warn cleanup   ]
+npm warn cleanup ]
+'vitest' is not recognized as an internal or external command,
+operable program or batch file.

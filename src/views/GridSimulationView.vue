@@ -22,6 +22,7 @@ const form = reactive({
   lowerLimit: '',
   spacing: '',
   spacingType: 'fixed' as GridSpacingType,
+  gridStrategy: 'strategy1' as 'strategy1' | 'strategy2',
   sharesPerGrid: '', // 留空表示按 初始资金/档位数/触发价 自动估算
   // 费用（可选，带默认值）
   commissionRate: '0.00025',
@@ -88,6 +89,7 @@ const buildInput = (): GridSimulationInput => {
     lowerLimit: parseFloat(form.lowerLimit),
     spacing: parseFloat(form.spacing),
     spacingType: form.spacingType,
+    gridStrategy: form.gridStrategy,
     sharesPerGrid: sharesRaw === '' ? null : parseFloat(sharesRaw),
     commissionRate: parseFloat(form.commissionRate) || 0.00025,
     minFee: parseFloat(form.minFee) || 5,
@@ -172,6 +174,14 @@ void totalAssetsSeries;
           </select>
         </div>
         <div class="form-item">
+          <label>网格策略</label>
+          <select v-model="form.gridStrategy">
+            <option value="strategy1">网格策略1（整批清仓）</option>
+            <option value="strategy2">网格策略2（分步减仓）</option>
+          </select>
+          <span class="hint">策略2：每次上涨穿越，所有已穿越批次各卖买入量的一半</span>
+        </div>
+        <div class="form-item">
           <label>每格股数(留空自动)</label>
           <input v-model="form.sharesPerGrid" type="number" step="100" placeholder="留空=自动估算" />
           <span class="hint">留空时按「初始资金 ÷ 档位数 ÷ 触发价」估算并取整到100股</span>
@@ -248,6 +258,7 @@ void totalAssetsSeries;
             <li>年化收益率按自然日口径（含周末/停牌日）</li>
             <li>首版不含分红：不生成分红记录、不计入现金</li>
             <li>使用不复权数据，忽略除权影响（除权跳变当作普通网格穿越）</li>
+            <li>当前策略：{{ form.gridStrategy === 'strategy2' ? '网格策略2（分步减仓）' : '网格策略1（整批清仓）' }}</li>
           </ul>
         </div>
       </div>

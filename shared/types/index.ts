@@ -807,6 +807,12 @@ export interface GridSimulationInput {
   stampTaxRate: number;
   /** 每股年股息（首版预留，默认 0，算法忽略） */
   dividendPerShare: number;
+  /**
+   * 网格卖出策略。
+   * - 'strategy1'（默认）：上涨穿越时一次性卖出栈顶批次的全部持仓（整批清仓）。
+   * - 'strategy2'：上涨穿越时，对所有「已穿越待减」批次各卖出其买入量的一半（分步减仓）。
+   */
+  gridStrategy?: 'strategy1' | 'strategy2';
 }
 
 /**

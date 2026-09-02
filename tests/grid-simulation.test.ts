@@ -160,3 +160,76 @@ describe('策略扩展（开闭原则 + 防崩坏）', () => {
     expect(sells.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('网格策略4（半仓平衡，按日收盘评估、不依赖网格）', () => {
+  // 用高价股（price≈100）使策略4 能自然触发「建仓 → 上涨减仓 / 下跌低吸」；
+  // 初始资金 1,000,000，关闭手续费。策略4 忽略 spacing/lowerLimit/upperLimit，仅按日收盘再平衡。
+  const strat4Input = (overrides: Partial<GridSimulationInput> = {}): GridSimulationInput =>
+    baseInput({ gridStrategy: 'strategy4', ...overrides });
+
+  it('每个交易日最多一笔操作（按日评估，不依赖网格穿越）', () => {
+    const klines = [
+      flat('2024-01-01', 100),
+      flat('2024-01-02', 110),
+      flat('2024-01-03', 90),
+      flat('2024-01-04', 105),
+    ];
+    const res = runGridSimulation(strat4Input(), klines);
+    const byDate = new Map<string, number>();
+    for (const o of res.operations) byDate.set(o.date, (byDate.get(o.date) ?? 0) + 1);
+    for (const count of byDate.values()) expect(count).toBeLessThanOrEqual(1);
+  });
+
+  it('持仓不足时按目标差额买入（首日建底仓）', () => {
+    const klines = [flat('2024-01-01', 100)];
+    const res = runGridSimulation(strat4Input(), klines);
+    const buys = res.operations.filter((o) => o.type === 'BUY');
+    expect(buys).toHaveLength(1);
+    // 目标持仓金额 = 可用资金/2 = 500,000；目标股数 = floor(500000/100) = 5000
+    expect(buys[0].shares).toBe(5000);
+    expect(res.finalHolding).toBe(5000);
+    expect(res.finalCash).toBe(1_000_000 - 5000 * 100); // 500,000
+  });
+
+  it('持仓过多时按目标差额卖出（高价股上涨触发减仓）', () => {
+    // 建仓到半仓后，价格再涨 r 时偏差 = r/(2+r)；需超过 ±5% 阈值才触发再平衡，
+    // 故需 r > 10.5%。这里用 +30%（100→130，偏差≈13%）确保稳定触发减仓。
+    const klines = [flat('2024-01-01', 100), flat('2024-01-02', 130)];
+    const res = runGridSimulation(strat4Input(), klines);
+    const day2Sells = res.operations.filter((o) => o.type === 'SELL' && o.date === '2024-01-02');
+    expect(day2Sells.length).toBe(1);
+    expect(day2Sells[0].shares).toBeGreaterThan(0);
+    // 期末总资产自洽：cash + 持仓 × 收盘价
+    expect(res.finalTotalAssets).toBeCloseTo(res.finalCash + res.finalHolding * 130, 6);
+    // 自洽：期末持仓 = 累计买入 − 累计卖出
+    const totalBuy = res.operations.filter((o) => o.type === 'BUY').reduce((s, o) => s + o.shares, 0);
+    const totalSell = res.operations.filter((o) => o.type === 'SELL').reduce((s, o) => s + o.shares, 0);
+    expect(res.finalHolding).toBe(totalBuy - totalSell);
+  });
+
+  it('不产生 virtual 虚拟卖出记录（直接建仓而非占位）', () => {
+    const klines = [flat('2024-01-01', 100), flat('2024-01-02', 110), flat('2024-01-03', 90)];
+    const res = runGridSimulation(strat4Input(), klines);
+    // 策略4 不应产生任何 virtual=true 记录
+    expect(res.operations.some((o) => (o as { virtual?: boolean }).virtual === true)).toBe(false);
+    expect(res.operations.some((o) => o.type === 'BUY')).toBe(true);
+  });
+
+  it('策略4 与策略1/2/3 互不干扰（其余策略行为不变）', () => {
+    // 策略1 用小波动数据验证固定批次卖出逻辑不变；
+    // 策略4 用 +14.3%（4.2→4.8）的大波动数据：建仓后偏差 = r/(2+r) ≈ 6.7% > ±5% 阈值，
+    // 确保次日触发按动态差额减仓。
+    const s1Klines = [flat('2024-01-01', 4.2), flat('2024-01-02', 4.4)];
+    const s4Klines = [flat('2024-01-01', 4.2), flat('2024-01-02', 4.8)];
+    const s1 = runGridSimulation(baseInput({ gridStrategy: 'strategy1' }), s1Klines);
+    const s4 = runGridSimulation(strat4Input(), s4Klines);
+    const s1Sell = s1.operations.find((o) => o.type === 'SELL' && !(o as { virtual?: boolean }).virtual)!;
+    // 策略1 仍按整批清仓逻辑在 4.4 卖出 2000 股（固定批次，不受平衡算法影响）
+    expect(s1Sell.shares).toBe(2000);
+    // 策略4 走半仓平衡：首日建仓后次日上涨超阈值，按动态差额减仓（非固定 2000 股），证明两者逻辑相互独立
+    const s4Sells = s4.operations.filter((o) => o.type === 'SELL');
+    expect(s4Sells.length).toBeGreaterThanOrEqual(1);
+    expect(s4Sells[0].shares).not.toBe(2000);
+    expect(s4.finalTotalAssets).toBeCloseTo(s4.finalCash + s4.finalHolding * 4.8, 6);
+  });
+});

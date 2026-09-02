@@ -41,6 +41,7 @@
         <div class="stat-card">
           <div class="stat-label">期初持仓市值</div>
           <div class="stat-value">¥{{ formatAmount(store.profitStatistics.openingHoldingsValue) }}</div>
+          <div class="stat-sub">持仓 {{ formatShares(store.profitStatistics.openingHoldingsCount) }} 股</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">期末账户余额</div>
@@ -49,6 +50,7 @@
         <div class="stat-card">
           <div class="stat-label">期末持仓市值</div>
           <div class="stat-value">¥{{ formatAmount(store.profitStatistics.closingHoldingsValue) }}</div>
+          <div class="stat-sub">持仓 {{ formatShares(store.profitStatistics.closingHoldingsCount) }} 股</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">转入总额</div>
@@ -216,6 +218,15 @@ onMounted(async () => {
  */
 const formatAmount = (amount: number): string => {
   return amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+
+/**
+ * 格式化持仓股数为千分位整数显示
+ * @param count 股数数值
+ * @returns 格式化后的股数字符串
+ */
+const formatShares = (count: number): string => {
+  return Math.round(count).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 };
 
 /**
@@ -411,6 +422,12 @@ const getProfitClass = (profit: number): string => {
   font-size: 11px;
   color: #9ca3af;
   margin-top: 6px;
+}
+
+.stat-sub {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 4px;
 }
 
 .error-message {

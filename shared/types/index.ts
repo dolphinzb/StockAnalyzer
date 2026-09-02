@@ -473,6 +473,10 @@ export interface ProfitStatistics {
   openingHoldingsValue: number;
   /** 期末持仓市值（来自kline_data各持股收盘价×持仓数量之和） */
   closingHoldingsValue: number;
+  /** 期初持仓股数（各持股holding_count之和，口径与持仓市值一致：仅统计有K线数据的持股） */
+  openingHoldingsCount: number;
+  /** 期末持仓股数（各持股holding_count之和，口径与持仓市值一致） */
+  closingHoldingsCount: number;
   /** 转入总金额（来自transfer_records表IN类型amount之和） */
   totalIn: number;
   /** 转出总金额（来自transfer_records表OUT类型amount之和） */
@@ -808,12 +812,14 @@ export interface GridSimulationInput {
   /** 每股年股息（首版预留，默认 0，算法忽略） */
   dividendPerShare: number;
   /**
-   * 网格卖出策略。
+   * 网格仿真策略。
    * - 'strategy1'（默认）：上涨穿越时一次性卖出栈顶批次的全部持仓（整批清仓，触发偏移 1 格）。
    * - 'strategy2'：上涨穿越时，对所有「已穿越待减」批次各卖出其买入量的一半（分步减仓，触发偏移 1 格）。
    * - 'strategy3'：与 strategy1 同为整批清仓，但触发档位改为「高两格」——在 level[i] 买入、须上穿 level[i+2] 时才整批卖出。
+   * - 'strategy4'（半仓平衡）：不依赖固定批次机械买卖，而是基于「持仓市值与现金偏差」动态买卖——目标持仓金额 = 可用资金 / 2，
+   *   偏差超过 ±10% 时按「目标持仓股数 − 当前持仓股数」买入/卖出（取整到 100 股），否则不操作；沿用网格档位作为平衡再评估检查点。
    */
-  gridStrategy?: 'strategy1' | 'strategy2' | 'strategy3';
+  gridStrategy?: 'strategy1' | 'strategy2' | 'strategy3' | 'strategy4';
 }
 
 /**

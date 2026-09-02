@@ -99,6 +99,15 @@ export interface GridSimStrategy {
   canBuy(ctx: GridSimBuyContext): boolean;
   /** 首日底仓建仓的游标定位（默认 = 现有「向上最近档位」逻辑） */
   initCursorIdx(levels: number[], firstClose: number): number;
+<<<<<<< HEAD
+=======
+  /**
+   * 逃生舱（设计文档预留的「极端范式」接入点）：若提供此钩子，runGridSimulation 将完全委托其接管内部循环，
+   * 其余钩子（sellOffset/mode/sellQuantity/...）全部忽略。用于买卖逻辑与「固定档位 LIFO 批次栈」模型
+   * 彻底不同的策略，例如不依赖网格、按日收盘做半仓平衡的策略（strategy4）。
+   */
+  customRun?(input: GridSimulationInput, klines: KlineData[]): GridSimulationResult;
+>>>>>>> dbdfa69d826abee8a182043175a05595187b9a49
 }
 
 /** canBuy 钩子的上下文 */
@@ -137,7 +146,7 @@ const STRATEGY1: GridSimStrategy = {
  * 网格策略注册表。新增策略只需在此以 { ...STRATEGY1, ...差异 } 注册，
  * 并在 shared/types GridSimulationInput.gridStrategy 联合类型追加字面量即可，主流程零改动。
  */
-const GRID_STRATEGIES: Record<'strategy1' | 'strategy2' | 'strategy3', GridSimStrategy> = {
+const GRID_STRATEGIES: Record<'strategy1' | 'strategy2' | 'strategy3' | 'strategy4', GridSimStrategy> = {
   strategy1: STRATEGY1,
   strategy2: {
     ...STRATEGY1,
@@ -147,10 +156,135 @@ const GRID_STRATEGIES: Record<'strategy1' | 'strategy2' | 'strategy3', GridSimSt
   strategy3: {
     ...STRATEGY1,
     sellOffset: 2 // 仅改触发偏移为两格，卖出模式与买入逻辑全部继承 strategy1
+  },
+  // strategy4（半仓平衡）：不依赖网格，按日收盘做半仓再平衡，买卖语义与「固定档位 LIFO 批次栈」模型本质不同，
+  // 故走 customRun 逃生舱，runGridSimulation 取到 customRun 后直接委托、忽略其余钩子，主流程零分派改动。
+  strategy4: {
+    ...STRATEGY1,
+    customRun: runBalanceGridSimulation
   }
-  // 扩展示例（证明买入逻辑不同也能接入，主流程零改动）：
-  // strategy4: { ...STRATEGY1, resolveShares: (i, n, p) => floorToLot(resolveShares(i, n, p) * 1.5), canBuy: (c) => c.downStreak >= 2 }
 };
+
+/**
+ * 半仓平衡策略（strategy4）的仿真实现，通过 GridSimStrategy.customRun 逃生舱接入。
+ * 该策略不依赖网格：没有网格间距、没有固定档位、不维护 LIFO 批次栈、不生成 virtual 虚拟卖出记录。
+ *
+ * 算法语义对齐 GridView 的 computeRebalance：目标持仓金额 = 可用资金 / 2，
+ * 偏差 = (可用资金 − 持仓市值) / 可用资金；仅当 |偏差| 超过阈值（默认 ±5%）才触发买卖：
+ *   · 偏差 > +阈值（持仓不足）→ 买入「目标持仓股数 − 当前持仓股数」；
+ *   · 偏差 < −阈值（持仓过多）→ 卖出「当前持仓股数 − 目标持仓股数」。
+ * 其中 可用资金 = 现金 + 持仓市值（持仓市值 = 当前持仓 × 当日收盘价）。
+ *
+ * 评估节奏：每一天以当日收盘价做一次半仓再平衡（与 GridView「每次价格变动后检查一次」的精神一致，
+ * 不引入网格密度概念）。同一交易日不会产生多次买卖。
+ */
+const BALANCE_THRESHOLD = 0.05; // 平衡偏差阈值 ±5%
+
+function runBalanceGridSimulation(
+  input: GridSimulationInput,
+  klines: KlineData[]
+): GridSimulationResult {
+  // 半仓平衡策略不依赖网格：没有网格间距、没有固定档位、没有批次栈。
+  // 每一天直接以当日收盘价做一次「半仓再平衡」评估（与 GridView 的 computeRebalance 同构）。
+
+  const operations: GridSimulationOperation[] = [];
+  let cash = input.initialCapital;
+  let holding = 0;
+
+  if (klines.length === 0) {
+    return buildEmptyResult(cash, holding, klines);
+  }
+
+  let peakTotalAssets = cash;
+  let maxDrawdown = 0;
+
+  /**
+   * 在给定价格处进行一次半仓平衡再评估（纯函数式地更新 cash/holding 并产出操作记录）。
+   * 偏差 = |持仓市值 - 现金| / 总资产；门槛：|偏差| 未超过阈值（BALANCE_THRESHOLD，±5%）则不操作。
+   * 方向：市值 > 现金（偏差>0）→ 持仓过多卖出；市值 < 现金（偏差<0）→ 持仓不足买入。
+   */
+  const rebalanceAt = (date: string, price: number): void => {
+    const holdingValue = holding * price; // 持仓市值
+    const totalAssets = cash + holdingValue; // 总资产 = 现金 + 持仓市值
+    if (totalAssets <= 0) return;
+
+    const targetValue = totalAssets / 2; // 目标持仓金额 = 总资产 / 2
+    const deviation = (holdingValue - cash) / totalAssets; // 偏差 = (持仓市值 - 现金) / 总资产
+
+    // 门槛：|偏差| 未超过阈值（±5%）则不操作
+    if (Math.abs(deviation) <= BALANCE_THRESHOLD) return;
+
+    const targetShares = Math.floor(targetValue / price);
+    if (deviation < 0) {
+      // 持仓不足：买入到目标持仓股数
+      let buyShares = floorToLot(targetShares - holding);
+      if (buyShares <= 0) return;
+      const amount = buyShares * price;
+      const fee = calcFee(input, amount, false);
+      if (cash < amount + fee) {
+        // 受现金约束：能买多少买多少（仍取整到 100 股）
+        const affordable = floorToLot((cash - fee) / price);
+        if (affordable <= 0) return;
+        buyShares = affordable;
+      }
+      const realAmount = buyShares * price;
+      const realFee = calcFee(input, realAmount, false);
+      cash -= realAmount + realFee;
+      holding += buyShares;
+      operations.push(buildOperation(date, 'BUY', price, buyShares, realFee, cash, holding));
+    } else if (deviation > 0) {
+      // 持仓过多：卖出到目标持仓股数
+      let sellShares = floorToLot(holding - targetShares);
+      if (sellShares <= 0) return;
+      if (sellShares > holding) sellShares = holding;
+      const amount = sellShares * price;
+      const fee = calcFee(input, amount, true);
+      cash += amount - fee;
+      holding -= sellShares;
+      operations.push(buildOperation(date, 'SELL', price, sellShares, fee, cash, holding));
+    }
+  };
+
+  // 逐日（含首日）以收盘价做一次半仓再平衡。
+  for (let di = 0; di < klines.length; di++) {
+    const k = klines[di];
+    const close = k.close;
+    if (close == null) continue;
+    rebalanceAt(k.tradeDate, close);
+
+    const totalAssetsNow = cash + holding * close;
+    if (totalAssetsNow > peakTotalAssets) peakTotalAssets = totalAssetsNow;
+    if (peakTotalAssets > 0) {
+      const drawdown = (peakTotalAssets - totalAssetsNow) / peakTotalAssets;
+      if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+    }
+  }
+
+  // 期末指标（与 runGridSimulation 同构）
+  const finalKline = klines[klines.length - 1];
+  const finalPrice = finalKline.close ?? 0;
+  const finalTotalAssets = cash + holding * finalPrice;
+  const totalProfit = finalTotalAssets - input.initialCapital;
+  const totalProfitRate = input.initialCapital > 0 ? (totalProfit / input.initialCapital) * 100 : 0;
+
+  const start = new Date(input.startDate).getTime();
+  const end = new Date(finalKline.tradeDate).getTime();
+  const days = Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)));
+  const annualizedReturn = totalProfitRate > -100 ? (Math.pow(1 + totalProfitRate / 100, 365 / days) - 1) * 100 : 0;
+
+  return {
+    operations,
+    finalCash: cash,
+    finalHolding: holding,
+    finalPrice,
+    finalTotalAssets,
+    totalProfit,
+    totalProfitRate,
+    annualizedReturn,
+    maxDrawdown: maxDrawdown * 100,
+    tradeCount: operations.length
+  };
+}
 
 
 /**
@@ -185,6 +319,18 @@ export function runGridSimulation(
   input: GridSimulationInput,
   klines: KlineData[]
 ): GridSimulationResult {
+  // 取仿真策略对象：未声明的钩子经 { ...STRATEGY1, ...覆盖 } 合并后自动回退到 strategy1 默认实现。
+  const key = input.gridStrategy ?? 'strategy1';
+  const strat: GridSimStrategy = { ...STRATEGY1, ...(GRID_STRATEGIES[key] ?? {}) };
+
+  // 逃生舱：strategy4（半仓平衡）等「固定档位 LIFO 批次栈」模型无法表达的极端范式，直接委托其接管。
+  // 必须在 levels 判断之前委托：strategy4 不依赖网格档位（UI 隐藏了 spacing/lowerLimit/upperLimit，
+  // buildInput 对 strategy4 传入 lowerLimit=upperLimit=0，generateGridLevels 会返回空数组），
+  // 若先做 levels.length===0 判断会被提前拦截而永远到不了这里，导致 0 笔成交。
+  if (strat.customRun) {
+    return strat.customRun(input, klines);
+  }
+
   const levels = generateGridLevels(input);
   const levelCount = levels.length;
 

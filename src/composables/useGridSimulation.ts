@@ -81,6 +81,210 @@ function floorToLot(shares: number): number {
 }
 
 /**
+ * 仿真策略对象（组合式钩子）。
+ * 所有钩子的默认实现均为 strategy1 的现有逻辑；每个策略只声明与 strategy1 不同的钩子，
+ * 未声明钩子经 { ...STRATEGY1, ...覆盖 } 合并自动回退到 strategy1（见 GRID_STRATEGIES）。
+ * 这样即便未来新增「买入逻辑也不同」的策略，也只需覆写对应钩子，主流程零改动（开闭原则 + 防崩坏）。
+ */
+export interface GridSimStrategy {
+  /** 整批卖出型触发所需的档位偏移：买入档位 buyLevel 需 + sellOffset 才满足触发 */
+  sellOffset: number;
+  /** 卖出数量模式：'full' 栈顶整批弹出；'half' 遍历待减批次逐批减半 */
+  mode: 'full' | 'half';
+  /** 单批次本次应卖股数（'full' 返回 lot.total；'half' 首穿 floorToLot(total/2)、再穿卖剩余） */
+  sellQuantity(lot: Lot): number;
+  /** 买入股数计算（默认 = 现有 resolveShares：固定股数 / 初始资金均摊） */
+  resolveShares(input: GridSimulationInput, levelCount: number, triggerPrice: number): number;
+  /** 下跌穿越时是否允许建仓的前置条件（默认无条件买入） */
+  canBuy(ctx: GridSimBuyContext): boolean;
+  /** 首日底仓建仓的游标定位（默认 = 现有「向上最近档位」逻辑） */
+  initCursorIdx(levels: number[], firstClose: number): number;
+  /**
+   * 逃生舱（设计文档预留的「极端范式」接入点）：若提供此钩子，runGridSimulation 将完全委托其接管内部循环，
+   * 其余钩子（sellOffset/mode/sellQuantity/...）全部忽略。用于买卖逻辑与「固定档位 LIFO 批次栈」模型
+   * 彻底不同的策略，例如不依赖网格、按日收盘做半仓平衡的策略（strategy4）。
+   */
+  customRun?(input: GridSimulationInput, klines: KlineData[]): GridSimulationResult;
+}
+
+/** canBuy 钩子的上下文 */
+interface GridSimBuyContext {
+  input: GridSimulationInput;
+  level: number;
+  cursorIdx: number;
+  lots: Lot[];
+  /** 截至本次下跌穿越的连续下穿次数（用于如「连跌两格才加仓」之类条件） */
+  downStreak: number;
+}
+
+/** 批次（LIFO 栈元素） */
+interface Lot {
+  total: number;
+  sold: number;
+  buyLevel: number;
+}
+
+// 基准策略：全部采用现 strategy1 逻辑
+const STRATEGY1: GridSimStrategy = {
+  sellOffset: 1,
+  mode: 'full',
+  sellQuantity: (l) => l.total,
+  resolveShares: (input, levelCount, price) => resolveShares(input, levelCount, price),
+  canBuy: () => true,
+  initCursorIdx: (levels, firstClose) => {
+    if (firstClose > levels[levels.length - 1] + 1e-9) return -1; // 高于上限，暂不建仓
+    if (firstClose < levels[0] - 1e-9) return 0; // 低于下限，以最低档建仓
+    const idx = levels.findIndex((lv) => lv >= firstClose - 1e-9);
+    return idx === -1 ? levels.length - 1 : idx;
+  }
+};
+
+/**
+ * 网格策略注册表。新增策略只需在此以 { ...STRATEGY1, ...差异 } 注册，
+ * 并在 shared/types GridSimulationInput.gridStrategy 联合类型追加字面量即可，主流程零改动。
+ */
+const GRID_STRATEGIES: Record<'strategy1' | 'strategy2' | 'strategy3' | 'strategy4', GridSimStrategy> = {
+  strategy1: STRATEGY1,
+  strategy2: {
+    ...STRATEGY1,
+    mode: 'half',
+    sellQuantity: (l) => (l.sold === 0 ? floorToLot(l.total / 2) : l.total - l.sold)
+  },
+  strategy3: {
+    ...STRATEGY1,
+    sellOffset: 2 // 仅改触发偏移为两格，卖出模式与买入逻辑全部继承 strategy1
+  },
+  // strategy4（半仓平衡）：不依赖网格，按日收盘做半仓再平衡，买卖语义与「固定档位 LIFO 批次栈」模型本质不同，
+  // 故走 customRun 逃生舱，runGridSimulation 取到 customRun 后直接委托、忽略其余钩子，主流程零分派改动。
+  strategy4: {
+    ...STRATEGY1,
+    customRun: runBalanceGridSimulation
+  }
+};
+
+/**
+ * 半仓平衡策略（strategy4）的仿真实现，通过 GridSimStrategy.customRun 逃生舱接入。
+ * 该策略不依赖网格：没有网格间距、没有固定档位、不维护 LIFO 批次栈、不生成 virtual 虚拟卖出记录。
+ *
+ * 算法语义对齐 GridView 的 computeRebalance：目标持仓金额 = 可用资金 / 2，
+ * 偏差 = (可用资金 − 持仓市值) / 可用资金；仅当 |偏差| 超过阈值（默认 ±5%）才触发买卖：
+ *   · 偏差 > +阈值（持仓不足）→ 买入「目标持仓股数 − 当前持仓股数」；
+ *   · 偏差 < −阈值（持仓过多）→ 卖出「当前持仓股数 − 目标持仓股数」。
+ * 其中 可用资金 = 现金 + 持仓市值（持仓市值 = 当前持仓 × 当日收盘价）。
+ *
+ * 评估节奏：每一天以当日收盘价做一次半仓再平衡（与 GridView「每次价格变动后检查一次」的精神一致，
+ * 不引入网格密度概念）。同一交易日不会产生多次买卖。
+ */
+const BALANCE_THRESHOLD = 0.05; // 平衡偏差阈值 ±5%
+
+function runBalanceGridSimulation(
+  input: GridSimulationInput,
+  klines: KlineData[]
+): GridSimulationResult {
+  // 半仓平衡策略不依赖网格：没有网格间距、没有固定档位、没有批次栈。
+  // 每一天直接以当日收盘价做一次「半仓再平衡」评估（与 GridView 的 computeRebalance 同构）。
+
+  const operations: GridSimulationOperation[] = [];
+  let cash = input.initialCapital;
+  let holding = 0;
+
+  if (klines.length === 0) {
+    return buildEmptyResult(cash, holding, klines);
+  }
+
+  let peakTotalAssets = cash;
+  let maxDrawdown = 0;
+
+  /**
+   * 在给定价格处进行一次半仓平衡再评估（纯函数式地更新 cash/holding 并产出操作记录）。
+   * 偏差 = |持仓市值 - 现金| / 总资产；门槛：|偏差| 未超过阈值（BALANCE_THRESHOLD，±5%）则不操作。
+   * 方向：市值 > 现金（偏差>0）→ 持仓过多卖出；市值 < 现金（偏差<0）→ 持仓不足买入。
+   */
+  const rebalanceAt = (date: string, price: number): void => {
+    const holdingValue = holding * price; // 持仓市值
+    const totalAssets = cash + holdingValue; // 总资产 = 现金 + 持仓市值
+    if (totalAssets <= 0) return;
+
+    const targetValue = totalAssets / 2; // 目标持仓金额 = 总资产 / 2
+    const deviation = (holdingValue - cash) / totalAssets; // 偏差 = (持仓市值 - 现金) / 总资产
+
+    // 门槛：|偏差| 未超过阈值（±5%）则不操作
+    if (Math.abs(deviation) <= BALANCE_THRESHOLD) return;
+
+    const targetShares = Math.floor(targetValue / price);
+    if (deviation < 0) {
+      // 持仓不足：买入到目标持仓股数
+      let buyShares = floorToLot(targetShares - holding);
+      if (buyShares <= 0) return;
+      const amount = buyShares * price;
+      const fee = calcFee(input, amount, false);
+      if (cash < amount + fee) {
+        // 受现金约束：能买多少买多少（仍取整到 100 股）
+        const affordable = floorToLot((cash - fee) / price);
+        if (affordable <= 0) return;
+        buyShares = affordable;
+      }
+      const realAmount = buyShares * price;
+      const realFee = calcFee(input, realAmount, false);
+      cash -= realAmount + realFee;
+      holding += buyShares;
+      operations.push(buildOperation(date, 'BUY', price, buyShares, realFee, cash, holding));
+    } else if (deviation > 0) {
+      // 持仓过多：卖出到目标持仓股数
+      let sellShares = floorToLot(holding - targetShares);
+      if (sellShares <= 0) return;
+      if (sellShares > holding) sellShares = holding;
+      const amount = sellShares * price;
+      const fee = calcFee(input, amount, true);
+      cash += amount - fee;
+      holding -= sellShares;
+      operations.push(buildOperation(date, 'SELL', price, sellShares, fee, cash, holding));
+    }
+  };
+
+  // 逐日（含首日）以收盘价做一次半仓再平衡。
+  for (let di = 0; di < klines.length; di++) {
+    const k = klines[di];
+    const close = k.close;
+    if (close == null) continue;
+    rebalanceAt(k.tradeDate, close);
+
+    const totalAssetsNow = cash + holding * close;
+    if (totalAssetsNow > peakTotalAssets) peakTotalAssets = totalAssetsNow;
+    if (peakTotalAssets > 0) {
+      const drawdown = (peakTotalAssets - totalAssetsNow) / peakTotalAssets;
+      if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+    }
+  }
+
+  // 期末指标（与 runGridSimulation 同构）
+  const finalKline = klines[klines.length - 1];
+  const finalPrice = finalKline.close ?? 0;
+  const finalTotalAssets = cash + holding * finalPrice;
+  const totalProfit = finalTotalAssets - input.initialCapital;
+  const totalProfitRate = input.initialCapital > 0 ? (totalProfit / input.initialCapital) * 100 : 0;
+
+  const start = new Date(input.startDate).getTime();
+  const end = new Date(finalKline.tradeDate).getTime();
+  const days = Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)));
+  const annualizedReturn = totalProfitRate > -100 ? (Math.pow(1 + totalProfitRate / 100, 365 / days) - 1) * 100 : 0;
+
+  return {
+    operations,
+    finalCash: cash,
+    finalHolding: holding,
+    finalPrice,
+    finalTotalAssets,
+    totalProfit,
+    totalProfitRate,
+    annualizedReturn,
+    maxDrawdown: maxDrawdown * 100,
+    tradeCount: operations.length
+  };
+}
+
+
+/**
  * 运行网格仿真
  * @param input 仿真参数
  * @param klines 不复权日 K 数据（按 trade_date 升序）
@@ -112,6 +316,18 @@ export function runGridSimulation(
   input: GridSimulationInput,
   klines: KlineData[]
 ): GridSimulationResult {
+  // 取仿真策略对象：未声明的钩子经 { ...STRATEGY1, ...覆盖 } 合并后自动回退到 strategy1 默认实现。
+  const key = input.gridStrategy ?? 'strategy1';
+  const strat: GridSimStrategy = { ...STRATEGY1, ...(GRID_STRATEGIES[key] ?? {}) };
+
+  // 逃生舱：strategy4（半仓平衡）等「固定档位 LIFO 批次栈」模型无法表达的极端范式，直接委托其接管。
+  // 必须在 levels 判断之前委托：strategy4 不依赖网格档位（UI 隐藏了 spacing/lowerLimit/upperLimit，
+  // buildInput 对 strategy4 传入 lowerLimit=upperLimit=0，generateGridLevels 会返回空数组），
+  // 若先做 levels.length===0 判断会被提前拦截而永远到不了这里，导致 0 笔成交。
+  if (strat.customRun) {
+    return strat.customRun(input, klines);
+  }
+
   const levels = generateGridLevels(input);
   const levelCount = levels.length;
 
@@ -122,11 +338,6 @@ export function runGridSimulation(
   // 每回升一格只卖出最近买入、价格最低的那一批（pop），而不是整仓清空。
   // 这是修复"上涨时把多格买入一起卖光"逻辑错误的关键：持仓 = sum(lots.total - lots.sold)。
   // 策略2 需要按批次记录 sold 与 buyLevel，以在多次上涨穿越时分批减仓、并跨批次判定「已穿越待减」。
-  interface Lot {
-    total: number;
-    sold: number;
-    buyLevel: number;
-  }
   const lots: Lot[] = [];
 
   if (levels.length === 0 || klines.length === 0) {
@@ -135,22 +346,13 @@ export function runGridSimulation(
 
   const firstClose = klines[0].close ?? 0;
 
-  // 初始底仓：取首个收盘价向上最近档位（最小 lv >= firstClose）。
-  // 4.32 → 4.4；高于上限则不建仓（等待下跌），低于下限则在最低档建仓。
-  let cursorIdx: number;
-  if (firstClose > levels[levels.length - 1] + 1e-9) {
-    cursorIdx = -1; // 高于上限，暂不建仓（游标置为 -1，等待下跌穿越）
-  } else if (firstClose < levels[0] - 1e-9) {
-    cursorIdx = 0; // 低于下限，以最低档建仓
-  } else {
-    cursorIdx = levels.findIndex((lv) => lv >= firstClose - 1e-9);
-    if (cursorIdx === -1) cursorIdx = levels.length - 1;
-  }
+  // 初始底仓游标：由策略钩子 initCursorIdx 决定（默认 = 现有「向上最近档位」逻辑）。
+  let cursorIdx = strat.initCursorIdx(levels, firstClose);
 
-  // 首日底仓买入（以向上最近档位值成交）；游标指向该档位。
+  // 首日底仓买入（以游标档位值成交）；游标指向该档位。
   if (cursorIdx !== -1) {
     const buyLevel = levels[cursorIdx];
-    const shares = resolveShares(input, levelCount, buyLevel);
+    const shares = strat.resolveShares(input, levelCount, buyLevel);
     if (shares > 0 && buyLevel >= input.lowerLimit - 1e-9) {
       const amount = shares * buyLevel;
       const fee = calcFee(input, amount, false);
@@ -167,6 +369,9 @@ export function runGridSimulation(
       cursorIdx = -1;
     }
   }
+
+  // 连续下穿计数（用于 canBuy 钩子的 downStreak 上下文；主循环每根 K 线重置）
+  let downStreak = 0;
 
   let peakTotalAssets = cash; // 用于最大回撤
   let maxDrawdown = 0;
@@ -187,31 +392,34 @@ export function runGridSimulation(
     if (cursorIdx >= levelCount - 1) return false;
     if (high < levels[cursorIdx + 1] - 1e-9) return false;
     const sellLevel = levels[cursorIdx + 1];
-    const strategy = input.gridStrategy ?? 'strategy1';
     if (lots.length === 0) {
       // 空仓无货可卖：记一笔虚拟卖出仅占位（不影响现金/持仓）
       operations.push(buildOperation(date, 'SELL', sellLevel, 0, 0, cash, holding, true));
-    } else if (strategy === 'strategy1') {
-      // 策略1：只卖出最近买入的那一批（LIFO 整批出栈），而不是整仓清空。
-      // 例：4.8 买入 1000 + 4.6 买入 1000，回升到 4.8 时只卖出 4.6 那一批 1000 股。
-      const lot = lots.pop() as Lot;
-      const soldShares = lot.total;
-      holding -= soldShares;
-      const amount = soldShares * sellLevel;
-      const fee = calcFee(input, amount, true);
-      cash += amount - fee;
-      operations.push(buildOperation(date, 'SELL', sellLevel, soldShares, fee, cash, holding));
+    } else if (strat.mode === 'full') {
+      // 整批卖出型（strategy1/3）：仅当栈顶批次的买入档位已上穿 sellOffset 格才整批弹出。
+      // sellOffset=1（strategy1）→ 上穿相邻上一档即卖；sellOffset=2（strategy3）→ 须上穿高两档才卖。
+      // 注意：sellOffset 是「档位下标偏移」而非价格偏移，故用 buyLevel 的下标与游标下标比较。
+      const top = lots[lots.length - 1];
+      const buyIdx = levels.findIndex((lv) => lv >= top.buyLevel - 1e-9);
+      if (buyIdx >= 0 && buyIdx + strat.sellOffset <= cursorIdx + 1) {
+        const lot = lots.pop() as Lot;
+        const soldShares = lot.total;
+        holding -= soldShares;
+        const amount = soldShares * sellLevel;
+        const fee = calcFee(input, amount, true);
+        cash += amount - fee;
+        operations.push(buildOperation(date, 'SELL', sellLevel, soldShares, fee, cash, holding));
+      }
+      // 未达 sellOffset 偏移：本次仅游标推进（cursorIdx += 1），不产生任何操作记录。
     } else {
-      // 策略2：对所有「已穿越待减」批次（买入档位低于本次卖出档位且尚未卖光）各减仓。
+      // 减半型（strategy2）：对所有「已穿越待减」批次（买入档位低于本次卖出档位且尚未卖光）各减仓。
       // 每批分两段：首次穿越卖 floorToLot(total/2)（向下取整到 100 股），之后再穿越则卖剩余 (total - sold) 全清；
       // 例：4.2 买入 2000（已卖半剩 1000）+ 4.4 买入 2000，上穿 4.6 时两批各卖 1000（4.2 批清剩余、4.4 批首次半）。
       let soldAny = false;
       for (let i = lots.length - 1; i >= 0; i--) {
         const lot = lots[i];
         if (lot.buyLevel < sellLevel - 1e-9 && lot.sold < lot.total - 1e-9) {
-          // 首次穿越卖一半；之后穿越卖剩余全清（尾数兜底，保证单批股数守恒）。
-          const sellShares =
-            lot.sold === 0 ? floorToLot(lot.total / 2) : lot.total - lot.sold;
+          const sellShares = strat.sellQuantity(lot);
           lot.sold += sellShares;
           holding -= sellShares;
           const amount = sellShares * sellLevel;
@@ -236,7 +444,11 @@ export function runGridSimulation(
     if (cursorIdx <= 0) return false;
     if (low > levels[cursorIdx - 1] + 1e-9) return false;
     const buyLevel = levels[cursorIdx - 1];
-    const shares = resolveShares(input, levelCount, buyLevel);
+    // 买入前置条件（默认无条件买入；未来策略可覆写为如「连跌两格才加仓」）
+    if (!strat.canBuy({ input, level: buyLevel, cursorIdx, lots, downStreak })) {
+      return false; // 不满足条件则停止该方向推进（游标不变）
+    }
+    const shares = strat.resolveShares(input, levelCount, buyLevel);
     if (shares > 0 && buyLevel >= input.lowerLimit - 1e-9) {
       const amount = shares * buyLevel;
       const fee = calcFee(input, amount, false);
@@ -246,6 +458,7 @@ export function runGridSimulation(
         lots.push({ total: shares, sold: 0, buyLevel }); // 买入一批入栈（LIFO，回升时先进先卖的最低批次）
         operations.push(buildOperation(date, 'BUY', buyLevel, shares, fee, cash, holding));
         cursorIdx -= 1;
+        downStreak += 1;
         return true;
       }
       // 资金不足无法买入：停止该方向推进（游标不变）
@@ -253,6 +466,7 @@ export function runGridSimulation(
     }
     // 无法估算股数（如档位价异常）：跳过该档继续下推
     cursorIdx -= 1;
+    downStreak += 1;
     return true;
   };
 
@@ -262,6 +476,8 @@ export function runGridSimulation(
     if (close == null) continue;
     const high = k.high ?? close ?? 0;
     const low = k.low ?? close ?? 0;
+
+    downStreak = 0; // 每根 K 线重置连续下穿计数
 
     if (cursorIdx !== -1) {
       // 两遍都跑：主导方向由收盘价在当日 [low, high] 区间的位置决定
@@ -288,7 +504,7 @@ export function runGridSimulation(
     if (cursorIdx === -1 && holding === 0) {
       const lowest = levels[0];
       if (low <= lowest + 1e-9) {
-        const shares = resolveShares(input, levelCount, lowest);
+        const shares = strat.resolveShares(input, levelCount, lowest);
         if (shares > 0) {
           const amount = shares * lowest;
           const fee = calcFee(input, amount, false);

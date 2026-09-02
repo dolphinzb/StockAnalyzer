@@ -539,10 +539,13 @@ export class FundService {
    * 获取指定日期的持仓市值（使用kline_data收盘价计算）
    * 对每只持股，从kline_data获取指定日期的收盘价，无数据时使用最近前一个交易日收盘价
    * @param date 目标日期 (YYYY-MM-DD)
+   * @param inclusive 是否包含目标当天：true=边界为 trade_date <= date（默认，用于期末/月末快照）；
+   *                  false=边界为 trade_date < date（严格小于，用于期初快照，即上一交易日收盘状态）
    * @returns 持仓市值计算结果
    */
-  async getHoldingsMarketValue(date: string): Promise<{
+  async getHoldingsMarketValue(date: string, inclusive: boolean = true): Promise<{
     marketValue: number;
+    totalHoldingCount: number;
     details: Array<{
       stockCode: string;
       stockName: string;
@@ -555,20 +558,22 @@ export class FundService {
     try {
       // 获取截止指定日期的持仓股票（持仓数量>0）
       // 使用子查询获取每只股票截止指定日期最近一条交易记录的持仓数量
+      // inclusive=false 时严格小于目标日期（不含当天），用于期初快照
+      const dateOp = inclusive ? '<=' : '<';
       const positionsResult = this.db.exec(`
         SELECT t1.stock_code, t1.stock_name, t1.holding_count
         FROM trade_record t1
         INNER JOIN (
           SELECT stock_code, MAX(trade_date) as max_date
           FROM trade_record
-          WHERE trade_date <= ?
+          WHERE trade_date ${dateOp} ?
           GROUP BY stock_code
         ) t2 ON t1.stock_code = t2.stock_code AND t1.trade_date = t2.max_date
         WHERE t1.holding_count > 0
       `, [date]);
 
       if (positionsResult.length === 0 || positionsResult[0].values.length === 0) {
-        return { marketValue: 0, details: [], missingKlineStocks: [] };
+        return { marketValue: 0, totalHoldingCount: 0, details: [], missingKlineStocks: [] };
       }
 
       const details: Array<{
@@ -580,16 +585,17 @@ export class FundService {
       }> = [];
       const missingKlineStocks: string[] = [];
       let totalMarketValue = 0;
+      let totalHoldingCount = 0;
 
       for (const row of positionsResult[0].values) {
         const stockCode = row[0] as string;
         const stockName = row[1] as string;
         const holdingCount = row[2] as number;
 
-        // 从kline_data获取指定日期或最近前一个交易日的收盘价
+        // 从kline_data获取指定日期或最近前一个交易日的收盘价（边界与持仓查询一致）
         const klineResult = this.db.exec(`
-          SELECT close FROM kline_data 
-          WHERE stock_code = ? AND trade_date <= ? 
+          SELECT close FROM kline_data
+          WHERE stock_code = ? AND trade_date ${dateOp} ?
           ORDER BY trade_date DESC LIMIT 1
         `, [stockCode, date]);
 
@@ -603,6 +609,7 @@ export class FundService {
         const closePrice = klineResult[0].values[0][0] as number;
         const marketValue = closePrice * holdingCount;
         totalMarketValue += marketValue;
+        totalHoldingCount += holdingCount;
 
         details.push({
           stockCode,
@@ -617,6 +624,7 @@ export class FundService {
 
       return {
         marketValue: Number(totalMarketValue.toFixed(2)),
+        totalHoldingCount,
         details,
         missingKlineStocks,
       };
@@ -705,6 +713,8 @@ export class FundService {
     closingAccountBalance: number;
     openingHoldingsValue: number;
     closingHoldingsValue: number;
+    openingHoldingsCount: number;
+    closingHoldingsCount: number;
     totalIn: number;
     totalOut: number;
     profit: number;
@@ -716,13 +726,16 @@ export class FundService {
       // 2. 获取期末账户余额（截止期末日期最近记录的account_balance，包含期末当天）
       const closingAccountBalance = await this.getClosingBalance(endDate);
 
-      // 3. 获取期初持仓市值
-      const openingHoldings = await this.getHoldingsMarketValue(startDate);
+      // 3. 获取期初持仓市值（及持仓股数，口径与市值一致：仅统计有K线数据的持股）
+      //    边界为严格小于期初日期（不含当天），与期初账户余额口径一致，即上一交易日收盘状态
+      const openingHoldings = await this.getHoldingsMarketValue(startDate, false);
       const openingHoldingsValue = openingHoldings.marketValue;
+      const openingHoldingsCount = openingHoldings.totalHoldingCount;
 
-      // 4. 获取期末持仓市值
+      // 4. 获取期末持仓市值（及持仓股数）
       const closingHoldings = await this.getHoldingsMarketValue(endDate);
       const closingHoldingsValue = closingHoldings.marketValue;
+      const closingHoldingsCount = closingHoldings.totalHoldingCount;
 
       // 5. 获取交易统计（来自trade_record表）
       const tradeStats = await this.getTradeStatsInRange(startDate, endDate);
@@ -741,6 +754,8 @@ export class FundService {
         closingAccountBalance,
         openingHoldingsValue,
         closingHoldingsValue,
+        openingHoldingsCount,
+        closingHoldingsCount,
         totalIn: tradeStats.totalIn,
         totalOut: tradeStats.totalOut,
         profit: Number(profit.toFixed(2)),

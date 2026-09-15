@@ -233,3 +233,62 @@ describe('网格策略4（半仓平衡，按日收盘评估、不依赖网格）
     expect(s4.finalTotalAssets).toBeCloseTo(s4.finalCash + s4.finalHolding * 4.8, 6);
   });
 });
+
+describe('网格策略5（阈值全仓，低于买入价全仓买、高于卖出价清仓卖）', () => {
+  // 不依赖网格：用高价股（price≈10）清晰展示全仓/空仓二态切换；初始资金 1,000,000，关闭手续费。
+  const strat5Input = (overrides: Partial<GridSimulationInput> = {}): GridSimulationInput =>
+    baseInput({
+      gridStrategy: 'strategy5',
+      buyThreshold: 9,
+      sellThreshold: 11,
+      ...overrides,
+    });
+
+  it('空仓且收盘价 ≤ 买入触发价则全仓买入（取整到 100 股）', () => {
+    const klines = [flat('2024-01-01', 8)]; // 8 ≤ 9 买入触发价
+    const res = runGridSimulation(strat5Input(), klines);
+    const buys = res.operations.filter((o) => o.type === 'BUY');
+    expect(buys).toHaveLength(1);
+    // 全部可用资金买入：floor(1,000,000 / 8 / 100) * 100 = 125,000 股
+    expect(buys[0].shares).toBe(125_000);
+    expect(res.finalHolding).toBe(125_000);
+    expect(res.finalCash).toBe(1_000_000 - 125_000 * 8);
+  });
+
+  it('持仓且收盘价 ≥ 卖出触发价则清仓卖出全部持仓', () => {
+    const klines = [flat('2024-01-01', 8), flat('2024-01-02', 12)]; // 首日全仓、次日 12 ≥ 11 清仓
+    const res = runGridSimulation(strat5Input(), klines);
+    const sells = res.operations.filter((o) => o.type === 'SELL');
+    expect(sells).toHaveLength(1);
+    expect(sells[0].shares).toBe(125_000); // 清仓：卖出建仓的全部持仓
+    expect(res.finalHolding).toBe(0);
+    expect(res.finalCash).toBeCloseTo(1_000_000 - 125_000 * 8 + 125_000 * 12, 6);
+  });
+
+  it('价格在触发区间（买入价 < 收盘价 < 卖出价）内不操作', () => {
+    const klines = [flat('2024-01-01', 8), flat('2024-01-02', 10)]; // 10 ∈ (9, 11) 不触发
+    const res = runGridSimulation(strat5Input(), klines);
+    // 仅首日买入，次日在区间内不动
+    expect(res.operations.filter((o) => o.type === 'BUY')).toHaveLength(1);
+    expect(res.operations.filter((o) => o.type === 'SELL')).toHaveLength(0);
+    expect(res.finalHolding).toBe(125_000);
+  });
+
+  it('不产生 virtual 虚拟记录（直接全仓/清仓，非占位）', () => {
+    const klines = [flat('2024-01-01', 8), flat('2024-01-02', 12), flat('2024-01-03', 7)];
+    const res = runGridSimulation(strat5Input(), klines);
+    expect(res.operations.some((o) => (o as { virtual?: boolean }).virtual === true)).toBe(false);
+    // Day1 买、Day2 卖、Day3 再次买（7 ≤ 9）
+    expect(res.operations.filter((o) => o.type === 'BUY')).toHaveLength(2);
+    expect(res.operations.filter((o) => o.type === 'SELL')).toHaveLength(1);
+  });
+
+  it('与策略1/2/3/4 互不干扰（其余策略行为不变）', () => {
+    const s1 = runGridSimulation(baseInput({ gridStrategy: 'strategy1' }), [flat('2024-01-01', 4.2), flat('2024-01-02', 4.4)]);
+    const s5 = runGridSimulation(strat5Input(), [flat('2024-01-01', 8), flat('2024-01-02', 12)]);
+    // 策略1 仍是固定批次整批清仓（2000 股），策略5 是阈值全仓（125,000 股），互不影响
+    const s1Sell = s1.operations.find((o) => o.type === 'SELL' && !(o as { virtual?: boolean }).virtual)!;
+    expect(s1Sell.shares).toBe(2000);
+    expect(s5.operations.filter((o) => o.type === 'SELL')[0].shares).toBe(125_000);
+  });
+});

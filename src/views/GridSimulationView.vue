@@ -23,8 +23,10 @@ const form = reactive({
   lowerLimit: '',
   spacing: '',
   spacingType: 'fixed' as GridSpacingType,
-  gridStrategy: 'strategy1' as 'strategy1' | 'strategy2' | 'strategy3' | 'strategy4',
+  gridStrategy: 'strategy1' as 'strategy1' | 'strategy2' | 'strategy3' | 'strategy4' | 'strategy5',
   sharesPerGrid: '', // 留空表示按 初始资金/档位数/触发价 自动估算
+  buyThreshold: '', // 阈值全仓策略（strategy5）：股价 ≤ 此价全仓买入
+  sellThreshold: '', // 阈值全仓策略（strategy5）：股价 ≥ 此价清仓卖出
   // 费用（可选，带默认值）
   commissionRate: '0.00025',
   minFee: '5',
@@ -65,18 +67,42 @@ const gridStrategyTip =
   '网格策略1（整批清仓）：上涨穿越时一次性卖出栈顶批次的全部持仓。\n' +
   '网格策略2（分步减仓）：上涨穿越时，对所有已穿越待减批次各卖出其买入量的一半（分两段减仓）。\n' +
   '网格策略3（隔两档卖出）：与策略1同为整批清仓，但需上穿「高两档」才卖（如 4.2 买入→上穿 4.6 卖出，4.4 买入→上穿 4.8 卖出）。\n' +
-  '网格策略4（半仓平衡）：不依赖网格，按日收盘做半仓再平衡——目标持仓金额 = 可用资金 / 2，偏差超 ±5% 时按差额动态买卖。';
+  '网格策略4（半仓平衡）：不依赖网格，按日收盘做半仓再平衡——目标持仓金额 = 可用资金 / 2，偏差超 ±5% 时按差额动态买卖。\n' +
+  '网格策略5（阈值全仓）：不依赖网格，仅用两个触发价做全仓/空仓切换——空仓且收盘价 ≤ 买入触发价则全仓买入，持仓且收盘价 ≥ 卖出触发价则清仓卖出。';
+
+const strategyLabel = computed(() => {
+  switch (form.gridStrategy) {
+    case 'strategy1': return '网格策略1（整批清仓）';
+    case 'strategy2': return '网格策略2（分步减仓）';
+    case 'strategy3': return '网格策略3（隔两档卖出）';
+    case 'strategy4': return '网格策略4（半仓平衡）';
+    case 'strategy5': return '网格策略5（阈值全仓）';
+    default: return '网格策略1（整批清仓）';
+  }
+});
 
   const validate = (): string | null => {
   if (!form.startDate) return '请选择开始日期';
   if (!form.stockCode) return '请输入股票代码';
   const initialCapital = parseFloat(form.initialCapital);
+  if (!initialCapital || initialCapital <= 0) return '初始资金必须大于 0';
+
+  // 阈值全仓（strategy5）：不依赖网格，校验两个触发价
+  if (form.gridStrategy === 'strategy5') {
+    const buyT = parseFloat(form.buyThreshold);
+    const sellT = parseFloat(form.sellThreshold);
+    if (!buyT || buyT <= 0) return '请填写买入触发价（须 > 0）';
+    if (!sellT || sellT <= 0) return '请填写卖出触发价（须 > 0）';
+    if (sellT <= buyT) return '卖出触发价须高于买入触发价';
+    return null;
+  }
+
+  // 半仓平衡（strategy4）不依赖网格：跳过网格专属参数校验
+  if (form.gridStrategy === 'strategy4') return null;
+
   const upper = parseFloat(form.upperLimit);
   const lower = parseFloat(form.lowerLimit);
   const spacing = parseFloat(form.spacing);
-  if (!initialCapital || initialCapital <= 0) return '初始资金必须大于 0';
-  // 半仓平衡（strategy4）不依赖网格：跳过网格专属参数校验
-  if (form.gridStrategy === 'strategy4') return null;
   if (!upper || !lower) return '请填写网格上下限';
   if (upper <= lower) return '网格上限必须大于下限';
   if (!spacing || spacing <= 0) return '网格间距必须大于 0';
@@ -90,22 +116,24 @@ const gridStrategyTip =
 
 const buildInput = (): GridSimulationInput => {
   const sharesRaw = form.sharesPerGrid.trim();
-  // 半仓平衡（strategy4）不依赖网格参数，给合法默认兜底（引擎会忽略这些字段）
-  const isBalance = form.gridStrategy === 'strategy4';
+  // 半仓平衡（strategy4）/ 阈值全仓（strategy5）不依赖网格参数，给合法默认兜底（引擎会忽略这些字段）
+  const skipGrid = form.gridStrategy === 'strategy4' || form.gridStrategy === 'strategy5';
   return {
     startDate: form.startDate,
     stockCode: form.stockCode.trim(),
     initialCapital: parseFloat(form.initialCapital),
-    upperLimit: isBalance ? 0 : parseFloat(form.upperLimit),
-    lowerLimit: isBalance ? 0 : parseFloat(form.lowerLimit),
-    spacing: isBalance ? 1 : parseFloat(form.spacing),
+    upperLimit: skipGrid ? 0 : parseFloat(form.upperLimit),
+    lowerLimit: skipGrid ? 0 : parseFloat(form.lowerLimit),
+    spacing: skipGrid ? 1 : parseFloat(form.spacing),
     spacingType: form.spacingType,
     gridStrategy: form.gridStrategy,
     sharesPerGrid: sharesRaw === '' ? null : parseFloat(sharesRaw),
     commissionRate: parseFloat(form.commissionRate) || 0.00025,
     minFee: parseFloat(form.minFee) || 5,
     stampTaxRate: parseFloat(form.stampTaxRate) || 0.0005,
-    dividendPerShare: parseFloat(form.dividendPerShare) || 0
+    dividendPerShare: parseFloat(form.dividendPerShare) || 0,
+    buyThreshold: form.buyThreshold ? parseFloat(form.buyThreshold) : null,
+    sellThreshold: form.sellThreshold ? parseFloat(form.sellThreshold) : null
   };
 };
 
@@ -182,52 +210,53 @@ void totalAssetsSeries;
           <label>初始资金</label>
           <input v-model="form.initialCapital" type="number" placeholder="如 100000" />
         </div>
-        <template v-if="form.gridStrategy !== 'strategy4'">
-        <div class="form-item">
-          <label>网格上限</label>
-          <input v-model="form.upperLimit" type="number" step="0.01" placeholder="如 15" />
-        </div>
-        <div class="form-item">
-          <label>网格下限</label>
-          <input v-model="form.lowerLimit" type="number" step="0.01" placeholder="如 8" />
-        </div>
-        <div class="form-item">
-          <label>网格间距</label>
-          <input v-model="form.spacing" type="number" step="0.01" placeholder="如 1 或 0.05" />
-        </div>
-        <div class="form-item">
-          <label>间距类型</label>
-          <select v-model="form.spacingType">
-            <option value="fixed">固定金额</option>
-            <option value="percentage">百分比(等比)</option>
-          </select>
-        </div>
-        <div class="form-item">
-<<<<<<< HEAD
-          <label>
-            <span>网格策略</span>
-            <span class="help-icon" tabindex="0" aria-label="网格策略说明">?
-              <span class="tooltip-pop">{{ gridStrategyTip }}</span>
-            </span>
-          </label>
-          <select v-model="form.gridStrategy">
-            <option value="strategy1">网格策略1（整批清仓）</option>
-            <option value="strategy2">网格策略2（分步减仓）</option>
-            <option value="strategy3">网格策略3（隔两档卖出）</option>
-          </select>
-        </div>
-        <div class="form-item">
-=======
->>>>>>> dbdfa69d826abee8a182043175a05595187b9a49
-          <label>每格股数(留空自动)</label>
-          <input v-model="form.sharesPerGrid" type="number" step="100" placeholder="留空=自动估算" />
-          <span class="hint">留空时按「初始资金 ÷ 档位数 ÷ 触发价」估算并取整到100股</span>
-        </div>
+        <!-- 网格类策略（strategy1/2/3）才显示网格参数 -->
+        <template v-if="['strategy1', 'strategy2', 'strategy3'].includes(form.gridStrategy)">
+          <div class="form-item">
+            <label>网格上限</label>
+            <input v-model="form.upperLimit" type="number" step="0.01" placeholder="如 15" />
+          </div>
+          <div class="form-item">
+            <label>网格下限</label>
+            <input v-model="form.lowerLimit" type="number" step="0.01" placeholder="如 8" />
+          </div>
+          <div class="form-item">
+            <label>网格间距</label>
+            <input v-model="form.spacing" type="number" step="0.01" placeholder="如 1 或 0.05" />
+          </div>
+          <div class="form-item">
+            <label>间距类型</label>
+            <select v-model="form.spacingType">
+              <option value="fixed">固定金额</option>
+              <option value="percentage">百分比(等比)</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <label>每格股数(留空自动)</label>
+            <input v-model="form.sharesPerGrid" type="number" step="100" placeholder="留空=自动估算" />
+            <span class="hint">留空时按「初始资金 ÷ 档位数 ÷ 触发价」估算并取整到100股</span>
+          </div>
         </template>
-        <div class="form-item" v-else>
+
+        <!-- 阈值全仓策略（strategy5）才显示两个触发价 -->
+        <template v-if="form.gridStrategy === 'strategy5'">
+          <div class="form-item">
+            <label>买入触发价</label>
+            <input v-model="form.buyThreshold" type="number" step="0.01" placeholder="股价 ≤ 此价则全仓买入" />
+          </div>
+          <div class="form-item">
+            <label>卖出触发价</label>
+            <input v-model="form.sellThreshold" type="number" step="0.01" placeholder="股价 ≥ 此价则清仓卖出" />
+          </div>
+        </template>
+
+        <!-- 半仓平衡策略（strategy4）说明 -->
+        <div class="form-item" v-if="form.gridStrategy === 'strategy4'">
           <label>策略说明</label>
           <span class="hint">半仓平衡不依赖网格：每日以收盘价做一次再平衡，目标持仓 = 可用资金 / 2，偏差超 ±5% 才买卖。</span>
         </div>
+
+        <!-- 策略选择（始终显示） -->
         <div class="form-item">
           <label>
             <span>网格策略</span>
@@ -240,6 +269,7 @@ void totalAssetsSeries;
             <option value="strategy2">网格策略2（分步减仓）</option>
             <option value="strategy3">网格策略3（隔两档卖出）</option>
             <option value="strategy4">网格策略4（半仓平衡）</option>
+            <option value="strategy5">网格策略5（阈值全仓）</option>
           </select>
         </div>
         <div class="form-item">
@@ -314,11 +344,7 @@ void totalAssetsSeries;
             <li>年化收益率按自然日口径（含周末/停牌日）</li>
             <li>首版不含分红：不生成分红记录、不计入现金</li>
             <li>使用不复权数据，忽略除权影响（除权跳变当作普通网格穿越）</li>
-<<<<<<< HEAD
-            <li>当前策略：{{ form.gridStrategy === 'strategy2' ? '网格策略2（分步减仓）' : form.gridStrategy === 'strategy3' ? '网格策略3（隔两档卖出）' : '网格策略1（整批清仓）' }}</li>
-=======
-            <li>当前策略：{{ form.gridStrategy === 'strategy4' ? '网格策略4（半仓平衡）' : form.gridStrategy === 'strategy2' ? '网格策略2（分步减仓）' : form.gridStrategy === 'strategy3' ? '网格策略3（隔两档卖出）' : '网格策略1（整批清仓）' }}</li>
->>>>>>> dbdfa69d826abee8a182043175a05595187b9a49
+            <li>当前策略：{{ strategyLabel }}</li>
           </ul>
         </div>
       </div>

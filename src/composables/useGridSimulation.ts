@@ -99,15 +99,12 @@ export interface GridSimStrategy {
   canBuy(ctx: GridSimBuyContext): boolean;
   /** 首日底仓建仓的游标定位（默认 = 现有「向上最近档位」逻辑） */
   initCursorIdx(levels: number[], firstClose: number): number;
-<<<<<<< HEAD
-=======
   /**
    * 逃生舱（设计文档预留的「极端范式」接入点）：若提供此钩子，runGridSimulation 将完全委托其接管内部循环，
    * 其余钩子（sellOffset/mode/sellQuantity/...）全部忽略。用于买卖逻辑与「固定档位 LIFO 批次栈」模型
    * 彻底不同的策略，例如不依赖网格、按日收盘做半仓平衡的策略（strategy4）。
    */
   customRun?(input: GridSimulationInput, klines: KlineData[]): GridSimulationResult;
->>>>>>> dbdfa69d826abee8a182043175a05595187b9a49
 }
 
 /** canBuy 钩子的上下文 */
@@ -146,7 +143,7 @@ const STRATEGY1: GridSimStrategy = {
  * 网格策略注册表。新增策略只需在此以 { ...STRATEGY1, ...差异 } 注册，
  * 并在 shared/types GridSimulationInput.gridStrategy 联合类型追加字面量即可，主流程零改动。
  */
-const GRID_STRATEGIES: Record<'strategy1' | 'strategy2' | 'strategy3' | 'strategy4', GridSimStrategy> = {
+const GRID_STRATEGIES: Record<'strategy1' | 'strategy2' | 'strategy3' | 'strategy4' | 'strategy5', GridSimStrategy> = {
   strategy1: STRATEGY1,
   strategy2: {
     ...STRATEGY1,
@@ -162,6 +159,12 @@ const GRID_STRATEGIES: Record<'strategy1' | 'strategy2' | 'strategy3' | 'strateg
   strategy4: {
     ...STRATEGY1,
     customRun: runBalanceGridSimulation
+  },
+  // strategy5（阈值全仓）：不依赖网格，仅用两个触发价做「全仓/空仓」二态切换，买卖语义与「固定档位 LIFO 批次栈」模型本质不同，
+  // 故走 customRun 逃生舱。
+  strategy5: {
+    ...STRATEGY1,
+    customRun: runThresholdGridSimulation
   }
 };
 
@@ -288,6 +291,108 @@ function runBalanceGridSimulation(
 
 
 /**
+ * 阈值全仓策略（strategy5）的仿真实现，通过 GridSimStrategy.customRun 逃生舱接入。
+ * 不依赖网格：仅用两个触发价做「全仓 / 空仓」二态切换，成交价取当日收盘价。
+ *   · 空仓且当日收盘价 ≤ 买入触发价 → 用全部可用资金买入（取整到 100 股，预留手续费）。
+ *   · 持仓且当日收盘价 ≥ 卖出触发价 → 清仓卖出全部持仓。
+ * 其余时间不操作；同一交易日只可能产生一笔交易（先判定买入，未买入再判定卖出）。
+ */
+function runThresholdGridSimulation(
+  input: GridSimulationInput,
+  klines: KlineData[]
+): GridSimulationResult {
+  const operations: GridSimulationOperation[] = [];
+  let cash = input.initialCapital;
+  let holding = 0;
+
+  if (klines.length === 0) {
+    return buildEmptyResult(cash, holding, klines);
+  }
+
+  const buyThreshold = input.buyThreshold ?? Number.NEGATIVE_INFINITY;
+  const sellThreshold = input.sellThreshold ?? Number.POSITIVE_INFINITY;
+
+  let peakTotalAssets = cash;
+  let maxDrawdown = 0;
+
+  // 用全部可用资金全仓买入（受手续费约束，逐步减手直到现金足够）
+  const buyAll = (date: string, price: number): void => {
+    if (price <= 0 || cash <= 0) return;
+    let shares = floorToLot(cash / price);
+    while (shares > 0) {
+      const amount = shares * price;
+      const fee = calcFee(input, amount, false);
+      if (cash >= amount + fee) break;
+      shares -= MIN_TRADE_UNIT;
+    }
+    if (shares <= 0) return;
+    const amount = shares * price;
+    const fee = calcFee(input, amount, false);
+    cash -= amount + fee;
+    holding += shares;
+    operations.push(buildOperation(date, 'BUY', price, shares, fee, cash, holding));
+  };
+
+  // 清仓卖出全部持仓
+  const sellAll = (date: string, price: number): void => {
+    if (price <= 0 || holding <= 0) return;
+    const shares = holding;
+    const amount = shares * price;
+    const fee = calcFee(input, amount, true);
+    cash += amount - fee;
+    holding = 0;
+    operations.push(buildOperation(date, 'SELL', price, shares, fee, cash, holding));
+  };
+
+  for (let di = 0; di < klines.length; di++) {
+    const k = klines[di];
+    const close = k.close;
+    if (close == null) continue;
+
+    if (holding === 0 && close <= buyThreshold + 1e-9) {
+      buyAll(k.tradeDate, close);
+    } else if (holding > 0 && close >= sellThreshold - 1e-9) {
+      sellAll(k.tradeDate, close);
+    }
+
+    const totalAssetsNow = cash + holding * close;
+    if (totalAssetsNow > peakTotalAssets) peakTotalAssets = totalAssetsNow;
+    if (peakTotalAssets > 0) {
+      const drawdown = (peakTotalAssets - totalAssetsNow) / peakTotalAssets;
+      if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+    }
+  }
+
+  // 期末指标（与 runGridSimulation / runBalanceGridSimulation 同构）
+  const finalKline = klines[klines.length - 1];
+  const finalPrice = finalKline.close ?? 0;
+  const finalTotalAssets = cash + holding * finalPrice;
+  const totalProfit = finalTotalAssets - input.initialCapital;
+  const totalProfitRate = input.initialCapital > 0 ? (totalProfit / input.initialCapital) * 100 : 0;
+
+  const start = new Date(input.startDate).getTime();
+  const end = new Date(finalKline.tradeDate).getTime();
+  const days = Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)));
+  const annualizedReturn = totalProfitRate > -100
+    ? (Math.pow(1 + totalProfitRate / 100, 365 / days) - 1) * 100
+    : 0;
+
+  return {
+    operations,
+    finalCash: cash,
+    finalHolding: holding,
+    finalPrice,
+    finalTotalAssets,
+    totalProfit,
+    totalProfitRate,
+    annualizedReturn,
+    maxDrawdown: maxDrawdown * 100,
+    tradeCount: operations.length
+  };
+}
+
+
+/**
  * 运行网格仿真
  * @param input 仿真参数
  * @param klines 不复权日 K 数据（按 trade_date 升序）
@@ -348,10 +453,6 @@ export function runGridSimulation(
   }
 
   const firstClose = klines[0].close ?? 0;
-
-  // 取仿真策略对象：未声明的钩子经 { ...STRATEGY1, ...覆盖 } 合并后自动回退到 strategy1 默认实现。
-  const key = input.gridStrategy ?? 'strategy1';
-  const strat: GridSimStrategy = { ...STRATEGY1, ...(GRID_STRATEGIES[key] ?? {}) };
 
   // 初始底仓游标：由策略钩子 initCursorIdx 决定（默认 = 现有「向上最近档位」逻辑）。
   let cursorIdx = strat.initCursorIdx(levels, firstClose);

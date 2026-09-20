@@ -6,14 +6,15 @@
  * - 成交量柱状图绘制
  * - 坐标轴绘制（价格轴、日期轴）
  * - 交易标注绘制（B/S/D）
+ * - 蜡烛图形态标注绘制（看涨/看跌/转折）
  * - 鼠标拖动查看不同日期范围
  * - 鼠标滚轮缩放查看不同时间段
- * - 交易标注悬停检测与 tooltip
+ * - 交易标注 + 形态标注悬停检测与 tooltip
  * - requestAnimationFrame 节流重绘
  */
 
 import { onUnmounted, ref, type Ref } from 'vue';
-import type { KlineData, TradeRecord } from '../../shared/types';
+import type { KlineData, PatternDirection, PatternHit, TradeRecord } from '../../shared/types';
 
 /** 绘制配置常量 */
 const CHART_CONFIG = {
@@ -62,6 +63,12 @@ const CHART_CONFIG = {
   COLOR_TOOLTIP_BG: 'rgba(0, 0, 0, 0.8)',
   /** tooltip 文字颜色 */
   COLOR_TOOLTIP_TEXT: '#ffffff',
+  /** 形态标注 - 看涨（绿色，置于蜡烛下方，远离 B 标注） */
+  COLOR_PATTERN_BULLISH: '#10b981',
+  /** 形态标注 - 看跌（红色，置于蜡烛上方，远离 S/D 标注） */
+  COLOR_PATTERN_BEARISH: '#f43f5e',
+  /** 形态标注 - 转折预警（琥珀色，置于蜡烛上方更高位置） */
+  COLOR_PATTERN_WARNING: '#f59e0b',
   /** 拖动灵敏度（鼠标移动1px对应的数据偏移量） */
   DRAG_SENSITIVITY: 1,
 };
@@ -82,6 +89,14 @@ export interface TooltipInfo {
   tradeCount: number;
   /** 持仓数量 */
   holdingCount: number;
+  /** 形态编码（命中形态标注时填充） */
+  patternCode?: string;
+  /** 形态中文名 */
+  patternName?: string;
+  /** 形态方向 */
+  patternDirection?: PatternDirection;
+  /** 形态信号强度 0~1 */
+  patternStrength?: number;
 }
 
 /**
@@ -109,14 +124,18 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
   let klineData: KlineData[] = [];
   /** 当前交易记录 */
   let tradeRecords: TradeRecord[] = [];
+  /** 当前形态命中（来自 setPatternMarkers，独立于交易标注） */
+  let patternHits: PatternHit[] = [];
   /** 拖动状态 */
   let isDragging = false;
   let dragStartX = 0;
   let dragStartOffset = 0;
   /** requestAnimationFrame ID */
   let rafId: number | null = null;
-  /** 标注区域缓存（用于 tooltip 检测） */
+  /** 交易标注区域缓存（用于 tooltip 检测） */
   let markerAreas: { x: number; y: number; radius: number; record: TradeRecord }[] = [];
+  /** 形态标注区域缓存（用于 tooltip 检测，独立于交易标注） */
+  let patternMarkerAreas: { x: number; y: number; radius: number; hit: PatternHit }[] = [];
 
   /**
    * 设置数据并触发重绘
@@ -131,6 +150,28 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     // 重置缩放级别为默认值
     zoomLevel.value = 1.0;
     markerAreas = [];
+    patternMarkerAreas = [];
+    requestRedraw();
+  }
+
+  /**
+   * 设置形态标注并触发重绘
+   * - 与交易标注互不冲突：交易标注用 B/S/D 字母，形态标注用图形（▲/▼/◆）
+   * - 位于不同的纵向位置避免视觉重叠
+   * - @param hits 形态命中数组（PatternHit.code / startIndex / endIndex / direction / strength）
+   */
+  function setPatternMarkers(hits: PatternHit[]): void {
+    patternHits = hits;
+    patternMarkerAreas = [];
+    requestRedraw();
+  }
+
+  /**
+   * 清除形态标注
+   */
+  function clearPatternMarkers(): void {
+    patternHits = [];
+    patternMarkerAreas = [];
     requestRedraw();
   }
 
@@ -222,6 +263,9 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     // 绘制交易标注（使用动态步长）
     drawTradeMarkers(ctx, visibleKlines, candleAreaHeight, adjustedPriceMin, adjustedPriceRange, dynamicCandleStep);
 
+    // 绘制形态标注（独立图层，使用与交易标注不同的图形与纵向偏移，避免视觉冲突）
+    drawPatternMarkers(ctx, visibleKlines, Math.max(0, startIdx), candleAreaHeight, adjustedPriceMin, adjustedPriceRange, dynamicCandleStep);
+
     // 绘制坐标轴文字（使用动态步长）
     drawAxisLabels(ctx, visibleKlines, chartWidth, height, candleAreaHeight, adjustedPriceMax, adjustedPriceRange, volumeAreaTop, volumeMax, dateAxisTop, dynamicCandleStep);
   }
@@ -275,7 +319,7 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
   ): void {
     // 根据动态步长计算蜡烛宽度（保持7:3比例）
     const dynamicCandleWidth = dynamicCandleStep * 0.7;
-    
+
     for (let i = 0; i < visibleKlines.length; i++) {
       const kline = visibleKlines[i];
       const x = i * dynamicCandleStep + dynamicCandleStep / 2;
@@ -340,7 +384,7 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
   ): void {
     // 根据动态步长计算蜡烛宽度（保持7:3比例）
     const dynamicCandleWidth = dynamicCandleStep * 0.7;
-    
+
     for (let i = 0; i < visibleKlines.length; i++) {
       const kline = visibleKlines[i];
       const x = i * dynamicCandleStep + dynamicCandleStep / 2;
@@ -427,6 +471,133 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
   }
 
   /**
+   * 绘制蜡烛图形态标注（独立图层，与交易标注不冲突）
+   * - bullish: 绿色 ▲（向上三角），置于蜡烛下方 BUY 标注下方 +30 像素
+   * - bearish: 红色 ▼（向下三角），置于蜡烛上方 SELL 标注上方 -45 像素
+   * - warning: 琥珀色 ◆（菱形），置于蜡烛上方更高位置 -60 像素
+   * - 仅绘制 hit.endIndex 落在当前可见 K 线范围内的命中
+   * - 同时填充 patternMarkerAreas 用于悬停 tooltip
+   *
+   * @param startIdx 可见范围内第一根 K 线在 klineData 中的索引
+   */
+  function drawPatternMarkers(
+    ctx: CanvasRenderingContext2D,
+    visibleKlines: KlineData[],
+    startIdx: number,
+    candleAreaHeight: number,
+    priceMin: number,
+    priceRange: number,
+    dynamicCandleStep: number
+  ): void {
+    patternMarkerAreas = [];
+
+    if (patternHits.length === 0 || visibleKlines.length === 0) return;
+
+    const priceMax = priceMin + priceRange;
+    const endIdx = startIdx + visibleKlines.length;
+
+    // 相同 endIndex 可能有多条命中（不同形态），按方向分组绘制避免重叠
+    // 这里使用简单的 Y 偏移累加：bullish 累加正方向，bearish/warning 累加负方向
+    const offsetByEndIndex = new Map<number, number>();
+
+    for (const hit of patternHits) {
+      // 仅绘制当前可见范围内的形态
+      if (hit.endIndex < startIdx || hit.endIndex >= endIdx) continue;
+
+      const visibleIdx = hit.endIndex - startIdx;
+      const kline = visibleKlines[visibleIdx];
+      const x = visibleIdx * dynamicCandleStep + dynamicCandleStep / 2;
+      const high = kline.high ?? 0;
+      const low = kline.low ?? 0;
+
+      // 计算 baseY 与颜色（基于方向）
+      let baseY: number;
+      let color: string;
+      switch (hit.direction) {
+        case 'bullish':
+          // 置于蜡烛下方（远离 BUY 的 +15，使用 +30）
+          baseY = CHART_CONFIG.PADDING_TOP + ((priceMax - low) / priceRange) * candleAreaHeight + 30;
+          color = CHART_CONFIG.COLOR_PATTERN_BULLISH;
+          break;
+        case 'bearish':
+          // 置于蜡烛上方（远离 SELL 的 -15 与 DIVIDEND 的 -30，使用 -45）
+          baseY = CHART_CONFIG.PADDING_TOP + ((priceMax - high) / priceRange) * candleAreaHeight - 45;
+          color = CHART_CONFIG.COLOR_PATTERN_BEARISH;
+          break;
+        case 'warning':
+        default:
+          // 转折预警置于更高位置（-60）
+          baseY = CHART_CONFIG.PADDING_TOP + ((priceMax - high) / priceRange) * candleAreaHeight - 60;
+          color = CHART_CONFIG.COLOR_PATTERN_WARNING;
+          break;
+      }
+
+      // 同一 endIndex 多条命中时按方向错开纵向位置
+      const stackOffset = offsetByEndIndex.get(hit.endIndex) ?? 0;
+      const stackDir = hit.direction === 'bullish' ? 1 : -1;
+      const y = baseY + stackDir * stackOffset * 12;
+      offsetByEndIndex.set(hit.endIndex, stackOffset + 1);
+
+      // 绘制形态图形
+      drawPatternGlyph(ctx, x, y, hit.direction, color);
+
+      // 缓存标注区域（用于悬停 tooltip，半径 10 与交易标注一致）
+      patternMarkerAreas.push({
+        x,
+        y,
+        radius: 10,
+        hit,
+      });
+    }
+  }
+
+  /**
+   * 绘制形态图元（▲ 看涨 / ▼ 看跌 / ◆ 转折）
+   * @param x 中心 X 坐标
+   * @param y 中心 Y 坐标
+   * @param direction 形态方向（决定图元形状）
+   * @param color 填充颜色
+   */
+  function drawPatternGlyph(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    direction: PatternDirection,
+    color: string
+  ): void {
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+
+    if (direction === 'bullish') {
+      // 向上三角 ▲（高 10，底宽 10）
+      ctx.beginPath();
+      ctx.moveTo(x, y - 6);
+      ctx.lineTo(x - 5, y + 4);
+      ctx.lineTo(x + 5, y + 4);
+      ctx.closePath();
+      ctx.fill();
+    } else if (direction === 'bearish') {
+      // 向下三角 ▼
+      ctx.beginPath();
+      ctx.moveTo(x, y + 6);
+      ctx.lineTo(x - 5, y - 4);
+      ctx.lineTo(x + 5, y - 4);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // 菱形 ◆（转折预警）
+      ctx.beginPath();
+      ctx.moveTo(x, y - 6);
+      ctx.lineTo(x + 6, y);
+      ctx.lineTo(x, y + 6);
+      ctx.lineTo(x - 6, y);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  /**
    * 绘制坐标轴文字（价格轴、日期轴）
    * @param dynamicCandleStep 动态蜡烛步长（根据缩放级别计算）
    */
@@ -486,6 +657,40 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
   }
 
   /**
+   * 滚动到指定 K 线索引（用于形态命中联动）
+   * - 将 endIndex 居中显示在可见窗口
+   * - 若 endIndex 已可见则不调整（保持用户当前视图）
+   * - 通过 offsetX 调整实现，不变更 zoomLevel
+   * @param endIndex 目标 K 线索引（klineData 中的下标）
+   */
+  function scrollToIndex(endIndex: number): void {
+    if (klineData.length === 0) return;
+    if (endIndex < 0 || endIndex >= klineData.length) return;
+
+    // 计算当前可见窗口
+    const canvas = canvasRef.value;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const chartWidth = rect.width - CHART_CONFIG.PRICE_AXIS_WIDTH;
+    const baseVisibleCount = Math.floor(chartWidth / CHART_CONFIG.CANDLE_STEP);
+    const actualVisibleCount = Math.max(5, Math.floor(baseVisibleCount / zoomLevel.value));
+    const startIdx = klineData.length - actualVisibleCount - offsetX.value;
+    const visibleEndIdx = startIdx + actualVisibleCount;
+
+    // 若已可见则不调整
+    if (endIndex >= startIdx && endIndex < visibleEndIdx) {
+      return;
+    }
+
+    // 居中显示：目标 startIdx = endIndex - floor(actualVisibleCount / 2)
+    const targetStart = endIndex - Math.floor(actualVisibleCount / 2);
+    const maxOffset = Math.max(0, klineData.length - actualVisibleCount);
+    const targetOffset = Math.max(0, klineData.length - actualVisibleCount - targetStart);
+    offsetX.value = Math.min(targetOffset, maxOffset);
+    requestRedraw();
+  }
+
+  /**
    * 鼠标按下事件处理（开始拖动）
    */
   function onMouseDown(event: MouseEvent): void {
@@ -513,7 +718,7 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
       const baseVisibleCount = Math.floor(chartWidth / CHART_CONFIG.CANDLE_STEP);
       const actualVisibleCount = Math.max(5, Math.floor(baseVisibleCount / zoomLevel.value));
       const dynamicCandleStep = chartWidth / actualVisibleCount;
-      
+
       const deltaOffset = Math.round(deltaX / dynamicCandleStep);
       const newOffset = dragStartOffset + deltaOffset;
 
@@ -541,7 +746,9 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
   }
 
   /**
-   * 检测鼠标是否悬停在交易标注上
+   * 检测鼠标是否悬停在交易标注或形态标注上
+   * - 优先匹配形态标注（位于更外侧，先遍历避免被内部交易标注遮蔽）
+   * - 命中形态时填充 patternCode / patternName / patternDirection / patternStrength
    */
   function checkTooltip(event: MouseEvent): void {
     const canvas = canvasRef.value;
@@ -551,8 +758,30 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     const mouseX = event.clientX - rect.left;
     const mouseY = event.clientY - rect.top;
 
-    // 检查是否在某个标注区域内
-    let found = false;
+    // 优先检查形态标注（位置更靠外）
+    for (const area of patternMarkerAreas) {
+      const dx = mouseX - area.x;
+      const dy = mouseY - area.y;
+      if (dx * dx + dy * dy <= area.radius * area.radius) {
+        const hit = area.hit;
+        tooltipInfo.value = {
+          visible: true,
+          x: area.x,
+          y: area.y - 30,
+          tradeType: '',
+          tradePrice: 0,
+          tradeCount: 0,
+          holdingCount: 0,
+          patternCode: hit.code,
+          patternName: hit.name,
+          patternDirection: hit.direction,
+          patternStrength: hit.strength,
+        };
+        return;
+      }
+    }
+
+    // 再检查交易标注
     for (const area of markerAreas) {
       const dx = mouseX - area.x;
       const dy = mouseY - area.y;
@@ -566,14 +795,12 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
           tradeCount: area.record.tradeCount,
           holdingCount: area.record.holdingCount,
         };
-        found = true;
-        break;
+        return;
       }
     }
 
-    if (!found) {
-      tooltipInfo.value = { ...tooltipInfo.value, visible: false };
-    }
+    // 都没有命中则隐藏
+    tooltipInfo.value = { ...tooltipInfo.value, visible: false };
   }
 
   /**
@@ -650,6 +877,9 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     klineData = [];
     tradeRecords = [];
     markerAreas = [];
+    // 清理形态标注状态（避免组件卸载后悬空引用）
+    patternHits = [];
+    patternMarkerAreas = [];
     // 重置缩放级别
     zoomLevel.value = 1.0;
   }
@@ -664,6 +894,9 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     zoomLevel,
     tooltipInfo,
     setData,
+    setPatternMarkers,
+    clearPatternMarkers,
+    scrollToIndex,
     drawChart,
     onMouseDown,
     onMouseMove,

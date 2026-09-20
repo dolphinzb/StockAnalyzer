@@ -862,6 +862,143 @@ export interface GridSimulationOperation {
 }
 
 /**
+ * 蜡烛图形态编码（32 种形态的字符串字面量联合）
+ * 新增形态时只需在此联合中追加字面量，并在 shared/patterns/ 对应子目录创建 detector 文件
+ */
+export type CandlestickPatternCode =
+  // 单根形态 (9)
+  | 'doji'
+  | 'long_legged_doji'
+  | 'gravestone_doji'
+  | 'dragonfly_doji'
+  | 'hammer'
+  | 'hanging_man'
+  | 'inverted_hammer'
+  | 'shooting_star'
+  | 'marubozu'
+  // 两根形态 (10)
+  | 'bullish_engulfing'
+  | 'bearish_engulfing'
+  | 'dark_cloud_cover'
+  | 'piercing_pattern'
+  | 'bullish_harami'
+  | 'bearish_harami'
+  | 'tweeter_top'
+  | 'tweeter_bottom'
+  | 'on_neck'
+  | 'in_neck'
+  // 三根及以上形态 (13)
+  | 'morning_star'
+  | 'evening_star'
+  | 'bullish_abandoned_baby'
+  | 'bearish_abandoned_baby'
+  | 'three_white_soldiers'
+  | 'three_black_crows'
+  | 'deliberation'
+  | 'rising_three_methods'
+  | 'falling_three_methods'
+  | 'thrusting'
+  | 'belt_hold_confirmed'
+  | 'separating_lines'
+  | 'mat_hold';
+
+/**
+ * 形态方向
+ * - bullish: 看涨信号
+ * - bearish: 看跌信号
+ * - warning: 转折预警（多空不明，需结合后续走势）
+ */
+export type PatternDirection = 'bullish' | 'bearish' | 'warning';
+
+/**
+ * 趋势方向（与现有 IndexDirection 解耦，专用于形态检测的趋势前提）
+ */
+export type TrendDirection = 'up' | 'down' | 'flat';
+
+/**
+ * 趋势上下文信息
+ * 由 shared/patterns/_lib/trend.ts 计算
+ */
+export interface TrendInfo {
+  /** 趋势方向 */
+  direction: TrendDirection;
+  /** 5 日均线值 */
+  ma5: number;
+  /** 10 日均线值 */
+  ma10: number;
+}
+
+/**
+ * 形态检测上下文
+ * 形态末根 K 线位于 candles[index] 处
+ */
+export interface PatternContext {
+  /** K 线数据（按交易日期升序） */
+  candles: KlineData[];
+  /** 当前检测位置（形态末根 K 线索引） */
+  index: number;
+  /** 该位置的趋势上下文 */
+  trend: TrendInfo;
+}
+
+/**
+ * 形态命中结果
+ * 表示在某根 K 线位置上检测到某个形态
+ */
+export interface PatternHit {
+  /** 形态编码 */
+  code: CandlestickPatternCode;
+  /** 形态中文名 */
+  name: string;
+  /** 形态方向 */
+  direction: PatternDirection;
+  /** 形态起始 K 线索引（含） */
+  startIndex: number;
+  /** 形态结束 K 线索引（含） */
+  endIndex: number;
+  /** 信号强度 0~1，越接近 1 越接近教科书标准 */
+  strength: number;
+  /** 触发时的趋势前提 */
+  trendContext: TrendDirection;
+}
+
+/**
+ * 单形态检测器函数签名
+ * 命中返回 PatternHit，未命中返回 null
+ */
+export type PatternDetector = (ctx: PatternContext) => PatternHit | null;
+
+/**
+ * 形态所需的趋势前提
+ * - up: 要求上涨趋势（典型用于看跌反转形态）
+ * - down: 要求下跌趋势（典型用于看涨反转形态）
+ * - any: 任意趋势（多用于十字星等转折预警）
+ * - consistent: 形态方向需与趋势方向一致（持续类形态）
+ */
+export type RequiredTrend = 'up' | 'down' | 'any' | 'consistent';
+
+/**
+ * 形态定义
+ * 描述一个完整形态的元信息与检测器
+ */
+export interface PatternDefinition {
+  /** 形态编码（需与 CandlestickPatternCode 中某个字面量匹配） */
+  code: CandlestickPatternCode;
+  /** 形态中文名 */
+  name: string;
+  /** 形态包含的 K 线根数 */
+  candleCount: 1 | 2 | 3 | 5;
+  /** 形态方向 */
+  direction: PatternDirection;
+  /** 趋势前提 */
+  requiredTrend: RequiredTrend;
+  /** 形态检测器 */
+  detector: PatternDetector;
+  /** 形态说明（用于 UI 提示） */
+  description: string;
+}
+
+/**
  * 网格仿真结果
  */
 export interface GridSimulationResult {

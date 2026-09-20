@@ -1,0 +1,1774 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StockAnalyzer · 功能设计文档</title>
+  <style>
+    /* ---------- 全局样式 ---------- */
+    :root {
+      --bg: #fafafa;
+      --fg: #1f2328;
+      --fg-muted: #57606a;
+      --fg-subtle: #8b949e;
+      --accent: #0969da;
+      --accent-bg: #ddf4ff;
+      --border: #d0d7de;
+      --border-muted: #e1e4e8;
+      --code-bg: #f6f8fa;
+      --success: #1a7f37;
+      --warning: #9a6700;
+      --danger: #cf222e;
+      --card-bg: #ffffff;
+      --shadow: 0 1px 3px rgba(31, 35, 40, 0.08);
+      --radius: 6px;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --fg: #e6edf3;
+        --fg-muted: #9198a1;
+        --fg-subtle: #6e7681;
+        --accent: #58a6ff;
+        --accent-bg: #1f3a5f;
+        --border: #30363d;
+        --border-muted: #21262d;
+        --code-bg: #161b22;
+        --success: #3fb950;
+        --warning: #d29922;
+        --danger: #f85149;
+        --card-bg: #161b22;
+        --shadow: 0 1px 3px rgba(1, 4, 9, 0.6);
+      }
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--fg);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ---------- 布局 ---------- */
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      max-width: 1400px;
+      margin: 0 auto;
+      gap: 32px;
+      padding: 32px 24px;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      aside.toc {
+        position: static !important;
+      }
+    }
+
+    /* ---------- TOC 侧栏 ---------- */
+    aside.toc {
+      position: sticky;
+      top: 32px;
+      align-self: start;
+      max-height: calc(100vh - 64px);
+      overflow-y: auto;
+      padding: 16px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-muted);
+      border-radius: var(--radius);
+      font-size: 13px;
+    }
+
+    aside.toc h2 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--fg-subtle);
+      font-weight: 600;
+    }
+
+    aside.toc ol {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    aside.toc li {
+      margin: 2px 0;
+    }
+
+    aside.toc a {
+      display: block;
+      padding: 4px 8px;
+      color: var(--fg-muted);
+      text-decoration: none;
+      border-radius: 4px;
+      border-left: 2px solid transparent;
+    }
+
+    aside.toc a:hover {
+      background: var(--code-bg);
+      color: var(--accent);
+    }
+
+    aside.toc .lvl-2 {
+      padding-left: 20px;
+    }
+
+    aside.toc .lvl-3 {
+      padding-left: 32px;
+      font-size: 12px;
+    }
+
+    /* ---------- 主内容 ---------- */
+    main {
+      min-width: 0;
+    }
+
+    header.hero {
+      padding: 32px 0 24px;
+      border-bottom: 1px solid var(--border-muted);
+      margin-bottom: 32px;
+    }
+
+    header.hero h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    header.hero .tagline {
+      margin: 0;
+      color: var(--fg-muted);
+      font-size: 16px;
+    }
+
+    header.hero .meta {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      font-size: 13px;
+      color: var(--fg-subtle);
+    }
+
+    header.hero .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 10px;
+      background: var(--accent-bg);
+      color: var(--accent);
+      border-radius: 999px;
+      font-weight: 500;
+    }
+
+    section {
+      padding: 32px 0;
+      border-bottom: 1px solid var(--border-muted);
+    }
+
+    section:last-of-type {
+      border-bottom: none;
+    }
+
+    section h2 {
+      margin: 0 0 16px;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      border-left: 4px solid var(--accent);
+      padding-left: 12px;
+    }
+
+    section h3 {
+      margin: 28px 0 12px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    section h4 {
+      margin: 20px 0 8px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--fg-muted);
+    }
+
+    p {
+      margin: 12px 0;
+    }
+
+    ul,
+    ol {
+      padding-left: 24px;
+      margin: 12px 0;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    /* ---------- 强调元素 ---------- */
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      padding: 2px 6px;
+      background: var(--code-bg);
+      border-radius: 4px;
+      color: var(--fg);
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border-muted);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    pre code {
+      padding: 0;
+      background: transparent;
+      border-radius: 0;
+    }
+
+    blockquote {
+      margin: 16px 0;
+      padding: 12px 16px;
+      border-left: 4px solid var(--accent);
+      background: var(--accent-bg);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      color: var(--fg);
+    }
+
+    /* ---------- 表格 ---------- */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 8px 12px;
+      border: 1px solid var(--border-muted);
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--code-bg);
+      font-weight: 600;
+      color: var(--fg);
+    }
+
+    td code {
+      white-space: nowrap;
+    }
+
+    /* ---------- 卡片 / 网格 ---------- */
+    .grid {
+      display: grid;
+      gap: 16px;
+      margin: 16px 0;
+    }
+
+    .grid.cols-2 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .grid.cols-3 {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    @media (max-width: 700px) {
+
+      .grid.cols-2,
+      .grid.cols-3 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-muted);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .card h4 {
+      margin-top: 0;
+    }
+
+    .card .num {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      background: var(--accent-bg);
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+
+    /* ---------- 流程图 / ASCII 图 ---------- */
+    pre.diagram {
+      background: var(--card-bg);
+      border: 1px solid var(--border-muted);
+      padding: 20px;
+      font-size: 13px;
+      line-height: 1.4;
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    /* ---------- 备注 / 提示 ---------- */
+    .note {
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      margin: 16px 0;
+      border: 1px solid;
+      font-size: 14px;
+    }
+
+    .note.tip {
+      background: rgba(9, 105, 218, 0.08);
+      border-color: var(--accent);
+    }
+
+    .note.warn {
+      background: rgba(154, 103, 0, 0.08);
+      border-color: var(--warning);
+    }
+
+    .note.danger {
+      background: rgba(207, 34, 46, 0.08);
+      border-color: var(--danger);
+    }
+
+    .note strong {
+      color: var(--fg);
+    }
+
+    .note .label {
+      font-weight: 700;
+      margin-right: 6px;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+    }
+
+    /* ---------- 锚点偏移 ---------- */
+    [id] {
+      scroll-margin-top: 24px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="layout">
+
+    <!-- ================== 侧栏目录 ================== -->
+    <aside class="toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#overview">项目概述</a></li>
+        <li><a href="#stack">技术栈</a></li>
+        <li><a href="#arch">架构设计</a>
+          <ol>
+            <li class="lvl-2"><a href="#arch-process">进程分层</a></li>
+            <li class="lvl-2"><a href="#arch-ipc">IPC 通信契约</a></li>
+            <li class="lvl-2"><a href="#arch-dataflow">数据流</a></li>
+            <li class="lvl-2"><a href="#arch-pinia">Pinia 状态管理</a></li>
+            <li class="lvl-2"><a href="#arch-shared">共享类型层</a></li>
+          </ol>
+        </li>
+        <li><a href="#datamodel">数据模型</a></li>
+        <li><a href="#features">功能模块</a>
+          <ol>
+            <li class="lvl-2"><a href="#f-001">001 项目脚手架</a></li>
+            <li class="lvl-2"><a href="#f-004">004 侧边栏导航</a></li>
+            <li class="lvl-2"><a href="#f-005">005 设置配置</a></li>
+            <li class="lvl-2"><a href="#f-006">006 自选股页面</a></li>
+            <li class="lvl-2"><a href="#f-007">007 持仓页面</a></li>
+            <li class="lvl-2"><a href="#f-008">008 网格交易</a></li>
+            <li class="lvl-2"><a href="#f-008-sim">网格交易仿真</a></li>
+            <li class="lvl-2"><a href="#f-009">009 日志查看器</a></li>
+            <li class="lvl-2"><a href="#f-010">010 指数状态栏</a></li>
+            <li class="lvl-2"><a href="#f-011">011 历史交易</a></li>
+            <li class="lvl-2"><a href="#f-012">012 数据库备份</a></li>
+            <li class="lvl-2"><a href="#f-013">013 资金管理</a></li>
+            <li class="lvl-2"><a href="#f-014">014 交易-资金同步</a></li>
+            <li class="lvl-2"><a href="#f-015">015 K线下载</a></li>
+            <li class="lvl-2"><a href="#f-016">016 资金统计</a></li>
+            <li class="lvl-2"><a href="#f-cpr">017 形态识别</a></li>
+          </ol>
+        </li>
+        <li><a href="#business">核心业务规则</a></li>
+        <li><a href="#crosscutting">横切关注点</a></li>
+        <li><a href="#testing">测试与质量</a></li>
+        <li><a href="#build">构建与发布</a></li>
+        <li><a href="#appendix">附录</a></li>
+      </ol>
+    </aside>
+
+    <!-- ================== 主内容 ================== -->
+    <main>
+
+      <header class="hero">
+        <h1>StockAnalyzer · 功能设计文档</h1>
+        <p class="tagline">基于 Electron + Vite + Vue 3 + TypeScript 的个人股票分析与持仓管理桌面应用</p>
+        <div class="meta">
+          <span class="badge">v0.x</span>
+          <span>·</span>
+          <span>最后更新：2026-09-20（含 017 形态识别）</span>
+          <span>·</span>
+          <span>已交付功能：17 个 change</span>
+          <span>·</span>
+          <span>维护分支：<code>main</code></span>
+        </div>
+      </header>
+
+      <!-- ========== 项目概述 ========== -->
+      <section id="overview">
+        <h2>1. 项目概述</h2>
+
+        <h3>1.1 背景与目标</h3>
+        <p>
+          StockAnalyzer 是一个面向个人投资者的桌面端股票辅助工具。它把"看行情、记交易、算盈亏、做网格"装进同一个不联网（或只在必要时联网）的本地应用里：行情数据通过国内财经
+          API（新浪/东方财富/腾讯）按轮询节奏拉取，交易记录、资金明细、K 线数据全部存在本地 SQLite，盈亏与网格交易计算在主进程内完成，渲染端只负责展示与交互。
+        </p>
+
+        <h3>1.2 目标用户</h3>
+        <ul>
+          <li><strong>个人投资者</strong>：管理几十只以内的自选股、记录日常买入卖出、定期复盘盈亏。</li>
+          <li><strong>量化爱好者</strong>：使用网格交易策略做机械化操作，希望可视化每个策略的当前价位与盈亏。</li>
+          <li><strong>技术型用户</strong>：要求"数据在我自己机器上"，不希望交易记录、持仓数据上传到任何第三方。</li>
+        </ul>
+
+        <h3>1.3 核心价值主张</h3>
+        <div class="grid cols-3">
+          <div class="card">
+            <h4>本地优先</h4>
+            <p>数据全部存在 <code>sql.js</code>（内存 SQLite 落盘），无任何远端数据库依赖。</p>
+          </div>
+          <div class="card">
+            <h4>类型安全</h4>
+            <p>TypeScript 严格模式 + 共享类型层，主/渲染两端共用同一份契约。</p>
+          </div>
+          <div class="card">
+            <h4>可扩展</h4>
+            <p>功能模块通过 OpenSpec 工作流逐个交付，每个 change 独立分支、独立归档。</p>
+          </div>
+        </div>
+
+        <h3>1.4 术语表</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>术语</th>
+              <th>含义</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>自选股</strong></td>
+              <td>用户主动加入监控列表的股票，可设买卖阈值、启停监控。</td>
+            </tr>
+            <tr>
+              <td><strong>持仓</strong></td>
+              <td>当前仍持有的股票及其数量与成本，由交易记录自动汇总。</td>
+            </tr>
+            <tr>
+              <td><strong>历史交易</strong></td>
+              <td>已清仓（买卖配对形成完整周期）的股票及其完整交易链。</td>
+            </tr>
+            <tr>
+              <td><strong>网格交易</strong></td>
+              <td>基于价格区间和等比/等差网格的机械化低买高卖策略。</td>
+            </tr>
+            <tr>
+              <td><strong>资金明细</strong></td>
+              <td>账户层面的转账/分红/利息等流水，影响账户余额。</td>
+            </tr>
+            <tr>
+              <td><strong>K 线</strong></td>
+              <td>日级 OHLCV 行情数据，支持前复权与不复权两种调整方式。</td>
+            </tr>
+            <tr>
+              <td><strong>形态识别</strong></td>
+              <td>（规划中）基于日 K 序列检测日本蜡烛图经典形态的能力。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ========== 技术栈 ========== -->
+      <section id="stack">
+        <h2>2. 技术栈</h2>
+
+        <table>
+          <thead>
+            <tr>
+              <th>层</th>
+              <th>技术</th>
+              <th>版本</th>
+              <th>职责</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>桌面壳</td>
+              <td>Electron</td>
+              <td>28.2.10</td>
+              <td>主进程、BrowserWindow、系统托盘、IPC 入口</td>
+            </tr>
+            <tr>
+              <td>构建</td>
+              <td>Vite</td>
+              <td>5.x</td>
+              <td>渲染端开发服务器、生产打包、HMR</td>
+            </tr>
+            <tr>
+              <td>UI 框架</td>
+              <td>Vue 3</td>
+              <td>3.4.21</td>
+              <td>Composition API + <code>&lt;script setup&gt;</code></td>
+            </tr>
+            <tr>
+              <td>状态</td>
+              <td>Pinia</td>
+              <td>3.0.4</td>
+              <td>渲染端跨组件状态容器</td>
+            </tr>
+            <tr>
+              <td>类型</td>
+              <td>TypeScript</td>
+              <td>5.4.2</td>
+              <td>strict 模式，跨进程共享类型</td>
+            </tr>
+            <tr>
+              <td>数据库</td>
+              <td>sql.js</td>
+              <td>1.14.1</td>
+              <td>纯 JS SQLite，无需 C++ 重编译</td>
+            </tr>
+            <tr>
+              <td>样式</td>
+              <td>SCSS</td>
+              <td>—</td>
+              <td>全局样式 + 组件 scoped 样式</td>
+            </tr>
+            <tr>
+              <td>日志</td>
+              <td>electron-log</td>
+              <td>5.1.1</td>
+              <td>主进程日志，自动滚动文件</td>
+            </tr>
+            <tr>
+              <td>行情</td>
+              <td>stock-sdk</td>
+              <td>1.9.0</td>
+              <td>封装新浪/东方财富/腾讯行情 API</td>
+            </tr>
+            <tr>
+              <td>测试</td>
+              <td>Vitest</td>
+              <td>2.1.9</td>
+              <td>单测（算法/纯函数）</td>
+            </tr>
+            <tr>
+              <td>算法库</td>
+              <td><code>shared/patterns/</code></td>
+              <td>—</td>
+              <td>32 种日本蜡烛图形态 detector（纯函数，渲染端可直接复用，不依赖 fs/electron）</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="note tip">
+          <span class="label">设计取舍</span>
+          使用 <code>sql.js</code> 而非 <code>better-sqlite3</code> 是为了避开原生模块在不同 Node 版本下的重编译问题；代价是写入需要手动
+          <code>saveDatabase()</code> 序列化到磁盘，但相比原生模块的兼容性收益这是可接受的。
+        </div>
+      </section>
+
+      <!-- ========== 架构设计 ========== -->
+      <section id="arch">
+        <h2>3. 架构设计</h2>
+
+        <h3 id="arch-process">3.1 进程分层</h3>
+        <p>
+          应用采用标准 Electron 三进程模型：<strong>主进程</strong>负责系统能力、数据库与定时任务，<strong>预加载脚本</strong>通过 <code>contextBridge</code>
+          安全暴露 IPC，<strong>渲染进程</strong>只做 UI 和交互，<strong>不能直接访问 Node API 或文件系统</strong>。
+        </p>
+
+        <pre class="diagram">┌─────────────────────────────────────────────────────────────┐
+│                      Electron 主进程 (Node)                  │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
+│  │  BrowserWindow│  │   系统托盘   │  │  调度器              │ │
+│  │  Menu        │  │  (Tray)      │  │  · 价格轮询          │ │
+│  └─────────────┘  └──────────────┘  │  · 自动备份          │ │
+│  ┌────────────────────────────────┤  · K线下载            │ │
+│  │  Service 层                     │                       │ │
+│  │  priceFetcher / tradeService / fundService /             │ │
+│  │  gridService / historicalTradeService / klineDownload /  │ │
+│  │  alertService / backupService / fundService              │ │
+│  └────────────────────────────────┴──────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  数据库层 (sql.js)                                      │  │
+│  │  watchlist_stocks · trade_records · transfer_records ·  │  │
+│  │  kline_data · backup_history · ...                      │  │
+│  └──────────────────────────────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────┘
+                             │ IPC (ipcMain.handle)
+                             │ contextBridge preload
+┌────────────────────────────┴────────────────────────────────┐
+│                  渲染进程 (Chromium + Vue 3)                │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │  Vue Components (views/ + components/)               │  │
+│  └─────────────────────────────────────────────────────┘  │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │  Pinia Stores (watchlist / position / fund / ...)    │  │
+│  └─────────────────────────────────────────────────────┘  │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │  Composables (useNavigation / useToast / useConfig)  │  │
+│  └─────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘</pre>
+
+        <h3 id="arch-ipc">3.2 IPC 通信契约</h3>
+        <p>
+          所有跨进程调用都通过 <code>ipcMain.handle</code> 注册为"请求-响应"模式；推送类通知（配置变更、刷新结果）走 <code>webContents.send</code> + preload
+          端订阅。命名风格：<code>&lt;domain&gt;:&lt;action&gt;</code>，例如
+          <code>watchlist:add</code>、<code>kline:get-chart-data</code>。
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>域</th>
+              <th>典型 IPC</th>
+              <th>方向</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>watchlist</code></td>
+              <td><code>watchlist:add</code> / <code>watchlist:update</code> / <code>watchlist:delete</code> /
+                <code>watchlist:list</code>
+              </td>
+              <td>双向</td>
+              <td>自选股 CRUD</td>
+            </tr>
+            <tr>
+              <td><code>trade</code></td>
+              <td><code>trade:add</code> / <code>trade:list</code> / <code>trade:by-stock</code></td>
+              <td>双向</td>
+              <td>交易记录 CRUD</td>
+            </tr>
+            <tr>
+              <td><code>position</code></td>
+              <td><code>position:list</code> / <code>position:compute</code></td>
+              <td>双向</td>
+              <td>持仓聚合（从 trade_records 计算）</td>
+            </tr>
+            <tr>
+              <td><code>kline</code></td>
+              <td><code>kline:download</code> / <code>kline:get-chart-data</code></td>
+              <td>双向</td>
+              <td>K线下载与图表数据查询</td>
+            </tr>
+            <tr>
+              <td><code>fund</code></td>
+              <td><code>fund:list</code> / <code>fund:add</code> / <code>fund:delete</code></td>
+              <td>双向</td>
+              <td>资金明细</td>
+            </tr>
+            <tr>
+              <td><code>config</code></td>
+              <td><code>config:get</code> / <code>config:set</code> / <code>config:onLoaded</code></td>
+              <td>双向 + 推送</td>
+              <td>应用配置</td>
+            </tr>
+            <tr>
+              <td><code>backup</code></td>
+              <td><code>backup:run-now</code> / <code>backup:list</code></td>
+              <td>双向</td>
+              <td>手动备份</td>
+            </tr>
+            <tr>
+              <td><code>index</code></td>
+              <td><code>index:status</code> / <code>index:onUpdate</code></td>
+              <td>双向 + 推送</td>
+              <td>大盘指数</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="note warn">
+          <span class="label">安全红线</span>
+          渲染进程禁止直接 <code>require('fs')</code> 或 <code>require('electron')</code>。所有文件系统、窗口、系统能力调用都必须经 IPC 转发，由
+          <code>electron/index.ts</code> 统一登记。
+        </div>
+
+        <h3 id="arch-dataflow">3.3 数据流</h3>
+        <pre class="diagram">  用户交互              Vue 组件              Pinia Store                IPC                主进程 Service
+  ────────              ────────              ───────────                ───                ────────────────
+     │                   click handler              │                         │                         │
+     │  ─点击"刷新"────▶  │                         │                         │                         │
+     │                   store.refresh()           │                         │                         │
+     │                          │ ──────────────▶   │                         │                         │
+     │                          │                   │ invoke('price:refresh') │                         │
+     │                          │                   │ ──────────────────────▶ │                         │
+     │                          │                   │                         │ scheduler.tick()        │
+     │                          │                   │                         │ ─────────────────────▶  │
+     │                          │                   │                         │                         │ fetchStockPrices()
+     │                          │                   │ ◀────────────────────── │ ◀───────────────────────│
+     │                          │ ◀──────────────── │ { updated, prices }     │                         │
+     │   watch(prices) ───▶  自动重渲染             │                         │                         │</pre>
+
+        <h3 id="arch-pinia">3.4 Pinia 状态管理</h3>
+        <p>采用 Composition API 风格 <code>defineStore</code>，每个 store 内部使用 <code>ref</code> / <code>computed</code> /
+          函数三段式封装业务逻辑：</p>
+        <pre><code>// src/stores/watchlist.ts（示意）
+export const useWatchlistStore = defineStore('watchlist', () =&gt; {
+  // ── 状态 ──
+  const stocks = ref&lt;WatchlistStock[]&gt;([])
+  const loading = ref(false)
+  const error = ref&lt;string | null&gt;(null)
+
+  // ── 计算 ──
+  const enabledStocks = computed(() =&gt; stocks.value.filter(s =&gt; s.monitorEnabled))
+
+  // ── 动作 ──
+  async function refresh() {
+    loading.value = true
+    try { stocks.value = await window.api.watchlistList() }
+    catch (e) { error.value = (e as Error).message }
+    finally { loading.value = false }
+  }
+
+  return { stocks, loading, error, enabledStocks, refresh }
+})</code></pre>
+
+        <h3 id="arch-shared">3.5 共享类型层</h3>
+        <p>
+          所有跨进程接口契约放 <code>shared/types/index.ts</code>，由主进程与渲染进程共同引用；<code>tsconfig.json</code> 在 <code>include</code>
+          中显式声明 <code>shared/**</code>，避免跨 tsconfig project 引用造成的类型丢失。
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>分组</th>
+              <th>代表类型</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>窗口/平台</td>
+              <td><code>WindowAPI</code>、<code>platform</code></td>
+            </tr>
+            <tr>
+              <td>配置</td>
+              <td><code>AppConfig</code>、<code>TradingConfig</code>、<code>PollingConfig</code>、<code>ApiConfig</code>
+              </td>
+            </tr>
+            <tr>
+              <td>业务实体</td>
+              <td>
+                <code>WatchlistStock</code>、<code>TradeRecord</code>、<code>FundDetailRecord</code>、<code>BackupFile</code>
+              </td>
+            </tr>
+            <tr>
+              <td>K线</td>
+              <td><code>KlineData</code>、<code>AdjustType</code></td>
+            </tr>
+            <tr>
+              <td>API 提供商</td>
+              <td><code>ApiProviderOption</code>、<code>API_PROVIDERS</code></td>
+            </tr>
+            <tr>
+              <td>形态识别</td>
+              <td>
+                <code>CandlestickPatternCode</code>、<code>PatternHit</code>、<code>TrendInfo</code>、<code>PatternContext</code>、<code>PatternDefinition</code>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ========== 数据模型 ========== -->
+      <section id="datamodel">
+        <h2>4. 数据模型</h2>
+
+        <p>数据库表与字段定义集中在 <code>electron/database.ts</code>。核心表如下：</p>
+
+        <h3>4.1 watchlist_stocks（自选股）</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>列</th>
+              <th>类型</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>id</td>
+              <td>INTEGER PK</td>
+              <td>主键</td>
+            </tr>
+            <tr>
+              <td>stock_code</td>
+              <td>TEXT</td>
+              <td>股票代码，如 <code>sh600000</code></td>
+            </tr>
+            <tr>
+              <td>stock_name</td>
+              <td>TEXT</td>
+              <td>股票名称（API 自动填充）</td>
+            </tr>
+            <tr>
+              <td>buy_threshold</td>
+              <td>REAL</td>
+              <td>买入阈值价</td>
+            </tr>
+            <tr>
+              <td>sell_threshold</td>
+              <td>REAL</td>
+              <td>卖出阈值价</td>
+            </tr>
+            <tr>
+              <td>monitor_enabled</td>
+              <td>INTEGER</td>
+              <td>是否启用监控（0/1）</td>
+            </tr>
+            <tr>
+              <td>created_at</td>
+              <td>TEXT</td>
+              <td>ISO 8601 创建时间</td>
+            </tr>
+            <tr>
+              <td>updated_at</td>
+              <td>TEXT</td>
+              <td>ISO 8601 更新时间</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>4.2 trade_records（交易记录）</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>列</th>
+              <th>类型</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>id</td>
+              <td>INTEGER PK</td>
+              <td>主键</td>
+            </tr>
+            <tr>
+              <td>stock_code</td>
+              <td>TEXT</td>
+              <td>股票代码</td>
+            </tr>
+            <tr>
+              <td>stock_name</td>
+              <td>TEXT</td>
+              <td>股票名称</td>
+            </tr>
+            <tr>
+              <td>trade_date</td>
+              <td>TEXT (YYYY-MM-DD)</td>
+              <td>交易日期</td>
+            </tr>
+            <tr>
+              <td>trade_type</td>
+              <td>TEXT</td>
+              <td><code>BUY</code> / <code>SELL</code> / <code>DIVIDEND</code></td>
+            </tr>
+            <tr>
+              <td>trade_price</td>
+              <td>REAL</td>
+              <td>成交价格</td>
+            </tr>
+            <tr>
+              <td>quantity</td>
+              <td>REAL</td>
+              <td>成交数量（手数 × 100）</td>
+            </tr>
+            <tr>
+              <td>commission</td>
+              <td>REAL</td>
+              <td>手续费</td>
+            </tr>
+            <tr>
+              <td>holding_count</td>
+              <td>REAL</td>
+              <td>本次交易后该股的累计持仓</td>
+            </tr>
+            <tr>
+              <td>trade_fund_id</td>
+              <td>INTEGER FK</td>
+              <td>关联的资金明细记录 ID（014 实现自动生成）</td>
+            </tr>
+            <tr>
+              <td>notes</td>
+              <td>TEXT</td>
+              <td>备注</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>4.3 transfer_records（资金明细）</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>列</th>
+              <th>类型</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>id</td>
+              <td>INTEGER PK</td>
+              <td>主键</td>
+            </tr>
+            <tr>
+              <td>transfer_date</td>
+              <td>TEXT</td>
+              <td>转账日期</td>
+            </tr>
+            <tr>
+              <td>amount</td>
+              <td>REAL</td>
+              <td>金额（正数）</td>
+            </tr>
+            <tr>
+              <td>type</td>
+              <td>TEXT</td>
+              <td><code>IN</code> / <code>OUT</code> / <code>DIVIDEND</code> / <code>DIVIDEND_TAX</code> /
+                <code>STOCK_BUY</code> / <code>STOCK_SELL</code> / <code>INTEREST</code>
+              </td>
+            </tr>
+            <tr>
+              <td>account_balance</td>
+              <td>REAL</td>
+              <td>本次操作后的账户余额（自动滚动）</td>
+            </tr>
+            <tr>
+              <td>trade_record_id</td>
+              <td>INTEGER FK</td>
+              <td>关联的交易记录 ID（若有）</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>4.4 kline_data（K线行情）</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>列</th>
+              <th>类型</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>id</td>
+              <td>INTEGER PK</td>
+              <td>主键</td>
+            </tr>
+            <tr>
+              <td>stock_code</td>
+              <td>TEXT</td>
+              <td>股票代码</td>
+            </tr>
+            <tr>
+              <td>trade_date</td>
+              <td>TEXT</td>
+              <td>交易日</td>
+            </tr>
+            <tr>
+              <td>adjust_type</td>
+              <td>TEXT</td>
+              <td><code>qfq</code>（前复权）/ <code>none</code>（不复权）</td>
+            </tr>
+            <tr>
+              <td>open / high / low / close</td>
+              <td>REAL</td>
+              <td>OHLC</td>
+            </tr>
+            <tr>
+              <td>volume</td>
+              <td>REAL</td>
+              <td>成交量</td>
+            </tr>
+            <tr>
+              <td>amount</td>
+              <td>REAL</td>
+              <td>成交额</td>
+            </tr>
+            <tr>
+              <td>change_pct</td>
+              <td>REAL</td>
+              <td>涨跌幅（%）</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>复合主键：<code>(stock_code, trade_date, adjust_type)</code>，确保同一交易日两种调整方式可以并存。</p>
+
+        <h3>4.5 backup_history（备份记录）</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>列</th>
+              <th>类型</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>id</td>
+              <td>INTEGER PK</td>
+              <td>主键</td>
+            </tr>
+            <tr>
+              <td>file_path</td>
+              <td>TEXT</td>
+              <td>备份文件绝对路径</td>
+            </tr>
+            <tr>
+              <td>file_size</td>
+              <td>INTEGER</td>
+              <td>文件大小（字节）</td>
+            </tr>
+            <tr>
+              <td>trigger_type</td>
+              <td>TEXT</td>
+              <td><code>manual</code> / <code>scheduled</code> / <code>on-startup</code></td>
+            </tr>
+            <tr>
+              <td>created_at</td>
+              <td>TEXT</td>
+              <td>备份时间</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ========== 功能模块 ========== -->
+      <section id="features">
+        <h2>5. 功能模块</h2>
+        <p>
+          按 spec
+          编号顺序（001、004、005、006–017）排列。其中 008 拆为两个独立功能卡：5.6 网格交易（策略配置）与 5.7
+          网格交易仿真。每个模块说明：<strong>业务目标</strong>、<strong>关键页面/组件</strong>、<strong>核心业务规则</strong>、<strong>非目标</strong>。
+        </p>
+
+        <!-- 001 -->
+        <h3 id="f-001">5.1 001 · 项目脚手架</h3>
+        <div class="card">
+          <span class="num">001 · Project Scaffold</span>
+          <h4>业务目标</h4>
+          <p>搭建 Electron + Vite + Vue 3 + TS 的基础工程，能跑、能构建、能打包、能托盘。</p>
+          <h4>关键产物</h4>
+          <ul>
+            <li><code>electron/index.ts</code> · 主进程入口、BrowserWindow、Tray、生命周期</li>
+            <li><code>vite.config.ts</code> · 渲染端构建配置</li>
+            <li><code>tsconfig.json</code> / <code>tsconfig.node.json</code> · 主/渲染双 tsconfig</li>
+            <li><code>electron-builder</code> 配置 · Windows 打包输出</li>
+          </ul>
+        </div>
+
+        <!-- 004 -->
+        <h3 id="f-004">5.2 004 · 侧边栏导航</h3>
+        <div class="card">
+          <span class="num">004 · Sidebar Navigation</span>
+          <h4>业务目标</h4>
+          <p>提供左侧固定侧边栏，覆盖所有主要页面的导航入口。</p>
+          <h4>关键设计</h4>
+          <ul>
+            <li>未引入 vue-router，使用 <code>useNavigation</code> composable + <code>ViewId</code> 字符串联合实现页面切换</li>
+            <li>每个菜单项提供 inline SVG <code>iconPath</code>（不依赖图标库）</li>
+            <li><code>App.vue</code> 维护 <code>viewComponents</code> 映射表</li>
+          </ul>
+        </div>
+
+        <!-- 005 -->
+        <h3 id="f-005">5.3 005 · 设置配置</h3>
+        <div class="card">
+          <span class="num">005 · Settings Configuration</span>
+          <h4>业务目标</h4>
+          <p>把交易时间段、轮询间隔、行情 API 提供商等可调参数集中管理并持久化。</p>
+          <h4>关键设计</h4>
+          <ul>
+            <li><code>AppConfig</code> 三段：<code>trading</code> / <code>polling</code> / <code>api</code></li>
+            <li>默认配置收敛在 <code>shared/types/index.ts</code> 的 <code>DEFAULT_CONFIG</code></li>
+            <li>提供 <code>onConfigLoaded</code> 推送事件，渲染端无需轮询</li>
+          </ul>
+        </div>
+
+        <!-- 006 -->
+        <h3 id="f-006">5.4 006 · 自选股页面</h3>
+        <div class="card">
+          <span class="num">006 · Stock Watchlist Page</span>
+          <h4>业务目标</h4>
+          <p>用户添加关注的股票、查看实时价格、买卖阈值、涨跌幅；可启用/禁用监控。</p>
+          <h4>核心业务规则</h4>
+          <ul>
+            <li>买入价 &lt; 卖出价（同只股票）由表单校验保证</li>
+            <li>股票代码格式必须匹配 <code>(sh|sz|hk)\d{6}</code></li>
+            <li>监控列表按 <code>monitor_enabled DESC, updated_at DESC</code> 排序</li>
+            <li>价格突破阈值时通过 <code>alertService</code> 触发系统通知</li>
+          </ul>
+        </div>
+
+        <!-- 007 -->
+        <h3 id="f-007">5.5 007 · 持仓页面</h3>
+        <div class="card">
+          <span class="num">007 · Position Page</span>
+          <h4>业务目标</h4>
+          <p>从交易记录自动聚合当前持仓，展示成本、最新价、浮动盈亏。</p>
+          <h4>核心业务规则</h4>
+          <ul>
+            <li><strong>持仓成本</strong>采用移动加权平均（<code>sum(cost × qty) / sum(qty)</code>，剔除卖出）</li>
+            <li><strong>盈亏</strong> = <code>(最新价 − 平均成本) × 持仓数量</code></li>
+            <li>交易记录分页展示，单只可折叠展开</li>
+            <li>支持 <strong>单只展开模式</strong>（同时只展开一只）</li>
+          </ul>
+        </div>
+
+        <!-- 008 -->
+        <h3 id="f-008">5.6 008 · 网格交易（策略配置）</h3>
+        <div class="card">
+          <span class="num">008 · Grid Trading — Configuration</span>
+          <h4>业务目标</h4>
+          <p>配置网格策略的静态参数（价格区间、网格类型、每格手数），自动生成各档买卖价位清单。属于"配置 + 展示"，不涉及在历史 K 线上跑模拟。</p>
+          <h4>核心业务规则</h4>
+          <ul>
+            <li>
+              <strong>等比网格</strong>：<code>price[i] = priceMin × ratio^i</code>，<code>ratio = (priceMax / priceMin)^(1 / (gridCount - 1))</code>
+            </li>
+            <li>
+              <strong>等差网格</strong>：<code>price[i] = priceMin + step × i</code>，<code>step = (priceMax - priceMin) / (gridCount - 1)</code>
+            </li>
+            <li><strong>档位清单</strong>：每档含触发方向（buy / sell）、触发价、建议手数（按可用资金均分，可手动覆盖）</li>
+            <li><strong>校验</strong>：<code>priceMin &lt; priceMax</code>、<code>gridCount ≥ 2</code>、每格手数 × 价格 ≤ 可用资金</li>
+            <li>持久化到 <code>grid_strategies</code> 表（specs/008 schema 范围内），不写交易记录、不写资金流水</li>
+          </ul>
+          <h4>非目标（明确排除）</h4>
+          <ul>
+            <li>在历史 K 线上跑策略模拟——见 §5.7 网格交易仿真</li>
+            <li>实时根据行情触发交易信号——见 008 告警 + 用户手动确认</li>
+          </ul>
+        </div>
+
+        <!-- 008b 网格交易仿真（独立功能） -->
+        <h3 id="f-008-sim">5.7 008-sim · 网格交易仿真</h3>
+        <div class="card">
+          <span class="num">008-sim · Grid Trading — Simulation</span>
+          <h4>业务目标</h4>
+          <p>把 §5.6 配置出来的网格策略，<strong>在历史 K 序列上回放一遍</strong>，产出"假如当时按此策略机械执行"的模拟成交与盈亏，帮助用户在投入真金白银前评估策略表现。</p>
+          <h4>核心业务规则</h4>
+          <ul>
+            <li><strong>回放输入</strong>：一份网格策略（来自 §5.6）+ 一段时间窗口的日 K + 初始资金</li>
+            <li><strong>触发逻辑</strong>：按 K 线序列逐日判断，<code>low ≤ price[i] ≤ high</code> 即视为触发该档位；同一日多档同时满足时按最靠近当前价的优先级处理
+            </li>
+            <li>
+              <strong>多策略内置</strong>：strategy1=半仓平衡、strategy2=阈值满仓、strategy3=再平衡偏差预警、strategy4=全部触发、strategy5=自定义（暴露前置策略参数）
+            </li>
+            <li><strong>仿真输出</strong>：模拟交易记录列表、累计盈亏曲线、最大回撤、胜率、单笔平均收益</li>
+            <li><strong>仿真数据</strong>：仅渲染进程内计算，<strong>不写入 <code>trade_records</code> /
+                <code>transfer_records</code></strong>（与真实交易严格隔离）</li>
+            <li><strong>入口</strong>：<code>useNavigation</code> 中独立的 <code>ViewId = 'grid-simulation'</code>，对应独立页面
+              <code>GridSimulationView.vue</code>
+            </li>
+          </ul>
+          <h4>非目标（明确排除）</h4>
+          <ul>
+            <li>真实交易执行——本模块所有写入只停留在渲染端内存</li>
+            <li>分钟级/盘中高频回放——只支持日 K 序列回放</li>
+          </ul>
+        </div>
+
+        <!-- 009 -->
+        <h3 id="f-009">5.8 009 · 日志查看器</h3>
+        <div class="card">
+          <span class="num">009 · Log Viewer</span>
+          <h4>业务目标</h4>
+          <p>在应用内查看 <code>electron-log</code> 写入的滚动日志文件，支持手动刷新。</p>
+          <h4>关键设计</h4>
+          <ul>
+            <li>日志文件按天滚动，存放在 <code>app.getPath('userData')/logs/</code></li>
+            <li>渲染端只读打开，不可编辑</li>
+            <li><code>logStore</code> 维护当前加载的日志内容与刷新状态</li>
+          </ul>
+        </div>
+
+        <!-- 010 -->
+        <h3 id="f-010">5.9 010 · 指数状态栏</h3>
+        <div class="card">
+          <span class="num">010 · Index Status Bar</span>
+          <h4>业务目标</h4>
+          <p>底部固定一行，展示主要大盘指数（沪深 300、创业板指等）的实时点位与涨跌幅。</p>
+          <h4>关键设计</h4>
+          <ul>
+            <li>指数代码与名称写在 <code>useIndexData</code> 中，分组轮询</li>
+            <li>涨跌幅按 <strong>三色编码</strong>（红涨绿跌，对应中国 A 股惯例）</li>
+            <li>轮询间隔与价格轮询一致（<code>polling.interval</code>）</li>
+          </ul>
+        </div>
+
+        <!-- 011 -->
+        <h3 id="f-011">5.10 011 · 历史交易</h3>
+        <div class="card">
+          <span class="num">011 · Historical Trades</span>
+          <h4>关键设计</h4>
+          <ul>
+            <li>从 trade_records 中识别"已清仓"周期（BUY → SELL 配对直至 holdingCount = 0）</li>
+            <li>支持 <strong>单只展开</strong>查看完整交易链</li>
+            <li>显示每个周期的总盈亏、持仓天数、收益率</li>
+          </ul>
+        </div>
+
+        <!-- 012 -->
+        <h3 id="f-012">5.11 012 · 数据库备份</h3>
+        <div class="card">
+          <span class="num">012 · Database Backup</span>
+          <h4>关键设计</h4>
+          <ul>
+            <li><strong>自动备份</strong>：应用启动 + 每日定时，由 <code>backupService.startBackupScheduler</code> 调度</li>
+            <li><strong>手动备份</strong>：设置页面触发，调用 <code>backup:run-now</code> IPC</li>
+            <li>备份文件命名：<code>stockanalyzer-YYYYMMDD-HHmmss.db</code></li>
+            <li>仅保留最近 N 个备份（默认 10），超出自动删除最旧</li>
+          </ul>
+        </div>
+
+        <!-- 013 -->
+        <h3 id="f-013">5.12 013 · 资金管理</h3>
+        <div class="card">
+          <span class="num">013 · Fund Management</span>
+          <h4>业务目标</h4>
+          <p>记录资金明细（转入、转出、分红、利息等）并提供盈亏统计。</p>
+          <h4>核心业务规则</h4>
+          <ul>
+            <li><code>account_balance</code> 由每次资金操作后自动滚动计算</li>
+            <li>资金类型枚举：<code>IN</code> / <code>OUT</code> / <code>DIVIDEND</code> / <code>DIVIDEND_TAX</code> /
+              <code>STOCK_BUY</code> / <code>STOCK_SELL</code> / <code>INTEREST</code>
+            </li>
+            <li>FIFO 原则扣除分红税（多次分红按先到先得）</li>
+            <li>盈亏统计按已实现盈亏（已清仓）+ 浮动盈亏（持仓中）两段汇总</li>
+          </ul>
+        </div>
+
+        <!-- 014 -->
+        <h3 id="f-014">5.13 014 · 交易-资金同步</h3>
+        <div class="card">
+          <span class="num">014 · Trade-Fund Sync</span>
+          <h4>业务目标</h4>
+          <p>保证 trade_records 与 transfer_records 一致性：新增买入自动生成 STOCK_BUY 资金流水、卖出生成 STOCK_SELL 流水、分红生成 DIVIDEND +
+            DIVIDEND_TAX 流水。</p>
+          <h4>核心业务规则</h4>
+          <ul>
+            <li>同步发生在 service 层而非 DB 触发器，便于单测</li>
+            <li>删除交易记录会同步删除其关联的资金流水</li>
+            <li>修改交易数量/价格会反向调整对应流水金额</li>
+          </ul>
+        </div>
+
+        <!-- 015 -->
+        <h3 id="f-015">5.14 015 · K线下载</h3>
+        <div class="card">
+          <span class="num">015 · K-line Download</span>
+          <h4>业务目标</h4>
+          <p>支持手动与自动下载指定股票的历史日 K 数据，写入 <code>kline_data</code>。</p>
+          <h4>关键设计</h4>
+          <ul>
+            <li><code>adjust_type</code>：<code>qfq</code>（前复权）/ <code>none</code>（不复权），两套数据并存</li>
+            <li><code>KlineDownloadDialog</code> 弹窗选择股票 + 调整方式 + 起始日期</li>
+            <li>下载任务由 <code>startKlineDownloadScheduler</code> 在交易日定时执行</li>
+          </ul>
+        </div>
+
+        <!-- 016 -->
+        <h3 id="f-016">5.15 016 · 资金统计</h3>
+        <div class="card">
+          <span class="num">016 · Fund Statistics</span>
+          <h4>业务目标</h4>
+          <p>在资金管理页面顶部新增"资金统计"标签页，呈现账户余额、持仓金额的当前值与历史趋势。</p>
+          <h4>核心计算</h4>
+          <ul>
+            <li><strong>当前账户余额</strong>：<code>transfer_records</code> 表最后一条的 <code>account_balance</code></li>
+            <li><strong>当前持仓金额</strong>：<code>Σ(最新收盘价 × holdingCount)</code>，跨所有 trade_records 持仓</li>
+            <li><strong>月度趋势</strong>：过去 60 个月每月末聚合（账户余额、持仓金额、总资产），缺失月份向前填充</li>
+            <li>饼图（账户余额 vs 持仓金额）+ 折线图（三条线）展示</li>
+          </ul>
+        </div>
+
+        <h3 id="f-cpr">5.16 017 · K线形态识别</h3>
+        <div class="card">
+          <span class="num">017 · Candlestick Pattern Recognition</span>
+          <h4>业务目标</h4>
+          <p>在应用内自动识别 32 种经典日本蜡烛图形态（看涨 / 看跌 / 转折预警），把结果直观地标记在自选股的日 K 序列上，辅助交易复盘与决策。</p>
+          <h4>形态清单（共 32）</h4>
+          <div class="grid cols-3">
+            <div>
+              <strong>单根（9）</strong>
+              <ul>
+                <li><code>doji</code> 十字星</li>
+                <li><code>long_legged_doji</code> 长腿十字星</li>
+                <li><code>gravestone_doji</code> 墓碑十字</li>
+                <li><code>dragonfly_doji</code> 蜻蜓十字</li>
+                <li><code>hammer</code> 锤子</li>
+                <li><code>hanging_man</code> 上吊</li>
+                <li><code>inverted_hammer</code> 倒锤子</li>
+                <li><code>shooting_star</code> 流星</li>
+                <li><code>marubozu</code> 光头光脚</li>
+              </ul>
+            </div>
+            <div>
+              <strong>双根（10）</strong>
+              <ul>
+                <li><code>bullish_engulfing</code> 阳包阴</li>
+                <li><code>bearish_engulfing</code> 阴包阳</li>
+                <li><code>dark_cloud_cover</code> 乌云盖顶</li>
+                <li><code>piercing_pattern</code> 刺透</li>
+                <li><code>bullish_harami</code> 看涨孕线</li>
+                <li><code>bearish_harami</code> 看跌孕线</li>
+                <li><code>tweeter_top</code> / <code>tweeter_bottom</code> 十字星孕线</li>
+                <li><code>on_neck</code> / <code>in_neck</code> 颈上线/颈内线</li>
+              </ul>
+            </div>
+            <div>
+              <strong>三根及以上（13）</strong>
+              <ul>
+                <li><code>morning_star</code> 晨星</li>
+                <li><code>evening_star</code> 暮星</li>
+                <li><code>bullish_abandoned_baby</code> 看涨弃婴</li>
+                <li><code>bearish_abandoned_baby</code> 看跌弃婴</li>
+                <li><code>three_white_soldiers</code> 三白兵</li>
+                <li><code>three_black_crows</code> 三黑鸦</li>
+                <li><code>deliberation</code> 思考线</li>
+                <li><code>rising_three_methods</code> / <code>falling_three_methods</code> 三法</li>
+                <li><code>thrusting</code> 插入</li>
+                <li><code>belt_hold_confirmed</code> 捉腰带确认</li>
+                <li><code>separating_lines</code> 分离线</li>
+                <li><code>mat_hold</code> 铺垫</li>
+              </ul>
+            </div>
+          </div>
+          <h4>关键设计决策</h4>
+          <ul>
+            <li><strong>算法库下沉</strong>：32 个 <code>PatternDefinition</code> 以纯函数形式放在 <code>shared/patterns/</code>（按
+              single/double/triple 分目录），渲染端可直接 <code>import</code>，不依赖 <code>fs</code> 或 <code>electron</code>。</li>
+            <li><strong>三段式判定</strong>：每条形态以"几何阈值 + 趋势前提 + 强度评分"三段式定义；反转形态要求对立趋势、继续形态要求一致趋势，<code>K 线 &lt; 20 根</code>
+              时一律返回 <code>flat</code> 趋势跳过判定。</li>
+            <li><strong>探测入口去重</strong>：<code>detectPatterns(candles)</code> 按 <code>(code, endIndex)</code>
+              去重，保留同一位置最强命中，避免重复绘制。</li>
+            <li><strong>页面与图表联动</strong>：新增 <code>PatternScanView</code> 页面（侧边栏"形态检测"入口），复用既有 <code>useKlineChart</code>
+              组件；点击列表行调用 <code>scrollToIndex(endIndex)</code> 居中图表并高亮命中点。</li>
+            <li><strong>标记图层隔离</strong>：<code>useKlineChart.drawPatternMarkers(hits)</code> 是独立绘制层，看涨 ▲ 绿 / 看跌 ▼ 红 / 转折
+              ◆ 黄，三色三形状且 Y 偏移错开，与既有 <code>drawTradeMarkers</code>（交易标记层）互不覆盖。</li>
+            <li><strong>类型共享</strong>：<code>CandlestickPatternCode</code>（32 个 string literal
+              union）、<code>PatternHit</code>、<code>TrendInfo</code>、<code>PatternContext</code>、<code>PatternDefinition</code>
+              全部声明在 <code>shared/types/index.ts</code>。</li>
+          </ul>
+          <h4>核心业务规则</h4>
+          <ul>
+            <li><strong>选股范围</strong>：仅在用户自选股内选择；尚未下载 K 线的股票在选择器中禁用并提示"请先下载 K 线"。</li>
+            <li><strong>调整方式</strong>：默认 <code>qfq</code>（前复权），可切换为 <code>none</code>（不复权）；切换股票或调整方式都自动触发重新检测。</li>
+            <li><strong>日期窗口</strong>：默认"近 30 日"，可通过下拉切换预设档（近 30/60/90/180/365 日）或自定义。</li>
+            <li><strong>筛选维度</strong>：方向（全部/看涨/看跌/转折）、形态（32 选项 + 全部）、列表排序按强度默认 / 按日期可选，三者均为 <code>computed</code>
+              派生，不存储重复数据。</li>
+            <li><strong>空态分级</strong>：K 线 &lt; 20 根 →"数据不足，无法检测"；无 K 线 → 列表禁用 + 提示下载；探测返回 <code>[]</code>
+              →"近期未发现蜡烛图形态信号"；IPC 失败 → 复用既有 Toast。</li>
+            <li><strong>非目标（明确排除）</strong>：批量扫描全自选股、周线/分时形态、检测结果持久化、历史回测与胜率统计。</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ========== 核心业务规则 ========== -->
+      <section id="business">
+        <h2>6. 核心业务规则与计算</h2>
+
+        <h3>6.1 持仓成本（加权平均法）</h3>
+        <p>持仓成本不直接存储，由交易记录实时聚合：</p>
+        <pre><code>avgCost = Σ(买入价格 × 买入数量 − 卖出对应成本)
+         ─────────────────────────────────────────
+                       当前持仓数量</code></pre>
+        <p>其中"卖出对应成本"按先进先出或加权两种策略可选，本项目默认加权平均。</p>
+
+        <h3>6.2 盈亏</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>类型</th>
+              <th>公式</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>浮动盈亏（未实现）</td>
+              <td><code>(最新价 − 平均成本) × 持仓数量</code></td>
+            </tr>
+            <tr>
+              <td>已实现盈亏</td>
+              <td><code>Σ(卖出价 − 当时平均成本) × 卖出数量</code></td>
+            </tr>
+            <tr>
+              <td>含手续费净盈亏</td>
+              <td>已实现盈亏 − 累计手续费 − 分红税</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>6.3 网格策略核心公式</h3>
+        <pre><code>// 等比网格
+ratio = (priceMax / priceMin)^(1 / (gridCount - 1))
+price[i] = priceMin × ratio^i,  i = 0..gridCount-1
+
+// 等差网格
+step = (priceMax - priceMin) / (gridCount - 1)
+price[i] = priceMin + step × i
+
+// 每格手数（资金平均分配）
+qtyPerGrid = floor(totalCapital / gridCount / price[i] / 100) × 100</code></pre>
+
+        <h3>6.4 资金统计月度聚合</h3>
+        <p>对过去 60 个月的每月末日，按以下步骤聚合：</p>
+        <ol>
+          <li>取该月及之前最近的 <code>transfer_records.account_balance</code></li>
+          <li>取该月及之前最近的 <code>trade_records.holding_count</code>（每只股票）</li>
+          <li>取该月及之前最近的 <code>kline_data.close</code>（每只股票）</li>
+          <li>该月持仓市值 = <code>Σ(close × holdingCount)</code></li>
+          <li>缺失月份用最近一个有效月份向前填充；完全无数据则该月不画点</li>
+        </ol>
+
+        <h3>6.5 形态识别判定（三段式）</h3>
+        <p>每条形态的 <code>PatternDefinition</code> 由三段拼装，且由统一入口 <code>detectPatterns(candles)</code> 串联：</p>
+
+        <h4>① 几何阈值</h4>
+        <p>用百分比表示的 <strong>几何参数</strong>，与具体价格无关，便于跨品种迁移：</p>
+        <pre><code>body = |close - open|
+upperShadow = high - max(open, close)
+lowerShadow = min(open, close) - low
+range     = high - low
+avgBody   = mean(body[i-1..i-N])
+
+isDoji          ← body / range &lt; 0.10
+isLongLeggedDoji ← body / range &lt; 0.10 AND upperShadow &gt; range × 0.40 AND lowerShadow &gt; range × 0.40
+isHammer        ← lowerShadow &gt; body × 2 AND upperShadow &lt; body × 0.5 AND body &lt; range × 0.40
+... 32 个形态各自的阈值见 shared/patterns/{single,double,triple}/</code></pre>
+
+        <h4>② 趋势前提</h4>
+        <p>反转形态要求"前 10 根与之对立"的趋势，继续形态要求"一致"；趋势由 MA5 / MA10 与 10 根收盘价动量共同刻画：</p>
+        <pre><code>function trend(candles, endIndex): TrendInfo {
+  if (endIndex &lt; 20) return { direction: 'flat', slope: 0, strength: 0 }
+  const closes = candles.slice(endIndex - 10, endIndex + 1).map(c =&gt; c.close)
+  const ma5  = mean(closes.slice(-5))
+  const ma10 = mean(closes)
+  const momentum = (closes.at(-1) - closes[0]) / closes[0]    // 涨跌幅
+  if (ma5 &gt; ma10 &amp;&amp; momentum &gt; 0.01) return { direction: 'up',   ... }
+  if (ma5 &lt; ma10 &amp;&amp; momentum &lt; -0.01) return { direction: 'down', ... }
+  return { direction: 'flat', ... }
+}</code></pre>
+        <p>判定时机：探测形态时取 <strong>形态结束根</strong>（<code>endIndex</code>）作为趋势计算的锚点。</p>
+
+        <h4>③ 强度评分（0–100）</h4>
+        <p>强度决定列表排序与前端高亮程度，由基础分 + 修饰分两部分组成：</p>
+        <table>
+          <thead>
+            <tr>
+              <th>维度</th>
+              <th>分值范围</th>
+              <th>判定依据</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>基础分</td>
+              <td>0–60</td>
+              <td>几何阈值匹配度（影线比例、实体大小）</td>
+            </tr>
+            <tr>
+              <td>趋势确认分</td>
+              <td>0–25</td>
+              <td>趋势越强且越符合形态方向，得分越高</td>
+            </tr>
+            <tr>
+              <td>位置加分</td>
+              <td>0–15</td>
+              <td>是否出现在关键支撑/阻力位附近</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h4>探测入口与去重</h4>
+        <pre><code>function detectPatterns(candles: Candle[]): PatternHit[] {
+  const raw = REGISTRY.flatMap(def =&gt; def.detector(candles, def.code))
+  // 同一位置同一形态只保留最强命中
+  return dedupeBy(raw, hit =&gt; `${hit.code}@${hit.endIndex}`, (a, b) =&gt; b.strength - a.strength)
+}</code></pre>
+      </section>
+
+      <!-- ========== 横切关注点 ========== -->
+      <section id="crosscutting">
+        <h2>7. 横切关注点</h2>
+
+        <h3>7.1 日志</h3>
+        <ul>
+          <li>主进程日志：<code>electron-log</code>，文件级别 <code>info</code>、控制台级别 <code>debug</code></li>
+          <li>日志目录：<code>app.getPath('userData')/logs/main-YYYY-MM-DD.log</code></li>
+          <li>渲染端日志：仅 console（生产环境不上送）</li>
+        </ul>
+
+        <h3>7.2 错误处理</h3>
+        <ul>
+          <li>Service 层抛出业务异常（带 <code>code</code> 字段），主进程统一捕获后透传给渲染端</li>
+          <li>渲染端 <code>useToast</code> composable 暴露 <code>error(msg)</code> / <code>success(msg)</code> /
+            <code>info(msg)</code>
+          </li>
+          <li>致命错误写入日志后弹模态框，提示用户重启</li>
+        </ul>
+
+        <h3>7.3 备份与数据安全</h3>
+        <ul>
+          <li>所有数据库写操作完成后立即 <code>saveDatabase()</code> 序列化到磁盘</li>
+          <li>每日 0 点 + 启动时 + 手动触发三种备份时机</li>
+          <li>仅保留最近 10 个备份文件</li>
+        </ul>
+
+        <h3>7.4 配置持久化</h3>
+        <p><code>AppConfig</code> 以 JSON 形式存在 <code>userData/config.json</code>；加载失败回退到 <code>DEFAULT_CONFIG</code>。</p>
+
+        <h3>7.5 价格轮询</h3>
+        <ul>
+          <li>只在交易时段触发（依据 <code>trading</code> 配置）</li>
+          <li>每个 API 提供商有独立的并发上限与失败重试策略</li>
+          <li>请求频率可由用户设置（默认 5s）</li>
+        </ul>
+
+        <h3>7.6 价格告警</h3>
+        <ul>
+          <li>价格突破买入/卖出阈值时触发 <code>alertService</code></li>
+          <li>去抖（debounce）：同一股票同方向告警 30 分钟内只触发一次</li>
+          <li>系统通知通过 Electron <code>Notification</code> API</li>
+        </ul>
+      </section>
+
+      <!-- ========== 测试 ========== -->
+      <section id="testing">
+        <h2>8. 测试与质量</h2>
+
+        <table>
+          <thead>
+            <tr>
+              <th>层级</th>
+              <th>工具</th>
+              <th>覆盖</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>单元测试</td>
+              <td>Vitest</td>
+              <td>纯函数算法（网格计算、形态识别 detector、工具函数）</td>
+            </tr>
+            <tr>
+              <td>组件测试</td>
+              <td>—（按需引入）</td>
+              <td>关键组件渲染快照</td>
+            </tr>
+            <tr>
+              <td>E2E</td>
+              <td>Playwright（待补）</td>
+              <td>关键用户路径（添加自选 → 记录交易 → 查看盈亏）</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>8.1 验收命令</h3>
+        <pre><code>npm run typecheck    # tsc --noEmit, 严格模式
+npm run lint         # ESLint + stylelint
+npm run test         # Vitest
+npm run build        # Vite + tsc 主进程</code></pre>
+
+        <h3>8.2 测试数据约定</h3>
+        <ul>
+          <li>算法单测用 <code>buildKlineSeries()</code> 工厂构造指定形态序列</li>
+          <li>DB 相关单测使用 <code>:memory:</code> 内存 SQLite 实例</li>
+        </ul>
+      </section>
+
+      <!-- ========== 构建 ========== -->
+      <section id="build">
+        <h2>9. 构建与发布</h2>
+
+        <h3>9.1 脚本</h3>
+        <pre><code>npm run dev             # 同时启动 Vite + Electron（开发）
+npm run build           # 生产构建：渲染端 + 主进程
+npm run build:electron  # 仅构建主进程
+npm run preview         # 预览生产版本
+npm run lint            # 代码检查
+npm run typecheck       # 类型检查
+npm run migrate         # 数据库迁移脚本
+npx electron-builder --win  # Windows 打包</code></pre>
+
+        <h3>9.2 输出结构</h3>
+        <pre class="diagram">dist/                  # Vite 渲染端构建产物
+release/                # electron-builder 打包产物（Windows）
+  └── win-unpacked/
+      └── StockAnalyzer.exe
+      └── resources/
+          └── app.asar   # 主进程 + 渲染端打包</pre>
+
+        <div class="note danger">
+          <span class="label">打包红线</span>
+          打包前若 <code>release/</code> 或 <code>dist/</code> 因 Windows 文件占用无法删除，<strong>必须停下询问用户</strong>，禁止创建其他目录绕过。
+        </div>
+      </section>
+
+      <!-- ========== 附录 ========== -->
+      <section id="appendix">
+        <h2>10. 附录</h2>
+
+        <h3>10.1 路径别名</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>别名</th>
+              <th>指向</th>
+              <th>用于</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>@/</code></td>
+              <td><code>src/</code></td>
+              <td>渲染端相对引用</td>
+            </tr>
+            <tr>
+              <td><code>@electron/</code></td>
+              <td><code>electron/</code></td>
+              <td>渲染端跨进程引用 service 类型</td>
+            </tr>
+            <tr>
+              <td><code>@shared/</code></td>
+              <td><code>shared/</code></td>
+              <td>共享类型/算法库</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>10.2 目录结构（与 README 同步）</h3>
+        <pre><code>electron/               # 主进程
+  services/             # 业务服务层
+  database.ts           # 数据库初始化与查询
+  index.ts              # 主进程入口 + IPC 注册
+shared/
+  types/index.ts        # 共享类型
+  patterns/             # 形态识别算法库（新增）
+src/                    # 渲染进程
+  components/           # 可复用组件
+  composables/          # 组合式函数
+  stores/               # Pinia 状态管理
+  views/                # 页面视图
+  styles/main.scss      # 全局样式
+specs/                  # Spec-Kit 工作流产物
+  001-project-scaffold/
+  ...
+  016-fund-statistics/
+openspec/               # OpenSpec 工作流产物（本次新增）
+  changes/              # 活跃 change
+  changes/archive/      # 已归档 change（YYYY-MM-DD-name）
+  specs/                # 主规格（已同步的 delta spec）
+tests/
+  unit/                 # 单元测试
+  e2e/                  # 端到端测试（占位）
+docs/                   # PRD 与会议原始材料
+  PRD/                  # 产品需求文档
+  raw/                  # 原始 spec 草稿</code></pre>
+
+        <h3>10.3 角色与边界</h3>
+        <div class="grid cols-3">
+          <div class="card">
+            <h4>主进程可做</h4>
+            <ul>
+              <li>访问 <code>fs</code> / <code>child_process</code></li>
+              <li>调用本地 SDK 拉行情</li>
+              <li>读写 SQLite</li>
+              <li>注册系统托盘 / 通知</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h4>渲染进程可做</h4>
+            <ul>
+              <li>调用 <code>window.api.*</code> 暴露的 IPC</li>
+              <li>访问 <code>localStorage</code> / <code>sessionStorage</code></li>
+              <li>DOM / Canvas 渲染</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h4>两者共同可做</h4>
+            <ul>
+              <li>引用 <code>shared/types</code></li>
+              <li>使用纯函数（无副作用）</li>
+            </ul>
+          </div>
+        </div>
+
+        <h3>10.4 演进路线</h3>
+        <ol>
+          <li><strong>已交付</strong>：001–016 共 16 个 spec + 017 candlestick-pattern-recognition（OpenSpec change，详见 §5.15）
+          </li>
+          <li><strong>规划</strong>：策略回测、跨账户同步、云端备份（加密）、形态识别 v2（批量扫描 + 命中持久化）</li>
+        </ol>
+
+        <hr />
+        <p style="color: var(--fg-subtle); font-size: 13px;">
+          本文档由 StockAnalyzer 工程实践整理 · 与 <code>README.md</code> 和 <code>openspec/specs/</code> 主规格互为补充。
+          若发现与代码不一致，请以代码为准并提交 PR 修订本文档。
+        </p>
+      </section>
+
+    </main>
+  </div>
+</body>
+
+</html>

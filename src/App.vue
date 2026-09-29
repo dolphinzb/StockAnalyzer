@@ -13,6 +13,7 @@ import PositionView from './views/PositionView.vue'
 import SettingsView from './views/SettingsView.vue'
 import WatchlistView from './views/WatchlistView.vue'
 import FundManagementView from './views/FundManagementView.vue'
+import PatternScanView from './views/PatternScanView.vue'
 
 const { currentViewId, navigate } = useNavigation()
 const watchlistStore = useWatchlistStore()
@@ -24,6 +25,7 @@ const viewComponents = {
   'grid-simulation': GridSimulationView,
   'historical-trades': HistoricalTradesView,
   'fund-management': FundManagementView,
+  'pattern-scan': PatternScanView,
   settings: SettingsView,
   log: LogPage
 }

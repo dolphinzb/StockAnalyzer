@@ -1,0 +1,3601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StockAnalyzer · 用户操作手册</title>
+  <style>
+    /* ---------- 全局样式 ---------- */
+    :root {
+      --bg: #fafafa;
+      --fg: #1f2328;
+      --fg-muted: #57606a;
+      --fg-subtle: #8b949e;
+      --accent: #0969da;
+      --accent-bg: #ddf4ff;
+      --border: #d0d7de;
+      --border-muted: #e1e4e8;
+      --code-bg: #f6f8fa;
+      --success: #1a7f37;
+      --warning: #9a6700;
+      --danger: #cf222e;
+      --card-bg: #ffffff;
+      --shadow: 0 1px 3px rgba(31, 35, 40, 0.08);
+      --radius: 6px;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --fg: #e6edf3;
+        --fg-muted: #9198a1;
+        --fg-subtle: #6e7681;
+        --accent: #58a6ff;
+        --accent-bg: #1f3a5f;
+        --border: #30363d;
+        --border-muted: #21262d;
+        --code-bg: #161b22;
+        --success: #3fb950;
+        --warning: #d29922;
+        --danger: #f85149;
+        --card-bg: #161b22;
+        --shadow: 0 1px 3px rgba(1, 4, 9, 0.6);
+      }
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--fg);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ---------- 布局 ---------- */
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      max-width: 1400px;
+      margin: 0 auto;
+      gap: 32px;
+      padding: 32px 24px;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      aside.toc {
+        position: static !important;
+      }
+    }
+
+    /* ---------- TOC 侧栏 ---------- */
+    aside.toc {
+      position: sticky;
+      top: 32px;
+      align-self: start;
+      max-height: calc(100vh - 64px);
+      overflow-y: auto;
+      padding: 16px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-muted);
+      border-radius: var(--radius);
+      font-size: 13px;
+    }
+
+    aside.toc h2 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--fg-subtle);
+      font-weight: 600;
+    }
+
+    aside.toc ol {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    aside.toc li {
+      margin: 2px 0;
+    }
+
+    aside.toc a {
+      display: block;
+      padding: 4px 8px;
+      color: var(--fg-muted);
+      text-decoration: none;
+      border-radius: 4px;
+      border-left: 2px solid transparent;
+    }
+
+    aside.toc a:hover {
+      background: var(--code-bg);
+      color: var(--accent);
+    }
+
+    aside.toc .lvl-2 {
+      padding-left: 20px;
+    }
+
+    aside.toc .lvl-3 {
+      padding-left: 32px;
+      font-size: 12px;
+    }
+
+    /* ---------- 主内容 ---------- */
+    main {
+      min-width: 0;
+    }
+
+    header.hero {
+      padding: 32px 0 24px;
+      border-bottom: 1px solid var(--border-muted);
+      margin-bottom: 32px;
+    }
+
+    header.hero h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    header.hero .tagline {
+      margin: 0;
+      color: var(--fg-muted);
+      font-size: 16px;
+    }
+
+    header.hero .meta {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      font-size: 13px;
+      color: var(--fg-subtle);
+    }
+
+    header.hero .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 10px;
+      background: var(--accent-bg);
+      color: var(--accent);
+      border-radius: 999px;
+      font-weight: 500;
+    }
+
+    section {
+      padding: 32px 0;
+      border-bottom: 1px solid var(--border-muted);
+    }
+
+    section:last-of-type {
+      border-bottom: none;
+    }
+
+    section h2 {
+      margin: 0 0 16px;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      border-left: 4px solid var(--accent);
+      padding-left: 12px;
+    }
+
+    section h3 {
+      margin: 28px 0 12px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    section h4 {
+      margin: 20px 0 8px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--fg-muted);
+    }
+
+    p {
+      margin: 12px 0;
+    }
+
+    ul,
+    ol {
+      padding-left: 24px;
+      margin: 12px 0;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    /* ---------- 强调元素 ---------- */
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      padding: 2px 6px;
+      background: var(--code-bg);
+      border-radius: 4px;
+      color: var(--fg);
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border-muted);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    pre code {
+      padding: 0;
+      background: transparent;
+      border-radius: 0;
+    }
+
+    blockquote {
+      margin: 16px 0;
+      padding: 12px 16px;
+      border-left: 4px solid var(--accent);
+      background: var(--accent-bg);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      color: var(--fg);
+    }
+
+    /* ---------- 表格 ---------- */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 8px 12px;
+      border: 1px solid var(--border-muted);
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--code-bg);
+      font-weight: 600;
+      color: var(--fg);
+    }
+
+    td code {
+      white-space: nowrap;
+    }
+
+    /* ---------- 卡片 / 网格 ---------- */
+    .grid {
+      display: grid;
+      gap: 16px;
+      margin: 16px 0;
+    }
+
+    .grid.cols-2 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .grid.cols-3 {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    @media (max-width: 700px) {
+
+      .grid.cols-2,
+      .grid.cols-3 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-muted);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .card h4 {
+      margin-top: 0;
+    }
+
+    .card .num {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      background: var(--accent-bg);
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+
+    /* ---------- 流程图 / ASCII 图 ---------- */
+    pre.diagram {
+      background: var(--card-bg);
+      border: 1px solid var(--border-muted);
+      padding: 20px;
+      font-size: 13px;
+      line-height: 1.4;
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    /* ---------- 备注 / 提示 ---------- */
+    .note {
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      margin: 16px 0;
+      border: 1px solid;
+      font-size: 14px;
+    }
+
+    .note.tip {
+      background: rgba(9, 105, 218, 0.08);
+      border-color: var(--accent);
+    }
+
+    .note.warn {
+      background: rgba(154, 103, 0, 0.08);
+      border-color: var(--warning);
+    }
+
+    .note.danger {
+      background: rgba(207, 34, 46, 0.08);
+      border-color: var(--danger);
+    }
+
+    .note strong {
+      color: var(--fg);
+    }
+
+    .note .label {
+      font-weight: 700;
+      margin-right: 6px;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+    }
+
+    /* ---------- 步骤序号 ---------- */
+    .steps {
+      counter-reset: step-counter;
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .steps li {
+      counter-increment: step-counter;
+      padding: 6px 0 6px 36px;
+      position: relative;
+    }
+
+    .steps li::before {
+      content: counter(step-counter);
+      position: absolute;
+      left: 0;
+      top: 6px;
+      width: 26px;
+      height: 26px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    /* ---------- 锚点偏移 ---------- */
+    [id] {
+      scroll-margin-top: 24px;
+    }
+
+    /* ====================================================
+       界面 Mockup（CSS 渲染的操作界面示意图）
+       ==================================================== */
+
+    /* ---------- 通用 ---------- */
+    .mockup {
+      margin: 20px 0 28px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--bg);
+      box-shadow: var(--shadow);
+    }
+
+    .mockup-caption {
+      padding: 8px 14px;
+      font-size: 12px;
+      color: var(--fg-muted);
+      background: var(--code-bg);
+      border-top: 1px solid var(--border-muted);
+      border-bottom: 1px solid var(--border-muted);
+    }
+
+    .mockup-caption strong {
+      color: var(--fg);
+    }
+
+    .mockup-caption .muted {
+      color: var(--fg-subtle);
+      margin-left: 6px;
+    }
+
+    /* ---------- 窗口外壳 ---------- */
+    .mockup-window {
+      font-size: 12px;
+      background: var(--bg);
+      color: var(--fg);
+    }
+
+    .mockup-titlebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 12px;
+      background: linear-gradient(180deg, #f0f3f6 0%, #d8dde2 100%);
+      border-bottom: 1px solid var(--border);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .mockup-titlebar {
+        background: linear-gradient(180deg, #21262d 0%, #161b22 100%);
+      }
+    }
+
+    .mockup-titlebar .title {
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    .mockup-titlebar .controls {
+      display: flex;
+      gap: 4px;
+    }
+
+    .mockup-titlebar .controls i {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      background: #fff;
+      border: 1px solid var(--border-muted);
+      font-style: normal;
+      text-align: center;
+      font-size: 10px;
+      line-height: 13px;
+      color: var(--fg-muted);
+    }
+
+    /* ---------- 主体：侧栏 + 内容 + 状态栏 ---------- */
+    .mockup-body {
+      display: grid;
+      grid-template-columns: 48px 1fr;
+    }
+
+    .mockup-sidebar {
+      background: var(--code-bg);
+      border-right: 1px solid var(--border-muted);
+      padding: 6px 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .mockup-sidebar .nav-item {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      font-size: 10px;
+      color: var(--fg-muted);
+      cursor: default;
+      position: relative;
+    }
+
+    .mockup-sidebar .nav-item.active {
+      background: var(--accent-bg);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .mockup-sidebar .nav-item:hover::after {
+      content: attr(data-tip);
+      position: absolute;
+      left: 110%;
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--fg);
+      color: var(--bg);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      white-space: nowrap;
+      z-index: 10;
+    }
+
+    .mockup-content {
+      padding: 12px 16px;
+      min-height: 200px;
+    }
+
+    .mockup-statusbar {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 4px 12px;
+      background: var(--code-bg);
+      border-top: 1px solid var(--border-muted);
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+
+    .mockup-statusbar .idx {
+      display: flex;
+      gap: 4px;
+      align-items: baseline;
+    }
+
+    .mockup-statusbar .idx .name {
+      color: var(--fg-subtle);
+    }
+
+    .mockup-statusbar .idx .price {
+      font-weight: 600;
+      color: var(--fg);
+    }
+
+    .mockup-statusbar .idx .delta {
+      font-size: 10px;
+    }
+
+    /* ---------- 表格 ---------- */
+    .mockup-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .mockup-table th,
+    .mockup-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border-muted);
+      text-align: left;
+    }
+
+    .mockup-table th {
+      background: var(--code-bg);
+      font-weight: 600;
+      color: var(--fg-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .mockup-table td.num {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ---------- A 股颜色 ---------- */
+    .up {
+      color: #cf222e;
+    }
+
+    .down {
+      color: #1a7f37;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .up {
+        color: #ff7b72;
+      }
+
+      .down {
+        color: #3fb950;
+      }
+    }
+
+    /* ---------- 按钮 ---------- */
+    .mockup-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 12px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: default;
+    }
+
+    .mockup-btn.secondary {
+      background: var(--code-bg);
+      color: var(--fg);
+      border: 1px solid var(--border-muted);
+    }
+
+    .mockup-btn.danger {
+      background: var(--danger);
+    }
+
+    .mockup-btn.ghost {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+
+    .mockup-btn.small {
+      padding: 2px 8px;
+      font-size: 10px;
+    }
+
+    /* ---------- 工具条 ---------- */
+    .mockup-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .mockup-toolbar .left,
+    .mockup-toolbar .right {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .mockup-toolbar h4 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    /* ---------- 卡片 ---------- */
+    .mockup-cards {
+      display: grid;
+      gap: 10px;
+    }
+
+    .mockup-cards.cols-2 {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .mockup-cards.cols-3 {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .mockup-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-muted);
+      border-radius: 6px;
+      padding: 12px;
+    }
+
+    .mockup-card .head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .mockup-card .head .name {
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    .mockup-card .head .code {
+      font-family: var(--font-mono);
+      color: var(--fg-subtle);
+      font-size: 11px;
+    }
+
+    .mockup-card .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 12px;
+      font-size: 11px;
+    }
+
+    .mockup-card .stats .label {
+      color: var(--fg-subtle);
+    }
+
+    .mockup-card .stats .value {
+      font-family: var(--font-mono);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ---------- 统计卡 ---------- */
+    .mockup-stats {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(3, 1fr);
+      margin-bottom: 14px;
+    }
+
+    .mockup-stat {
+      background: var(--card-bg);
+      border: 1px solid var(--border-muted);
+      border-radius: 6px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .mockup-stat .label {
+      color: var(--fg-subtle);
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+
+    .mockup-stat .value {
+      font-size: 18px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+    }
+
+    /* ---------- 输入框 ---------- */
+    .mockup-input {
+      display: inline-block;
+      padding: 3px 8px;
+      background: var(--bg);
+      border: 1px solid var(--border-muted);
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--fg);
+      min-width: 80px;
+    }
+
+    .mockup-input.lg {
+      min-width: 200px;
+    }
+
+    /* ---------- 表单 ---------- */
+    .mockup-form {
+      display: grid;
+      gap: 10px 16px;
+      grid-template-columns: 110px 1fr;
+      font-size: 12px;
+      align-items: center;
+    }
+
+    .mockup-form .lbl {
+      color: var(--fg-muted);
+      text-align: right;
+    }
+
+    .mockup-form .field {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    /* ---------- 徽章 ---------- */
+    .mockup-badge {
+      display: inline-block;
+      padding: 1px 6px;
+      background: var(--code-bg);
+      border: 1px solid var(--border-muted);
+      border-radius: 999px;
+      font-size: 10px;
+      color: var(--fg-muted);
+    }
+
+    .mockup-badge.on {
+      background: rgba(26, 127, 55, 0.15);
+      color: var(--success);
+      border-color: var(--success);
+    }
+
+    .mockup-badge.off {
+      background: var(--code-bg);
+      color: var(--fg-subtle);
+    }
+
+    /* ---------- 开关 ---------- */
+    .mockup-switch {
+      display: inline-block;
+      width: 28px;
+      height: 14px;
+      background: var(--border);
+      border-radius: 999px;
+      position: relative;
+      vertical-align: middle;
+    }
+
+    .mockup-switch::after {
+      content: "";
+      position: absolute;
+      top: 1px;
+      left: 1px;
+      width: 12px;
+      height: 12px;
+      background: #fff;
+      border-radius: 50%;
+    }
+
+    .mockup-switch.on {
+      background: var(--success);
+    }
+
+    .mockup-switch.on::after {
+      left: 15px;
+    }
+
+    /* ---------- 弹窗 ---------- */
+    .mockup-dialog {
+      position: relative;
+      margin: 16px 0;
+      padding: 16px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      max-width: 460px;
+    }
+
+    .mockup-dialog::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.05);
+      z-index: -1;
+      border-radius: 8px;
+    }
+
+    .mockup-dialog h5 {
+      margin: 0 0 12px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    /* ---------- K 线图 ---------- */
+    .mockup-kline {
+      display: grid;
+      grid-template-columns: 60px 1fr;
+      gap: 10px;
+      font-size: 11px;
+    }
+
+    .mockup-kline .y-axis {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: var(--fg-subtle);
+      font-family: var(--font-mono);
+      text-align: right;
+    }
+
+    .mockup-kline .canvas {
+      position: relative;
+      height: 200px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-muted);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    /* 简化的 K 线柱 */
+    .mockup-candles {
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      height: 100%;
+      padding: 10px;
+    }
+
+    .mockup-candle {
+      position: relative;
+      width: 14px;
+      height: 80%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .mockup-candle .wick {
+      width: 2px;
+      background: var(--fg-muted);
+      flex-grow: 1;
+    }
+
+    .mockup-candle .body {
+      width: 12px;
+      height: 30%;
+      border: 1px solid;
+      margin: 1px 0;
+    }
+
+    .mockup-candle.up .body {
+      background: #cf222e;
+      border-color: #cf222e;
+    }
+
+    .mockup-candle.down .body {
+      background: #1a7f37;
+      border-color: #1a7f37;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .mockup-candle.up .body {
+        background: #ff7b72;
+        border-color: #ff7b72;
+      }
+
+      .mockup-candle.down .body {
+        background: #3fb950;
+        border-color: #3fb950;
+      }
+    }
+
+    /* 形态标记 */
+    .mockup-marker {
+      position: absolute;
+      font-size: 14px;
+      font-weight: 700;
+      top: 12px;
+    }
+
+    .mockup-marker.bull {
+      color: #1a7f37;
+    }
+
+    .mockup-marker.bear {
+      color: #cf222e;
+    }
+
+    .mockup-marker.pivot {
+      color: #9a6700;
+    }
+
+    /* ---------- 饼图 ---------- */
+    .mockup-pie-wrap {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      align-items: center;
+      gap: 16px;
+      padding: 8px 0;
+    }
+
+    .mockup-pie {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: conic-gradient(var(--accent) 0deg 130deg,
+          #cf222e 130deg 360deg);
+      position: relative;
+    }
+
+    .mockup-pie::after {
+      content: "";
+      position: absolute;
+      inset: 30px;
+      background: var(--bg);
+      border-radius: 50%;
+    }
+
+    .mockup-pie-legend {
+      font-size: 12px;
+    }
+
+    .mockup-pie-legend .item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 4px 0;
+    }
+
+    .mockup-pie-legend .swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+    }
+
+    /* ---------- 柱状图（盈亏统计） ---------- */
+    .mockup-bars {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-around;
+      height: 100px;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border-muted);
+      border-left: 1px solid var(--border-muted);
+    }
+
+    .mockup-bar {
+      width: 18px;
+      position: relative;
+      background: var(--accent);
+      border-radius: 2px 2px 0 0;
+    }
+
+    .mockup-bar.neg {
+      background: var(--danger);
+      border-radius: 0 0 2px 2px;
+      align-self: flex-start;
+      margin-top: auto;
+    }
+
+    .mockup-bar-labels {
+      display: flex;
+      justify-content: space-around;
+      padding-top: 4px;
+      font-size: 10px;
+      color: var(--fg-subtle);
+      font-family: var(--font-mono);
+    }
+
+    /* ---------- 日志查看器 ---------- */
+    .mockup-log {
+      background: #0d1117;
+      color: #c9d1d9;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .mockup-log-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      color: #8b949e;
+    }
+
+    .mockup-log-head .meta {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .mockup-log-head .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #3fb950;
+      box-shadow: 0 0 6px #3fb95088;
+    }
+
+    .mockup-log-body {
+      padding: 8px 10px;
+      max-height: 220px;
+      overflow: hidden;
+    }
+
+    .mockup-log-row {
+      display: grid;
+      grid-template-columns: 60px 56px 56px 1fr;
+      gap: 8px;
+      padding: 1px 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mockup-log-row .ts {
+      color: #6e7681;
+    }
+
+    .mockup-log-row .lvl {
+      font-weight: 600;
+    }
+
+    .mockup-log-row .lvl.info {
+      color: #58a6ff;
+    }
+
+    .mockup-log-row .lvl.warn {
+      color: #d29922;
+    }
+
+    .mockup-log-row .lvl.error {
+      color: #f85149;
+    }
+
+    .mockup-log-row .lvl.debug {
+      color: #a371f7;
+    }
+
+    .mockup-log-row .scope {
+      color: #8b949e;
+    }
+
+    .mockup-log-row .msg {
+      color: #c9d1d9;
+    }
+
+    .mockup-log-row .msg .acc {
+      color: #ff7b72;
+    }
+
+    .mockup-log-row .msg .ok {
+      color: #3fb950;
+    }
+
+    @media (prefers-color-scheme: light) {
+      .mockup-log {
+        background: #f6f8fa;
+        color: #1f2328;
+      }
+
+      .mockup-log-head {
+        background: #eaeef2;
+        border-bottom-color: #d0d7de;
+        color: #57606a;
+      }
+
+      .mockup-log-row .msg {
+        color: #1f2328;
+      }
+    }
+
+    /* ---------- 监控拨片 ---------- */
+    .mockup-monitor {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* ---------- 列表项 ---------- */
+    .mockup-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .mockup-list li {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .mockup-list li:last-child {
+      border-bottom: none;
+    }
+
+    .mockup-list .name {
+      font-weight: 600;
+    }
+
+    .mockup-list .meta {
+      color: var(--fg-subtle);
+      font-size: 11px;
+    }
+
+    .mockup-list .pct {
+      font-family: var(--font-mono);
+      font-weight: 600;
+    }
+
+    /* ---------- 图目录 ---------- */
+    .fig-index {
+      list-style: none;
+      counter-reset: fig;
+      padding: 0;
+      margin: 0;
+      font-size: 12px;
+    }
+
+    .fig-index li {
+      counter-increment: fig;
+      padding: 3px 0;
+    }
+
+    .fig-index a {
+      color: var(--fg-muted);
+      text-decoration: none;
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      border-bottom: 1px dashed transparent;
+    }
+
+    .fig-index a:hover {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .fig-index .num {
+      font-family: var(--font-mono);
+      color: var(--fg-subtle);
+    }
+
+    /* ---------- 响应式 ---------- */
+    @media (max-width: 700px) {
+      .mockup-stats {
+        grid-template-columns: 1fr;
+      }
+
+      .mockup-cards.cols-2,
+      .mockup-cards.cols-3 {
+        grid-template-columns: 1fr;
+      }
+
+      .mockup-pie-wrap {
+        grid-template-columns: 1fr;
+      }
+
+      .mockup-form {
+        grid-template-columns: 1fr;
+      }
+
+      .mockup-form .lbl {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="layout">
+
+    <!-- ================== 侧栏目录 ================== -->
+    <aside class="toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#intro">写在前面</a></li>
+        <li><a href="#install">安装与启动</a></li>
+        <li><a href="#layout">界面总览</a></li>
+        <li><a href="#first">第一次使用</a></li>
+        <li><a href="#watchlist">自选股</a>
+          <ol>
+            <li class="lvl-2"><a href="#watchlist-add">添加自选股</a></li>
+            <li class="lvl-2"><a href="#watchlist-edit">编辑与删除</a></li>
+            <li class="lvl-2"><a href="#watchlist-monitor">监控与阈值</a></li>
+            <li class="lvl-2"><a href="#watchlist-kline">下载与查看K线</a></li>
+            <li class="lvl-2"><a href="#watchlist-refresh">手动刷新价格</a></li>
+          </ol>
+        </li>
+        <li><a href="#position">持仓</a>
+          <ol>
+            <li class="lvl-2"><a href="#position-add">新增交易</a></li>
+            <li class="lvl-2"><a href="#position-view">查看持仓</a></li>
+            <li class="lvl-2"><a href="#position-edit">编辑与删除交易</a></li>
+            <li class="lvl-2"><a href="#position-sync">资金明细自动同步</a></li>
+          </ol>
+        </li>
+        <li><a href="#historical">历史开仓</a></li>
+        <li><a href="#grid">网格</a>
+          <ol>
+            <li class="lvl-2"><a href="#grid-trade">交易计算</a></li>
+            <li class="lvl-2"><a href="#grid-open">开仓计算</a></li>
+          </ol>
+        </li>
+        <li><a href="#grid-sim">网格仿真</a>
+          <ol>
+            <li class="lvl-2"><a href="#grid-sim-input">参数设置</a></li>
+            <li class="lvl-2"><a href="#grid-sim-result">结果解读</a></li>
+          </ol>
+        </li>
+        <li><a href="#fund">资金管理</a>
+          <ol>
+            <li class="lvl-2"><a href="#fund-stat">资金统计</a></li>
+            <li class="lvl-2"><a href="#fund-record">资金明细</a></li>
+            <li class="lvl-2"><a href="#fund-profit">盈亏统计</a></li>
+          </ol>
+        </li>
+        <li><a href="#pattern">形态检测</a>
+          <ol>
+            <li class="lvl-2"><a href="#pattern-choose">选择股票</a></li>
+            <li class="lvl-2"><a href="#pattern-filter">筛选结果</a></li>
+            <li class="lvl-2"><a href="#pattern-locate">定位形态</a></li>
+          </ol>
+        </li>
+        <li><a href="#indexbar">指数状态栏</a></li>
+        <li><a href="#settings">设置</a>
+          <ol>
+            <li class="lvl-2"><a href="#settings-trade">交易时间段</a></li>
+            <li class="lvl-2"><a href="#settings-poll">轮询间隔</a></li>
+            <li class="lvl-2"><a href="#settings-api">API 设置</a></li>
+            <li class="lvl-2"><a href="#settings-backup">数据库备份</a></li>
+          </ol>
+        </li>
+        <li><a href="#log">日志查看</a></li>
+        <li><a href="#faq">常见问题</a></li>
+        <li><a href="#appendix">术语表</a></li>
+      </ol>
+
+      <h4 style="margin: 18px 0 6px; font-size: 12px; color: var(--fg-muted); letter-spacing: .04em;">图目录</h4>
+      <ol class="fig-index">
+        <li><a href="#fig-3-1"><span class="num">3-1</span>应用整体布局</a></li>
+        <li><a href="#fig-5-1"><span class="num">5-1</span>自选股列表</a></li>
+        <li><a href="#fig-5-2"><span class="num">5-2</span>"添加自选股"弹窗</a></li>
+        <li><a href="#fig-5-3"><span class="num">5-3</span>K 线弹窗（含交易标记）</a></li>
+        <li><a href="#fig-6-1"><span class="num">6-1</span>持仓页：卡片 + 展开式交易明细</a></li>
+        <li><a href="#fig-6-2"><span class="num">6-2</span>"新增交易"弹窗</a></li>
+        <li><a href="#fig-7-1"><span class="num">7-1</span>历史开仓列表</a></li>
+        <li><a href="#fig-8-1"><span class="num">8-1</span>网格 → 交易计算</a></li>
+        <li><a href="#fig-9-1"><span class="num">9-1</span>网格仿真参数面板</a></li>
+        <li><a href="#fig-9-2"><span class="num">9-2</span>仿真结果区</a></li>
+        <li><a href="#fig-10-1"><span class="num">10-1</span>资金管理 → 资金统计</a></li>
+        <li><a href="#fig-10-2"><span class="num">10-2</span>资金管理 → 资金明细</a></li>
+        <li><a href="#fig-10-3"><span class="num">10-3</span>资金管理 → 盈亏统计</a></li>
+        <li><a href="#fig-11-1"><span class="num">11-1</span>形态检测页</a></li>
+        <li><a href="#fig-13-1"><span class="num">13-1</span>设置页</a></li>
+        <li><a href="#fig-14-1"><span class="num">14-1</span>日志查看器</a></li>
+      </ol>
+    </aside>
+
+    <!-- ================== 主内容 ================== -->
+    <main>
+
+      <header class="hero">
+        <h1>StockAnalyzer · 用户操作手册</h1>
+        <p class="tagline">面向个人投资者的本地化股票分析与持仓管理桌面应用</p>
+        <div class="meta">
+          <span class="badge">v0.x</span>
+          <span>·</span>
+          <span>适用版本：2026-09-20 之后</span>
+          <span>·</span>
+          <span>平台：Windows 10 / 11（Electron 桌面应用）</span>
+        </div>
+      </header>
+
+      <!-- ========== 写在前面 ========== -->
+      <section id="intro">
+        <h2>1. 写在前面</h2>
+
+        <h3>1.1 这本手册给谁看</h3>
+        <p>
+          这本手册面向 StockAnalyzer 的<strong>最终使用者</strong>，也就是日常用这个软件看行情、记交易、跑网格、复盘盈亏的人。它不讲解代码如何实现，只讲"在界面上点什么、点完之后会发生什么"。
+        </p>
+
+        <h3>1.2 这本手册不包含什么</h3>
+        <ul>
+          <li>不包含安装包签名、数据库 Schema、源码组织等开发侧细节（这些见 <code>design.html</code>）。</li>
+          <li>不包含证券投资建议，所有计算结果仅供参考，不作为买卖依据。</li>
+          <li>不包含命令行排障路径，如需查看日志请直接使用应用内置的"日志"页面。</li>
+        </ul>
+
+        <h3>1.3 阅读约定</h3>
+        <div class="note tip">
+          <span class="label">提示</span>
+          本手册中所有"<strong>按钮名称 / 菜单名称 / 输入框标签</strong>"均与界面中显示的中文文本<strong>完全一致</strong>，请按字面查找。
+        </div>
+        <div class="note warn">
+          <span class="label">注意</span>
+          所有"<strong>风险</strong>"小节都来自真实使用中可能造成数据不一致或资产误判的操作，遇到时务必先停下来读一遍。
+        </div>
+
+        <h3>1.4 软件定位</h3>
+        <p>
+          StockAnalyzer 是一个<strong>本地优先</strong>的桌面应用：行情通过行情 API 拉取（可配置），但所有<strong>交易记录、持仓、资金明细、K
+            线、网格策略</strong>都保存在本机数据库（<code>sql.js</code> 文件）中，不上传任何第三方服务器。因此：
+        </p>
+        <ul>
+          <li>删除、重装应用不会丢失数据，只要不删除本地数据库文件。</li>
+          <li>联网时自动刷新行情；断网时仍可读写本地数据，仅实时刷新受影响。</li>
+          <li>请定期到"设置 → 数据库备份"手动备份一次，避免硬盘损坏导致数据丢失。</li>
+        </ul>
+      </section>
+
+      <!-- ========== 安装与启动 ========== -->
+      <section id="install">
+        <h2>2. 安装与启动</h2>
+
+        <h3>2.1 安装</h3>
+        <ol>
+          <li>双击下载到的安装包（<code>StockAnalyzer-Setup-x.y.z.exe</code>），按向导完成安装。安装目录默认为
+            <code>C:\Users\&lt;用户名&gt;\AppData\Local\Programs\StockAnalyzer\</code>。
+          </li>
+          <li>安装完成后，桌面会自动生成"StockAnalyzer"快捷方式。</li>
+        </ol>
+
+        <h3>2.2 首次启动</h3>
+        <ol>
+          <li>双击桌面快捷方式启动应用。第一次启动时，应用会<strong>在用户数据目录生成 <code>stockanalyzer.db</code></strong>（SQLite 文件），这步可能耗时数秒。</li>
+          <li>启动后默认进入"<strong>自选股</strong>"页面。如果数据库为空，会看到"暂无自选股 · 添加第一只股票"提示。</li>
+        </ol>
+
+        <h3>2.3 启动参数与托盘</h3>
+        <ul>
+          <li>关闭主窗口时，应用默认<strong>最小化到系统托盘</strong>，不退出进程；右键托盘图标可选择"显示主窗口 / 退出"。</li>
+          <li>如需彻底关闭进程，请使用托盘菜单的"退出"或任务管理器。</li>
+        </ul>
+
+        <div class="note warn">
+          <span class="label">注意</span>
+          用户数据目录位置：<code>%APPDATA%\StockAnalyzer\</code>（Windows）。数据库文件、日志、备份均在该目录下。<strong>不要手动修改
+            <code>stockanalyzer.db</code> 或日志目录</strong>，否则可能导致下次启动失败。
+        </div>
+      </section>
+
+      <!-- ========== 界面总览 ========== -->
+      <section id="layout">
+        <h2>3. 界面总览</h2>
+
+        <h3>3.1 整体布局</h3>
+        <p>应用界面分为四个区域：</p>
+
+        <div class="mockup">
+          <div class="mockup-window">
+            <div class="mockup-titlebar">
+              <span class="title">StockAnalyzer</span>
+              <span class="controls"><i>—</i><i>×</i></span>
+            </div>
+            <div class="mockup-body">
+              <div class="mockup-sidebar">
+                <div class="nav-item active" data-tip="自选股">★</div>
+                <div class="nav-item" data-tip="持仓">●</div>
+                <div class="nav-item" data-tip="网格">▦</div>
+                <div class="nav-item" data-tip="网格仿真">⟳</div>
+                <div class="nav-item" data-tip="历史开仓">✓</div>
+                <div class="nav-item" data-tip="资金管理">¥</div>
+                <div class="nav-item" data-tip="形态检测">◆</div>
+                <div class="nav-item" data-tip="设置">⚙</div>
+                <div class="nav-item" data-tip="日志">≡</div>
+              </div>
+              <div class="mockup-content">
+                <div class="mockup-toolbar">
+                  <div class="left">
+                    <h4>① 顶部标题栏</h4>
+                  </div>
+                  <div class="right">
+                    <span class="mockup-badge">拖动区</span>
+                  </div>
+                </div>
+                <p style="margin: 0; color: var(--fg-muted); font-size: 11px;">
+                  ↓ 这里是随菜单切换的主内容区 ↓
+                </p>
+                <div
+                  style="height: 80px; border: 1px dashed var(--border-muted); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--fg-subtle); font-size: 11px;">
+                  ③ 主内容区（自选股 / 持仓 / 网格 / …）
+                </div>
+              </div>
+              <div class="mockup-statusbar">
+                <span class="idx"><span class="name">上证</span><span class="price">3245.67</span><span class="delta up">▲
+                    18.23 (+0.56%)</span></span>
+                <span class="idx"><span class="name">深成</span><span class="price">10345.12</span><span
+                    class="delta down">▼ 22.45 (-0.22%)</span></span>
+                <span style="margin-left: auto;" class="muted">④ 底部指数状态栏</span>
+              </div>
+            </div>
+          </div>
+          <div class="mockup-caption" id="fig-3-1">
+            <strong>图 3-1</strong>应用整体布局示意
+            <span class="muted">（鼠标悬停左侧 9 个图标可看到对应中文 Tooltip）</span>
+          </div>
+        </div>
+
+        <pre class="diagram">┌────────────────────────────────────────────────────────────────────┐
+│                       ① 顶部标题栏（应用名 + 最小化/关闭）           │
+├──────┬─────────────────────────────────────────────────────────────┤
+│      │                                                             │
+│ ②    │                                                             │
+│ 侧边 │              ③ 主内容区（随菜单切换）                         │
+│ 栏导 │                                                             │
+│ 航    │                                                             │
+│      │                                                             │
+│      ├─────────────────────────────────────────────────────────────┤
+│      │ ④ 底部指数状态栏（上证 · 深成 · 错误提示）                   │
+└──────┴─────────────────────────────────────────────────────────────┘</pre>
+
+        <h3>3.2 侧边栏菜单</h3>
+        <p>从左到右依次为（图标 + 中文 Tooltip）：</p>
+        <table>
+          <thead>
+            <tr>
+              <th>顺序</th>
+              <th>菜单</th>
+              <th>用途</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>自选股</td>
+              <td>关注列表、实时价格、买卖阈值、监控开关、K 线</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>持仓</td>
+              <td>当前持仓股票、成本、最新价、浮动盈亏、交易记录</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>网格</td>
+              <td>静态网格计算：交易计算、开仓计算</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td>网格仿真</td>
+              <td>在历史 K 线上回放网格/阈值策略，输出模拟盈亏</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td>历史开仓</td>
+              <td>已清仓周期的完整交易链与盈亏回顾</td>
+            </tr>
+            <tr>
+              <td>6</td>
+              <td>资金管理</td>
+              <td>资金明细 / 资金统计 / 盈亏统计 三个标签页</td>
+            </tr>
+            <tr>
+              <td>7</td>
+              <td>形态检测</td>
+              <td>对自选股的日 K 做蜡烛图形态识别，标记在看涨/看跌/转折</td>
+            </tr>
+            <tr>
+              <td>8</td>
+              <td>设置</td>
+              <td>交易时间段、轮询间隔、API、数据备份</td>
+            </tr>
+            <tr>
+              <td>9</td>
+              <td>日志</td>
+              <td>查看 electron-log 写入的滚动日志（仅查看，不可编辑）</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>3.3 顶部标题栏</h3>
+        <ul>
+          <li>左侧：StockAnalyzer 应用名（无操作）。</li>
+          <li>右侧：最小化、关闭按钮。关闭即最小化到托盘。</li>
+        </ul>
+
+        <h3>3.4 底部指数状态栏</h3>
+        <p>固定显示<strong>上证指数</strong>与<strong>深成指数</strong>的当前点位、涨跌额、涨跌幅。颜色遵循 A 股惯例（红涨、绿跌）。刷新频率与"轮询间隔"设置一致。</p>
+      </section>
+
+      <!-- ========== 第一次使用 ========== -->
+      <section id="first">
+        <h2>4. 第一次使用（推荐流程）</h2>
+
+        <p>如果你刚装上 StockAnalyzer，建议按以下顺序走一遍，整个流程不超过 10 分钟：</p>
+
+        <ol class="steps">
+          <li>进入"<strong>设置</strong>"，确认"交易时间段 / 轮询间隔 / API 提供商"三块配置（默认即可使用）。</li>
+          <li>进入"<strong>自选股</strong>"，点击"<strong>添加股票</strong>"，输入股票代码（如 <code>sh600519</code>），名称会自动补全。</li>
+          <li>回到自选股列表，点击对应行的"<strong>下载K线</strong>"按钮，按弹窗选择日期范围和复权方式，下载历史 K 线。</li>
+          <li>下载完成后，点击股票名称，打开 K 线图，确认数据已落库。</li>
+          <li>进入"<strong>资金管理 → 资金明细</strong>"，添加一条"转入"记录，建立初始账户余额。</li>
+          <li>进入"<strong>持仓 → 新增交易</strong>"，录入首笔买入记录。系统会自动写入对应的"股票买入"资金流水。</li>
+          <li>进入"<strong>网格仿真</strong>"，输入初始资金、网格上下沿、每档手数，点击"<strong>开始仿真</strong>"，查看历史回测结果。</li>
+        </ol>
+
+        <div class="note tip">
+          <span class="label">建议</span>
+          完成前 6 步后，应用就具备了"看价格 + 算盈亏 + 跑仿真"的基本闭环。后续每天只需在"<strong>持仓</strong>"补录交易即可。
+        </div>
+      </section>
+
+      <!-- ========== 自选股 ========== -->
+      <section id="watchlist">
+        <h2>5. 自选股</h2>
+
+        <p>自选股是你日常最先打开的页面。它把"关注的股票 + 实时价格 + 监控阈值"装在一起，配上 K 线下载与查看能力。</p>
+
+        <h3>5.0 列表总览</h3>
+        <p>列表是自选股页的主界面：</p>
+
+        <div class="mockup">
+          <div class="mockup-content">
+            <div class="mockup-toolbar">
+              <div class="left">
+                <h4>我的自选股</h4><span class="mockup-badge">共 4 只</span>
+              </div>
+              <div class="right">
+                <span class="mockup-btn small">+ 添加股票</span>
+                <span class="mockup-btn small secondary">⟳ 刷新</span>
+              </div>
+            </div>
+            <table class="mockup-table">
+              <thead>
+                <tr>
+                  <th>监控</th>
+                  <th>股票</th>
+                  <th>现价</th>
+                  <th>涨跌</th>
+                  <th>买入阈值</th>
+                  <th>卖出阈值</th>
+                  <th>最后刷新</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="mockup-switch on" title="监控中"></span></td>
+                  <td><strong>贵州茅台</strong> <span class="mockup-badge">sh600519</span></td>
+                  <td class="num up">1685.20</td>
+                  <td class="num up">+1.36%</td>
+                  <td class="num">1500.00</td>
+                  <td class="num">2000.00</td>
+                  <td class="meta">10:23</td>
+                  <td>
+                    <span class="mockup-btn small ghost">编辑</span>
+                    <span class="mockup-btn small ghost">K线</span>
+                    <span class="mockup-btn small ghost">下载</span>
+                    <span class="mockup-btn small danger">删除</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="mockup-switch on"></span></td>
+                  <td><strong>平安银行</strong> <span class="mockup-badge">sz000001</span></td>
+                  <td class="num down">12.35</td>
+                  <td class="num down">-0.42%</td>
+                  <td class="num">10.00</td>
+                  <td class="num">15.00</td>
+                  <td class="meta">10:23</td>
+                  <td>
+                    <span class="mockup-btn small ghost">编辑</span>
+                    <span class="mockup-btn small ghost">K线</span>
+                    <span class="mockup-btn small ghost">下载</span>
+                    <span class="mockup-btn small danger">删除</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="mockup-switch"></span></td>
+                  <td><strong>宁德时代</strong> <span class="mockup-badge">sz300750</span></td>
+                  <td class="num up">225.40</td>
+                  <td class="num up">+2.18%</td>
+                  <td class="meta">—</td>
+                  <td class="meta">—</td>
+                  <td class="meta">10:23</td>
+                  <td>
+                    <span class="mockup-btn small ghost">编辑</span>
+                    <span class="mockup-btn small ghost">K线</span>
+                    <span class="mockup-btn small ghost">下载</span>
+                    <span class="mockup-btn small danger">删除</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="mockup-switch"></span></td>
+                  <td><strong>腾讯控股</strong> <span class="mockup-badge">hk00700</span></td>
+                  <td class="num down">362.40</td>
+                  <td class="num down">-0.68%</td>
+                  <td class="meta">—</td>
+                  <td class="meta">—</td>
+                  <td class="meta">—</td>
+                  <td>
+                    <span class="mockup-btn small ghost">编辑</span>
+                    <span class="mockup-btn small ghost">K线</span>
+                    <span class="mockup-btn small ghost">下载</span>
+                    <span class="mockup-btn small danger">删除</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mockup-caption" id="fig-5-1">
+            <strong>图 5-1</strong>自选股列表
+            <span class="muted">监控开关为拨片样式；红涨绿跌；监控中的股票按更新时间倒序排列</span>
+          </div>
+        </div>
+
+        <h3 id="watchlist-add">5.1 添加自选股</h3>
+        <ol class="steps">
+          <li>点击页面右上角"<strong>添加股票</strong>"按钮。</li>
+          <li>在弹窗中填写：
+            <ul>
+              <li><strong>股票代码</strong>：6
+                位数字，前缀决定交易所，<code>sh</code>=沪、<code>sz</code>=深、<code>bj</code>=北、<code>hk</code>=港。例如
+                <code>sh600519</code>、<code>sz000001</code>、<code>hk00700</code>。
+              </li>
+              <li><strong>股票名称</strong>：输入代码后失焦（或回车），会自动从行情接口拉取名称。如果拉取失败可手动输入。</li>
+              <li><strong>买入阈值</strong>：监控用，<strong>可选</strong>。当前价 ≤ 买入阈值时会触发系统通知。</li>
+              <li><strong>卖出阈值</strong>：监控用，<strong>可选</strong>。当前价 ≥ 卖出阈值时会触发系统通知。</li>
+            </ul>
+          </li>
+          <li>点击"<strong>保存</strong>"。新股票会出现在列表顶部。</li>
+        </ol>
+
+        <div class="note warn">
+          <span class="label">注意</span>
+          买入阈值必须 <strong>&lt;</strong> 卖出阈值。如果填反或相等，保存按钮会变灰并提示原因。
+        </div>
+
+        <div class="mockup">
+          <div class="mockup-dialog">
+            <h5>+ 添加自选股</h5>
+            <div class="mockup-form">
+              <span class="lbl">股票代码</span>
+              <div class="field"><span class="mockup-input">sh600519</span><span class="mockup-badge on">✓ 已识别</span>
+              </div>
+              <span class="lbl">股票名称</span>
+              <div class="field"><span class="mockup-input lg">贵州茅台</span></div>
+              <span class="lbl">买入阈值 <span style="color:var(--fg-subtle)">(可选)</span></span>
+              <div class="field"><span class="mockup-input">1500.00</span><span class="mockup-badge">元</span></div>
+              <span class="lbl">卖出阈值 <span style="color:var(--fg-subtle)">(可选)</span></span>
+              <div class="field"><span class="mockup-input">2000.00</span><span class="mockup-badge">元</span></div>
+            </div>
+            <div style="margin-top: 14px; display: flex; gap: 8px; justify-content: flex-end;">
+              <span class="mockup-btn secondary small">取消</span>
+              <span class="mockup-btn small">保存</span>
+            </div>
+          </div>
+          <div class="mockup-caption" id="fig-5-2">
+            <strong>图 5-2</strong>"添加自选股"弹窗
+            <span class="muted">输入代码后失焦/回车自动拉取名称；阈值留空表示不监控</span>
+          </div>
+        </div>
+
+        <h3 id="watchlist-edit">5.2 编辑与删除</h3>
+        <ul>
+          <li>点击行内"<strong>编辑</strong>"按钮可修改买卖阈值（<strong>代码与名称不允许在编辑模式下修改</strong>，如需改名请删除后重新添加）。</li>
+          <li>点击"<strong>删除</strong>"会弹出确认框；删除自选股<strong>不会</strong>删除已产生的交易记录或持仓——已买入的股票即使从自选股列表移除，仍会在"持仓"页面正常显示。</li>
+        </ul>
+
+        <h3 id="watchlist-monitor">5.3 监控与阈值</h3>
+        <ul>
+          <li>每行右侧有一个<strong>监控开关</strong>（拨片样式）。打开后，主进程按"轮询间隔"持续拉取当前价；价格突破阈值时弹出 Windows 系统通知。</li>
+          <li>关闭监控开关后只保留"显示"，不产生提醒，但价格仍会随刷新按钮更新。</li>
+          <li>列表按"<strong>监控开关 ↑、更新时间 ↓</strong>"排序，被监控的股票永远靠前。</li>
+        </ul>
+
+        <h3 id="watchlist-kline">5.4 下载与查看 K 线</h3>
+
+        <h4>5.4.1 下载 K 线</h4>
+        <ol class="steps">
+          <li>点击行内"<strong>下载K线</strong>"按钮，弹出下载对话框。</li>
+          <li>选择：
+            <ul>
+              <li><strong>起始日期 / 结束日期</strong>（结束日期不能晚于今天）。</li>
+              <li><strong>复权方式</strong>（多选）："不复权"与"前复权"可同时下载，写入不同列。</li>
+            </ul>
+          </li>
+          <li>点击"<strong>开始下载</strong>"。下载进度通过 Toast 提示。完成后可在"形态检测"或"K 线图"中查看。</li>
+        </ol>
+
+        <div class="note tip">
+          <span class="label">提示</span>
+          "前复权"会把历史价格按最近一次除权除息回溯调整，看技术形态/趋势更连贯；"不复权"保留真实成交价，适合核对历史交易记录。建议<strong>两者都下载</strong>。
+        </div>
+
+        <h4>5.4.2 查看 K 线图</h4>
+        <ol class="steps">
+          <li>点击股票<strong>名称</strong>（不是代码），弹出 K 线弹窗。</li>
+          <li>顶部有"<strong>复权方式</strong>"切换（默认前复权）。</li>
+          <li>图表上叠加该股的所有交易记录标记：<strong>▲</strong> 买入（红）、<strong>▼</strong> 卖出（绿）。鼠标悬停可看到当时的价格、数量、累计持仓。</li>
+        </ol>
+
+        <div class="mockup">
+          <div class="mockup-dialog" style="max-width: 580px;">
+            <h5>贵州茅台 <span class="mockup-badge">sh600519</span> · 日K</h5>
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 10px; font-size: 11px;">
+              <span class="mockup-badge on">前复权</span>
+              <span class="mockup-badge">不复权</span>
+              <span style="margin-left: auto; color: var(--fg-subtle);">区间：2025-09-01 ~ 2025-09-21</span>
+            </div>
+            <div class="mockup-kline">
+              <div class="y-axis">
+                <span>1750</span>
+                <span>1720</span>
+                <span>1690</span>
+                <span>1660</span>
+                <span>1630</span>
+                <span>1600</span>
+              </div>
+              <div class="canvas">
+                <div class="mockup-candles">
+                  <div class="mockup-candle down">
+                    <div class="wick"></div>
+                    <div class="body"></div>
+                  </div>
+                  <div class="mockup-candle up">
+                    <div class="wick"></div>
+                    <div class="body"></div>
+                  </div>
+                  <div class="mockup-candle up">
+                    <div class="wick"></div>
+                    <div class="body"></div>
+                  </div>
+                  <div class="mockup-candle down">
+                    <div class="wick"></div>
+                    <div class="body"></div>
+                  </div>
+                  <div class="mockup-candle up">
+                    <div class="wick"></div>
+                    <div class="body"></div>
+                  </div>
+                  <div class="mockup-candle down">
+                    <div class="wick"></div>
+                    <div class="body"></div>
+                  </div>
+                  <div class="mockup-candle up">
+                    <div class="wick"></div>
+                    <div class="body"></div>
+                  </div>
+                  <div class="mockup-candle up">
+                    <div class="wick"></div>
+                    <div class="body"></div>
+                  </div>
+                  <div class="mockup-candle down">
+                    <div class="wick"></div>
+                    <div class="body"></div>
+                  </div>
+                  <div class="mockup-candle up">
+                    <div class="wick"></div>
+                    <div class="body"></div>
+                  </div>
+                  <div class="mockup-candle up">
+                    <div class="wick"></div>
+                    <div class="body"></div>
+                  </div>
+                  <div class="mockup-candle up">
+                    <div class="wick"></div>
+                    <div class="body"></div>
+                  </div>
+                  <div class="mockup-candle down">
+                    <div class="wick"></div>
+                    <div class="body"></div>
+                  </div>
+                </div>
+                <span class="mockup-marker bull" style="left: 18%;">▲</span>
+                <span class="mockup-marker bear" style="left: 56%;">▼</span>
+              </div>
+            </div>
+            <div style="margin-top: 6px; font-size: 11px; color: var(--fg-muted); display: flex; gap: 14px;">
+              <span><span style="color:#cf222e;">▲</span> 买入：09-05 / 1685.20 / 100股 / 累计持仓 200</span>
+              <span><span style="color:#1a7f37;">▼</span> 卖出：09-12 / 1715.00 / 100股 / 累计持仓 100</span>
+            </div>
+          </div>
+          <div class="mockup-caption" id="fig-5-3">
+            <strong>图 5-3</strong>K 线弹窗（含交易标记叠加）
+            <span class="muted">红绿 K 线对应 A 股涨跌；红▲买入 / 绿▼卖出 标记在对应 K 线上方</span>
+          </div>
+        </div>
+
+        <h3 id="watchlist-refresh">5.5 手动刷新价格</h3>
+        <p>页面右上角的"<strong>刷新按钮</strong>"（带循环箭头的图标）：</p>
+        <ul>
+          <li>点击后立即拉取所有自选股的最新价，不受轮询间隔限制。</li>
+          <li>刷新期间按钮显示"加载中…"，列表显示"最后刷新时间"。</li>
+          <li>如果行情接口暂时不可达，Toast 提示失败原因，但本地数据不会被清空。</li>
+        </ul>
+      </section>
+
+      <!-- ========== 持仓 ========== -->
+      <section id="position">
+        <h2>6. 持仓</h2>
+
+        <p>持仓页面通过"<strong>交易记录自动聚合</strong>"得到当前持仓与成本，<strong>不要</strong>在这里直接录入"持仓"，所有数据都源于交易。</p>
+
+        <h3>6.0 持仓总览</h3>
+        <p>每只持仓股票一张卡片，展开后可看到该股全部交易记录：</p>
+
+        <div class="mockup">
+          <div class="mockup-content">
+            <div class="mockup-toolbar">
+              <div class="left">
+                <h4>当前持仓</h4><span class="mockup-badge">共 2 只</span>
+              </div>
+              <div class="right"><span class="mockup-btn small">+ 新增交易</span></div>
+            </div>
+
+            <div class="mockup-card" style="margin-bottom: 10px;">
+              <div class="head">
+                <div><span class="name">贵州茅台</span> <span class="code">sh600519</span></div>
+                <div><span class="mockup-badge on">已展开 ▾</span></div>
+              </div>
+              <div class="stats">
+                <span class="label">持仓数量</span><span class="value">200</span>
+                <span class="label">成本均价</span><span class="value">1670.30</span>
+                <span class="label">最新价</span><span class="value up">1685.20</span>
+                <span class="label">浮动盈亏</span><span class="value up">+298.00</span>
+                <span class="label">收益率</span><span class="value up">+0.89%</span>
+                <span class="label">持仓天数</span><span class="value">16</span>
+              </div>
+              <table class="mockup-table" style="margin-top: 8px;">
+                <thead>
+                  <tr>
+                    <th>日期</th>
+                    <th>方向</th>
+                    <th>价格</th>
+                    <th>数量</th>
+                    <th>金额</th>
+                    <th>累计持仓</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>2025-09-05</td>
+                    <td class="up">买入</td>
+                    <td class="num">1685.20</td>
+                    <td class="num">100</td>
+                    <td class="num">168,520.00</td>
+                    <td class="num">100</td>
+                    <td><span class="mockup-btn small ghost">编辑</span> <span class="mockup-btn small danger">删除</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>2025-09-12</td>
+                    <td class="up">买入</td>
+                    <td class="num">1655.40</td>
+                    <td class="num">100</td>
+                    <td class="num">165,540.00</td>
+                    <td class="num">200</td>
+                    <td><span class="mockup-btn small ghost">编辑</span> <span class="mockup-btn small danger">删除</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="mockup-card">
+              <div class="head">
+                <div><span class="name">宁德时代</span> <span class="code">sz300750</span></div>
+                <div><span class="mockup-badge off">展开 ▸</span></div>
+              </div>
+              <div class="stats">
+                <span class="label">持仓数量</span><span class="value">500</span>
+                <span class="label">成本均价</span><span class="value">232.80</span>
+                <span class="label">最新价</span><span class="value up">225.40</span>
+                <span class="label">浮动盈亏</span><span class="value down">-3,700.00</span>
+                <span class="label">收益率</span><span class="value down">-3.18%</span>
+                <span class="label">持仓天数</span><span class="value">28</span>
+              </div>
+            </div>
+          </div>
+          <div class="mockup-caption" id="fig-6-1">
+            <strong>图 6-1</strong>持仓页：卡片 + 展开式交易明细
+            <span class="muted">同时只允许展开一只；红涨绿跌</span>
+          </div>
+        </div>
+
+        <h3 id="position-add">6.1 新增交易</h3>
+        <ol class="steps">
+          <li>点击"<strong>新增交易</strong>"按钮，弹出交易编辑器。</li>
+          <li>填写：
+            <ul>
+              <li><strong>股票代码</strong>：必须是自选股列表中已有的代码。如果尚未加入自选股，请先去"自选股"添加。</li>
+              <li><strong>方向</strong>：<code>买入</code> / <code>卖出</code>。</li>
+              <li><strong>日期</strong>：交易发生当日，不能晚于今天。</li>
+              <li><strong>价格</strong>：单股成交价，最多两位小数。</li>
+              <li><strong>数量</strong>：必须为 100 的整数倍（A 股最小一手 = 100 股）。</li>
+              <li><strong>手续费</strong>（可选）：默认按"佣金率 0.025%、印花税 0.05%（仅卖出）"自动计算，可手动覆盖。</li>
+              <li><strong>备注</strong>（可选）。</li>
+            </ul>
+          </li>
+          <li>点击"<strong>保存</strong>"。系统会：
+            <ul>
+              <li>写入 <code>trade_records</code> 表。</li>
+              <li>自动同步生成一条<strong>资金流水</strong>（详见 <a href="#position-sync">§6.4</a>）。</li>
+            </ul>
+          </li>
+        </ol>
+
+        <div class="mockup">
+          <div class="mockup-dialog">
+            <h5>+ 新增交易</h5>
+            <div class="mockup-form">
+              <span class="lbl">股票代码</span>
+              <div class="field">
+                <span class="mockup-input">sh600519</span>
+                <span class="mockup-badge on">贵州茅台</span>
+              </div>
+              <span class="lbl">方向</span>
+              <div class="field">
+                <span class="mockup-badge on" style="background:#cf222e;border-color:#cf222e;color:#fff;">● 买入</span>
+                <span class="mockup-badge off">卖出</span>
+              </div>
+              <span class="lbl">日期</span>
+              <div class="field"><span class="mockup-input">2025-09-12</span></div>
+              <span class="lbl">价格 (元)</span>
+              <div class="field"><span class="mockup-input">1655.40</span></div>
+              <span class="lbl">数量 (股)</span>
+              <div class="field"><span class="mockup-input">100</span><span class="mockup-badge">1 手</span></div>
+              <span class="lbl">手续费 (元)</span>
+              <div class="field"><span class="mockup-input">42.10</span><span class="mockup-badge">自动计算</span></div>
+              <span class="lbl">备注</span>
+              <div class="field"><span class="mockup-input lg">回调加仓</span></div>
+            </div>
+            <div
+              style="margin-top: 14px; padding: 8px 10px; background: var(--accent-bg); border-radius: 4px; font-size: 11px; color: var(--fg-muted);">
+              📊 预计生成资金流水：<strong>STOCK_BUY</strong> · 金额 = 1655.40 × 100 + 42.10 = <strong>165,582.10 元</strong>
+            </div>
+            <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: flex-end;">
+              <span class="mockup-btn secondary small">取消</span>
+              <span class="mockup-btn small">保存</span>
+            </div>
+          </div>
+          <div class="mockup-caption" id="fig-6-2">
+            <strong>图 6-2</strong>"新增交易"弹窗
+            <span class="muted">保存后自动同步一条资金流水；股票代码只允许从自选股中选择</span>
+          </div>
+        </div>
+
+        <h3 id="position-view">6.2 查看持仓</h3>
+        <p>列表按股票分组，每只股票一个卡片：</p>
+        <ul>
+          <li><strong>股票名称 / 代码</strong></li>
+          <li><strong>持仓数量</strong>：所有买入 - 所有卖出，自动算到今天。</li>
+          <li><strong>成本均价</strong>：移动加权平均成本（详见 <a href="#appendix">§附录</a>）。</li>
+          <li><strong>最新价</strong>：从自选股轮询拉取。</li>
+          <li><strong>浮动盈亏</strong>：<code>(最新价 - 成本均价) × 持仓数量</code>。红涨绿跌配色。</li>
+          <li><strong>收益率</strong>：<code>(最新价 - 成本均价) / 成本均价 × 100%</code>。</li>
+        </ul>
+        <p>点击卡片可<strong>展开/收起</strong>该股所有交易记录（同时<strong>只能展开一只</strong>，点其他股票会自动收起上一只）。展开后按时间倒序列出全部买入/卖出明细。</p>
+
+        <h3 id="position-edit">6.3 编辑与删除交易</h3>
+        <ul>
+          <li>在展开的交易明细上，点击某一条的"<strong>编辑</strong>"，可修改价格、数量、日期、备注。<strong>修改后资金流水会自动反向调整</strong>。</li>
+          <li>点击"<strong>删除</strong>"会弹确认框；删除会同时<strong>同步删除对应的资金流水</strong>。</li>
+        </ul>
+
+        <div class="note danger">
+          <span class="label">风险</span>
+          删除交易记录意味着"<strong>该笔从未发生过</strong>"。如果只是为了平账，请用"<strong>反向卖出</strong>"交易记录冲销，<strong>不要直接删除</strong>。
+        </div>
+
+        <h3 id="position-sync">6.4 资金明细自动同步</h3>
+        <p>新增 / 编辑 / 删除交易时，会按以下对照表自动写入资金明细：</p>
+        <table>
+          <thead>
+            <tr>
+              <th>交易操作</th>
+              <th>自动生成的资金流水</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>买入</td>
+              <td><code>STOCK_BUY</code> · 金额 = 买入价 × 数量 + 买入佣金</td>
+            </tr>
+            <tr>
+              <td>卖出</td>
+              <td><code>STOCK_SELL</code> · 金额 = 卖出价 × 数量 − 卖出佣金 − 印花税</td>
+            </tr>
+            <tr>
+              <td>分红（暂未开放 UI）</td>
+              <td><code>DIVIDEND</code> · 金额 = 每股分红 × 持仓数量</td>
+            </tr>
+            <tr>
+              <td>分红税（同上）</td>
+              <td><code>DIVIDEND_TAX</code> · 按 FIFO 原则扣除</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p>资金流水同步发生在<strong>服务层</strong>，而不是数据库触发器。这意味着：</p>
+        <ul>
+          <li>同步失败会<strong>弹 Toast 警告</strong>（黄色）但不会回滚交易——你需要去"资金管理 → 资金明细"手动补录一条。</li>
+          <li>资金明细列表中由交易自动生成的条目会标注"<strong>来源：交易 ID</strong>"，不可直接编辑，只能去改对应交易。</li>
+        </ul>
+      </section>
+
+      <!-- ========== 历史开仓 ========== -->
+      <section id="historical">
+        <h2>7. 历史开仓</h2>
+
+        <p>当你对某只股票"<strong>已全部清仓</strong>"（买卖配对最终 <code>holdingCount = 0</code>），它会从"持仓"页面消失，进入"<strong>历史开仓</strong>"。
+        </p>
+
+        <div class="mockup">
+          <div class="mockup-content">
+            <div class="mockup-toolbar">
+              <div class="left">
+                <h4>历史开仓</h4><span class="mockup-badge">共 3 个周期</span>
+              </div>
+              <div class="right"><span class="mockup-btn small secondary">⟳ 刷新</span></div>
+            </div>
+
+            <div class="mockup-card" style="margin-bottom: 10px;">
+              <div class="head">
+                <div><span class="name">比亚迪</span> <span class="code">sz002594</span><span class="mockup-badge"
+                    style="margin-left:6px;">清仓 2025-08-15</span></div>
+                <div class="up" style="font-weight: 600;">+12,540.00 (+5.32%)</div>
+              </div>
+              <div class="stats">
+                <span class="label">持仓天数</span><span class="value">42</span>
+                <span class="label">买入次数</span><span class="value">2</span>
+                <span class="label">卖出次数</span><span class="value">3</span>
+                <span class="label">累计手续费</span><span class="value">128.40</span>
+              </div>
+              <table class="mockup-table" style="margin-top: 8px;">
+                <thead>
+                  <tr>
+                    <th>日期</th>
+                    <th>方向</th>
+                    <th>价格</th>
+                    <th>数量</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>2025-07-04</td>
+                    <td class="up">买入</td>
+                    <td class="num">245.20</td>
+                    <td class="num">200</td>
+                  </tr>
+                  <tr>
+                    <td>2025-07-18</td>
+                    <td class="up">买入</td>
+                    <td class="num">232.80</td>
+                    <td class="num">100</td>
+                  </tr>
+                  <tr>
+                    <td>2025-08-08</td>
+                    <td class="down">卖出</td>
+                    <td class="num">255.40</td>
+                    <td class="num">100</td>
+                  </tr>
+                  <tr>
+                    <td>2025-08-12</td>
+                    <td class="down">卖出</td>
+                    <td class="num">260.10</td>
+                    <td class="num">100</td>
+                  </tr>
+                  <tr>
+                    <td>2025-08-15</td>
+                    <td class="down">卖出</td>
+                    <td class="num">258.30</td>
+                    <td class="num">100</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="mockup-card">
+              <div class="head">
+                <div><span class="name">中信证券</span> <span class="code">sh600030</span><span class="mockup-badge"
+                    style="margin-left:6px;">清仓 2025-06-22</span></div>
+                <div class="down" style="font-weight: 600;">-2,180.00 (-1.85%)</div>
+              </div>
+              <div class="stats">
+                <span class="label">持仓天数</span><span class="value">18</span>
+                <span class="label">买入次数</span><span class="value">1</span>
+                <span class="label">卖出次数</span><span class="value">1</span>
+                <span class="label">累计手续费</span><span class="value">54.20</span>
+              </div>
+            </div>
+          </div>
+          <div class="mockup-caption" id="fig-7-1">
+            <strong>图 7-1</strong>历史开仓列表
+            <span class="muted">按清仓时间倒序；盈亏金额与收益率采用 A 股配色</span>
+          </div>
+        </div>
+
+        <h3>7.1 列表展示</h3>
+        <ul>
+          <li>每条记录一张卡片：股票名称、清仓日期、总盈亏、收益率、持仓天数。</li>
+          <li>按<strong>清仓时间倒序</strong>排列，最新的已清仓股票在最上面。</li>
+        </ul>
+
+        <h3>7.2 展开明细</h3>
+        <p>点击卡片可展开/收起该周期的全部交易链（同样遵循<strong>同时只展开一只</strong>的规则）。</p>
+
+        <h3>7.3 刷新</h3>
+        <p>点击页面顶部"<strong>刷新</strong>"按钮会重新扫描 <code>trade_records</code> 表，把新增的已清仓周期纳入列表。</p>
+
+        <div class="note tip">
+          <span class="label">提示</span>
+          历史开仓里的数据是<strong>只读</strong>的——它只是为了复盘。如果发现历史数据算错了，请改底层交易记录，不要直接编辑历史开仓。
+        </div>
+      </section>
+
+      <!-- ========== 网格 ========== -->
+      <section id="grid">
+        <h2>8. 网格</h2>
+
+        <p>
+          本页面有两个标签：<strong>交易计算</strong>与<strong>开仓计算</strong>。两者都是"<strong>算给你看</strong>"，<strong>不会自动下单</strong>，结果仅作为决策参考。
+        </p>
+
+        <h3 id="grid-trade">8.1 交易计算</h3>
+        <p>用于"<strong>现在该不该调整持仓</strong>"——根据当前股价与持仓市值计算偏差，给出买入/卖出建议。</p>
+
+        <div class="mockup">
+          <div class="mockup-content">
+            <div class="mockup-toolbar">
+              <div class="left">
+                <span class="mockup-badge on">交易计算</span>
+                <span class="mockup-badge off">开仓计算</span>
+              </div>
+              <div class="right"><span class="mockup-btn small secondary">重置</span></div>
+            </div>
+
+            <div class="mockup-card">
+              <h5 style="margin: 0 0 10px; font-size: 12px;">输入参数</h5>
+              <div class="mockup-form">
+                <span class="lbl">持仓股票</span>
+                <div class="field"><span class="mockup-input">贵州茅台 (sh600519) · 持仓 200 · 均价 1670.30</span></div>
+                <span class="lbl">总金额 (元)</span>
+                <div class="field"><span class="mockup-input">400000</span></div>
+                <span class="lbl">当前股价 (元)</span>
+                <div class="field"><span class="mockup-input">1685.20</span></div>
+              </div>
+              <div style="margin-top: 10px;"><span class="mockup-btn small">计算</span></div>
+            </div>
+
+            <div class="mockup-card" style="margin-top: 10px;">
+              <h5 style="margin: 0 0 10px; font-size: 12px;">计算结果</h5>
+              <div class="stats">
+                <span class="label">当前市值</span><span class="value">337,040</span>
+                <span class="label">目标市值</span><span class="value">200,000</span>
+                <span class="label">偏差</span><span class="value up">+68.52%</span>
+                <span class="label">建议</span><span class="value down">需要卖出</span>
+                <span class="label">建议手数</span><span class="value">8 手 (800 股)</span>
+                <span class="label">预计新持仓</span><span class="value">119 股</span>
+              </div>
+              <div
+                style="margin-top: 10px; padding: 6px 10px; background: rgba(207,34,46,0.1); border-left: 3px solid var(--danger); font-size: 11px; color: var(--fg);">
+                ⚠ 偏差超过 +10%，建议卖出 <strong>8 手</strong>（按 100 股取整）
+              </div>
+            </div>
+          </div>
+          <div class="mockup-caption" id="fig-8-1">
+            <strong>图 8-1</strong>网格 → 交易计算
+            <span class="muted">左侧输入，右侧实时计算；偏差阈值 ±10%</span>
+          </div>
+        </div>
+
+        <h4>操作步骤</h4>
+        <ol class="steps">
+          <li>在"<strong>选择持仓股票</strong>"下拉框中选择一只已持仓股票（系统会<strong>自动填充</strong>持仓数量与均价）。</li>
+          <li>手动填写"总金额"（你愿意分配给这只股票的总资金，含持仓市值 + 现金）与"当前股价"。</li>
+          <li>点击"<strong>计算</strong>"。</li>
+        </ol>
+
+        <h4>结果解读</h4>
+        <ul>
+          <li><strong>当前持仓</strong>：实际持仓数量、均价、市值。</li>
+          <li><strong>目标持仓</strong>：网格策略下的"目标持仓金额 = 总金额 × 50%"，按当前价折算为股数。</li>
+          <li><strong>偏差百分比</strong>：<code>(当前市值 - 目标市值) / 目标市值 × 100%</code>。
+            <ul>
+              <li>偏差在 ±10% 内 → <strong>无需调整</strong>（绿）。</li>
+              <li>偏差 &gt; +10% → <strong>需要卖出</strong>（红）。</li>
+              <li>偏差 &lt; −10% → <strong>需要买入</strong>（红）。</li>
+            </ul>
+          </li>
+          <li><strong>建议数量</strong>：调整手数，按 100 股取整。</li>
+        </ul>
+
+        <h3 id="grid-open">8.2 开仓计算</h3>
+        <p>用于"<strong>首次建仓该买多少</strong>"——按"半仓原则"给出建议买入数量。</p>
+
+        <h4>操作步骤</h4>
+        <ol class="steps">
+          <li>填写"总金额"与"开仓股价"。</li>
+          <li>点击"<strong>计算</strong>"。</li>
+        </ol>
+
+        <h4>结果解读</h4>
+        <ul>
+          <li><strong>开仓金额</strong>：总金额 × 50%。</li>
+          <li><strong>建议买入数量</strong>：<code>开仓金额 / 开仓股价</code>，按 100 股取整。</li>
+          <li><strong>剩余资金</strong>：总金额 × 50%，用于后续加仓。</li>
+        </ul>
+
+        <h3>8.3 重置</h3>
+        <p>点击"<strong>重置</strong>"清空当前标签页的所有输入与结果，不影响数据库。</p>
+      </section>
+
+      <!-- ========== 网格仿真 ========== -->
+      <section id="grid-sim">
+        <h2>9. 网格仿真</h2>
+
+        <p>网格仿真把网格/阈值策略<strong>在历史 K 线上跑一遍</strong>，输出"假如当时按此策略机械执行"的模拟盈亏。<strong>所有写入只发生在内存</strong>，不会修改
+          <code>trade_records</code>、<code>transfer_records</code>。
+        </p>
+
+        <h3 id="grid-sim-input">9.1 参数设置</h3>
+
+        <h4>9.1.1 必填项</h4>
+        <table>
+          <thead>
+            <tr>
+              <th>参数</th>
+              <th>含义</th>
+              <th>示例</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>开始日期</td>
+              <td>回放起点，需 ≤ K 线最晚一天</td>
+              <td><code>2023-01-01</code></td>
+            </tr>
+            <tr>
+              <td>股票代码</td>
+              <td>必须是已下载 K 线的自选股</td>
+              <td><code>sh600519</code></td>
+            </tr>
+            <tr>
+              <td>初始资金</td>
+              <td>模拟账户起始资金（元）</td>
+              <td><code>100000</code></td>
+            </tr>
+            <tr>
+              <td>网格上限 / 下限</td>
+              <td>价格区间（仅策略 1/2/3 使用）</td>
+              <td>上 <code>1800</code>、下 <code>1400</code></td>
+            </tr>
+            <tr>
+              <td>网格间距</td>
+              <td>每档差价（元）</td>
+              <td><code>50</code></td>
+            </tr>
+            <tr>
+              <td>每档手数</td>
+              <td>每档触发后买入/卖出多少手；留空自动估算</td>
+              <td><code>1</code></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h4>9.1.2 策略选择</h4>
+        <p>共五种内置策略：</p>
+        <table>
+          <thead>
+            <tr>
+              <th>编号</th>
+              <th>名称</th>
+              <th>触发逻辑</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>策略1</td>
+              <td>整批清仓</td>
+              <td>上涨穿越时<strong>一次性卖出栈顶批次的全部持仓</strong>。</td>
+            </tr>
+            <tr>
+              <td>策略2</td>
+              <td>分步减仓</td>
+              <td>上涨穿越时，对所有已穿越待减批次各卖出其买入量的<strong>一半</strong>（分两段减仓）。</td>
+            </tr>
+            <tr>
+              <td>策略3</td>
+              <td>隔两档卖出</td>
+              <td>与策略 1 类似，但需上穿"高两档"才卖（如 4.2 买入→上穿 4.6 卖出）。</td>
+            </tr>
+            <tr>
+              <td>策略4</td>
+              <td>半仓平衡</td>
+              <td>不依赖网格，按日收盘做半仓再平衡——目标持仓金额 = 可用资金 / 2，偏差超 ±5% 时按差额动态买卖。</td>
+            </tr>
+            <tr>
+              <td>策略5</td>
+              <td>阈值全仓</td>
+              <td>不依赖网格，仅用两个触发价做全仓/空仓切换——空仓且收盘价 ≤ 买入触发价则全仓买入；持仓且收盘价 ≥ 卖出触发价则清仓卖出。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h4>9.1.3 费用（可选，带默认值）</h4>
+        <ul>
+          <li><strong>佣金率</strong>：默认 <code>0.00025</code>（万分之 2.5）。</li>
+          <li><strong>最低佣金</strong>：默认 <code>5</code> 元/笔。</li>
+          <li><strong>印花税</strong>：默认 <code>0.0005</code>（万分之 5，仅卖出）。</li>
+          <li><strong>每股分红</strong>：默认 <code>0</code>，按持仓数量每日计入分红。</li>
+        </ul>
+
+        <h3 id="grid-sim-result">9.2 结果解读</h3>
+        <p>点击"<strong>开始仿真</strong>"后，结果区按以下顺序展示：</p>
+
+        <div class="mockup">
+          <div class="mockup-content">
+            <div class="mockup-toolbar">
+              <div class="left">
+                <h4>网格仿真</h4><span class="mockup-badge">贵州茅台 · sh600519</span>
+              </div>
+              <div class="right"><span class="mockup-btn small">▶ 开始仿真</span></div>
+            </div>
+
+            <div class="mockup-card">
+              <h5 style="margin: 0 0 10px; font-size: 12px;">参数设置</h5>
+              <div class="mockup-form" style="grid-template-columns: 100px 1fr 100px 1fr;">
+                <span class="lbl">开始日期</span>
+                <div class="field"><span class="mockup-input">2024-01-01</span></div>
+                <span class="lbl">结束日期</span>
+                <div class="field"><span class="mockup-input">2025-09-21</span></div>
+                <span class="lbl">初始资金</span>
+                <div class="field"><span class="mockup-input">100000</span></div>
+                <span class="lbl">网格上限</span>
+                <div class="field"><span class="mockup-input">1800</span></div>
+                <span class="lbl">网格下限</span>
+                <div class="field"><span class="mockup-input">1400</span></div>
+                <span class="lbl">网格间距</span>
+                <div class="field"><span class="mockup-input">50</span></div>
+                <span class="lbl">每档手数</span>
+                <div class="field"><span class="mockup-input">1</span></div>
+                <span class="lbl">策略</span>
+                <div class="field"><span class="mockup-badge on">策略1：整批清仓</span></div>
+              </div>
+              <details style="margin-top: 8px; font-size: 11px;">
+                <summary style="cursor: pointer; color: var(--fg-muted);">高级：费用参数</summary>
+                <div style="padding: 8px 0; display: flex; gap: 12px;">
+                  <span class="mockup-badge">佣金 0.025%</span>
+                  <span class="mockup-badge">印花税 0.05%</span>
+                  <span class="mockup-badge">最低佣金 5 元</span>
+                  <span class="mockup-badge">每股分红 0</span>
+                </div>
+              </details>
+            </div>
+          </div>
+          <div class="mockup-caption" id="fig-9-1">
+            <strong>图 9-1</strong>网格仿真参数面板
+            <span class="muted">必填项水平排列；高级费用项折叠收起</span>
+          </div>
+        </div>
+
+        <div class="mockup">
+          <div class="mockup-content">
+            <div class="mockup-stats">
+              <div class="mockup-stat">
+                <div class="label">期末总资产</div>
+                <div class="value">118,420</div>
+              </div>
+              <div class="mockup-stat">
+                <div class="label">累计盈亏</div>
+                <div class="value up">+18,420</div>
+              </div>
+              <div class="mockup-stat">
+                <div class="label">累计收益率</div>
+                <div class="value up">+18.42%</div>
+              </div>
+              <div class="mockup-stat">
+                <div class="label">最大回撤</div>
+                <div class="value">-8.56%</div>
+              </div>
+              <div class="mockup-stat">
+                <div class="label">胜率</div>
+                <div class="value">62.5%</div>
+              </div>
+              <div class="mockup-stat">
+                <div class="label">累计手续费</div>
+                <div class="value">486.20</div>
+              </div>
+            </div>
+
+            <div class="mockup-card">
+              <h5 style="margin: 0 0 8px; font-size: 12px;">模拟交易（最近 5 条）</h5>
+              <table class="mockup-table">
+                <thead>
+                  <tr>
+                    <th>日期</th>
+                    <th>方向</th>
+                    <th>价格</th>
+                    <th>数量</th>
+                    <th>手续费</th>
+                    <th>触发原因</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>2025-09-08</td>
+                    <td class="up">买入</td>
+                    <td class="num">1620.00</td>
+                    <td class="num">100</td>
+                    <td class="num">5.00</td>
+                    <td>下穿 1625</td>
+                  </tr>
+                  <tr>
+                    <td>2025-09-05</td>
+                    <td class="up">买入</td>
+                    <td class="num">1575.00</td>
+                    <td class="num">100</td>
+                    <td class="num">5.00</td>
+                    <td>下穿 1575</td>
+                  </tr>
+                  <tr>
+                    <td>2025-08-20</td>
+                    <td class="down">卖出</td>
+                    <td class="num">1725.00</td>
+                    <td class="num">100</td>
+                    <td class="num">5.86</td>
+                    <td>上穿 1725</td>
+                  </tr>
+                  <tr>
+                    <td>2025-08-15</td>
+                    <td class="up">买入</td>
+                    <td class="num">1625.00</td>
+                    <td class="num">100</td>
+                    <td class="num">5.00</td>
+                    <td>下穿 1625</td>
+                  </tr>
+                  <tr>
+                    <td>2025-08-08</td>
+                    <td class="up">买入</td>
+                    <td class="num">1575.00</td>
+                    <td class="num">100</td>
+                    <td class="num">5.00</td>
+                    <td>下穿 1575</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div
+              style="margin-top: 10px; padding: 8px 10px; background: rgba(26,127,55,0.1); border-left: 3px solid var(--success); font-size: 11px;">
+              ✓ 操作建议：本策略在该股历史 K 线上为<strong>正收益</strong>，可考虑在实盘中验证。
+            </div>
+          </div>
+          <div class="mockup-caption" id="fig-9-2">
+            <strong>图 9-2</strong>仿真结果区
+            <span class="muted">上：6 张汇总指标卡；中：模拟交易列表；下：操作建议</span>
+          </div>
+        </div>
+
+        <ol>
+          <li><strong>汇总指标</strong>
+            <ul>
+              <li>期末总资产、累计盈亏、累计收益率。</li>
+              <li>最大回撤、胜率、单笔平均收益、累计手续费。</li>
+            </ul>
+          </li>
+          <li><strong>模拟交易列表</strong>
+            <ul>
+              <li>逐条列出每次买入、卖出、分红的成交日期、价格、数量、手续费。</li>
+              <li>买卖行配色：买入（红）、卖出（绿）、分红（蓝）。</li>
+            </ul>
+          </li>
+          <li><strong>操作建议</strong>
+            <ul>
+              <li>正收益 → 仅供参考；负收益 → 检查参数与策略是否契合当前股价波动特征。</li>
+            </ul>
+          </li>
+        </ol>
+
+        <div class="note warn">
+          <span class="label">注意</span>
+          仿真结果仅基于日 K 收盘价 + 最高价/最低价的"穿越判断"，没有考虑：
+          <ul>
+            <li>真实成交价与日内的滑点。</li>
+            <li>涨跌停无法买入/卖出的情况。</li>
+            <li>除权除息之外的股本变动。</li>
+          </ul>
+          因此与未来实盘结果可能有偏差，请勿直接据此下单。
+        </div>
+      </section>
+
+      <!-- ========== 资金管理 ========== -->
+      <section id="fund">
+        <h2>10. 资金管理</h2>
+
+        <p>本页面包含三个子标签——资金统计、资金明细、盈亏统计。</p>
+
+        <div class="mockup">
+          <div class="mockup-content">
+            <div class="mockup-toolbar">
+              <div class="left">
+                <span class="mockup-badge on">资金统计</span>
+                <span class="mockup-badge off">资金明细</span>
+                <span class="mockup-badge off">盈亏统计</span>
+              </div>
+              <div class="right"><span class="mockup-btn small secondary">⟳ 刷新</span></div>
+            </div>
+
+            <div class="mockup-stats">
+              <div class="mockup-stat">
+                <div class="label">账户余额</div>
+                <div class="value">82,358.00</div>
+              </div>
+              <div class="mockup-stat">
+                <div class="label">持仓市值</div>
+                <div class="value">337,640.00</div>
+              </div>
+              <div class="mockup-stat">
+                <div class="label">总资产</div>
+                <div class="value">419,998.00</div>
+              </div>
+            </div>
+
+            <div class="mockup-cards cols-2">
+              <div class="mockup-card">
+                <h5 style="margin: 0 0 8px; font-size: 12px;">资产分布</h5>
+                <div class="mockup-pie-wrap">
+                  <div class="mockup-pie"></div>
+                  <div class="mockup-pie-legend">
+                    <div class="item"><span class="swatch" style="background: var(--accent);"></span>账户余额 19.6%</div>
+                    <div class="item"><span class="swatch" style="background: #cf222e;"></span>持仓市值 80.4%</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mockup-card">
+                <h5 style="margin: 0 0 8px; font-size: 12px;">历史趋势（近 6 月）</h5>
+                <div class="mockup-bars">
+                  <div class="mockup-bar" style="height: 30%;"></div>
+                  <div class="mockup-bar" style="height: 45%;"></div>
+                  <div class="mockup-bar" style="height: 55%;"></div>
+                  <div class="mockup-bar" style="height: 60%;"></div>
+                  <div class="mockup-bar" style="height: 75%;"></div>
+                  <div class="mockup-bar" style="height: 90%;"></div>
+                </div>
+                <div class="mockup-bar-labels">
+                  <span>4月</span><span>5月</span><span>6月</span><span>7月</span><span>8月</span><span>9月</span>
+                </div>
+                <div style="margin-top: 8px; display: flex; gap: 8px; font-size: 10px;">
+                  <span><span
+                      style="display:inline-block;width:10px;height:3px;background:var(--accent);vertical-align:middle;"></span>
+                    账户余额</span>
+                  <span><span
+                      style="display:inline-block;width:10px;height:3px;background:#cf222e;vertical-align:middle;"></span>
+                    持仓市值</span>
+                  <span><span
+                      style="display:inline-block;width:10px;height:3px;background:#1a7f37;vertical-align:middle;"></span>
+                    总资产</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mockup-caption" id="fig-10-1">
+            <strong>图 10-1</strong>资金管理 → 资金统计
+            <span class="muted">三张数值卡 + 资产分布饼图 + 历史趋势柱状图</span>
+          </div>
+        </div>
+
+        <h3 id="fund-stat">10.1 资金统计</h3>
+
+        <h4>10.1.1 数值卡</h4>
+        <ul>
+          <li><strong>账户余额</strong>：<code>transfer_records</code> 表中最后一条的 <code>account_balance</code>。</li>
+          <li><strong>持仓市值</strong>：所有当前持仓 <code>最新收盘价 × 持仓数量</code> 之和。</li>
+          <li><strong>总资产</strong>：账户余额 + 持仓市值。</li>
+        </ul>
+
+        <h4>10.1.2 资产分布饼图</h4>
+        <p>展示"账户余额 / 持仓市值"的占比。鼠标悬停切片可看到绝对值。</p>
+
+        <h4>10.1.3 历史趋势折线图</h4>
+        <p>过去 60 个月每月末聚合的"账户余额 / 持仓市值 / 总资产"三条折线。鼠标悬停数据点可看到当月三个数值。</p>
+
+        <div class="note tip">
+          <span class="label">提示</span>
+          折线图按月聚合，单月内没有数据时<strong>向前填充</strong>。如果你最近刚开始记录数据，前期曲线会相对平直。
+        </div>
+
+        <h3 id="fund-record">10.2 资金明细</h3>
+        <p>所有影响账户余额的流水都在这里。</p>
+
+        <div class="mockup">
+          <div class="mockup-content">
+            <div class="mockup-toolbar">
+              <div class="left">
+                <span class="mockup-badge off">资金统计</span>
+                <span class="mockup-badge on">资金明细</span>
+                <span class="mockup-badge off">盈亏统计</span>
+              </div>
+              <div class="right">
+                <span class="mockup-btn small">+ 新增</span>
+                <span class="mockup-btn small secondary">⟳ 刷新</span>
+              </div>
+            </div>
+
+            <table class="mockup-table">
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>类型</th>
+                  <th>金额 (元)</th>
+                  <th>账户余额</th>
+                  <th>备注</th>
+                  <th>来源</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>2025-09-01</td>
+                  <td>初始入金</td>
+                  <td class="num up">+200,000.00</td>
+                  <td class="num">200,000.00</td>
+                  <td>账户开启</td>
+                  <td><span class="mockup-badge">手动</span></td>
+                  <td><span class="mockup-btn small ghost">编辑</span> <span class="mockup-btn small danger">删除</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>2025-09-05</td>
+                  <td><strong>股票买入</strong></td>
+                  <td class="num down">-168,562.10</td>
+                  <td class="num">31,437.90</td>
+                  <td>贵州茅台 100股</td>
+                  <td><span class="mockup-badge on">交易 #1024</span></td>
+                  <td><span class="mockup-badge off">同步</span></td>
+                </tr>
+                <tr>
+                  <td>2025-09-12</td>
+                  <td><strong>股票买入</strong></td>
+                  <td class="num down">-165,582.10</td>
+                  <td class="num">-134,144.20</td>
+                  <td>贵州茅台 100股</td>
+                  <td><span class="mockup-badge on">交易 #1025</span></td>
+                  <td><span class="mockup-badge off">同步</span></td>
+                </tr>
+                <tr>
+                  <td>2025-09-15</td>
+                  <td>利息</td>
+                  <td class="num up">+125.20</td>
+                  <td class="num">-134,019.00</td>
+                  <td>活期利息</td>
+                  <td><span class="mockup-badge">手动</span></td>
+                  <td><span class="mockup-btn small ghost">编辑</span> <span class="mockup-btn small danger">删除</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>2025-09-20</td>
+                  <td>补入</td>
+                  <td class="num up">+220,000.00</td>
+                  <td class="num">85,981.00</td>
+                  <td>追加本金</td>
+                  <td><span class="mockup-badge">手动</span></td>
+                  <td><span class="mockup-btn small ghost">编辑</span> <span class="mockup-btn small danger">删除</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mockup-caption" id="fig-10-2">
+            <strong>图 10-2</strong>资金管理 → 资金明细
+            <span class="muted">带"交易 #xxx"徽章的行由交易同步生成，仅可读；正数进账 / 负数出账</span>
+          </div>
+        </div>
+
+        <h4>10.2.1 添加资金明细</h4>
+        <ol class="steps">
+          <li>点击"<strong>新增</strong>"按钮，弹出编辑器。</li>
+          <li>填写：
+            <ul>
+              <li><strong>日期</strong>。</li>
+              <li><strong>类型</strong>：<code>转入</code>（账户入金）/ <code>转出</code>（出金）/ <code>利息</code> / <code>分红</code> /
+                <code>分红税</code>。
+              </li>
+              <li><strong>金额</strong>：正数即代表"账户进账"（转入/分红/利息为正；转出/分红税填负数）。</li>
+              <li><strong>备注</strong>。</li>
+            </ul>
+          </li>
+          <li>点击"<strong>保存</strong>"。系统按当前账户余额滚动计算新余额。</li>
+        </ol>
+
+        <h4>10.2.2 自动生成的资金流水</h4>
+        <p>由交易记录同步生成的流水会在列表中标注"<strong>来源：交易 #xxx</strong>"：</p>
+        <ul>
+          <li>类型固定为 <code>股票买入</code> / <code>股票卖出</code> / <code>分红</code> / <code>分红税</code>。</li>
+          <li>不可直接编辑——只能改对应的交易记录。</li>
+          <li>可以删除，但<strong>删除会连带同步逻辑失效</strong>（下次编辑原交易时仍会重建）。</li>
+        </ul>
+
+        <h4>10.2.3 手动添加的资金流水</h4>
+        <ul>
+          <li>类型为 <code>转入 / 转出 / 利息</code> 的条目可自由编辑、删除。</li>
+          <li>删除一条流水后，账户余额会按时间正序<strong>重新滚动计算</strong>，可能与历史月报不一致。</li>
+        </ul>
+
+        <h3 id="fund-profit">10.3 盈亏统计</h3>
+        <p>展示三段：</p>
+        <ul>
+          <li><strong>已实现盈亏</strong>：所有已清仓周期的累计盈亏（来自"历史开仓"）。</li>
+          <li><strong>浮动盈亏</strong>：所有当前持仓的盈亏（来自"持仓"）。</li>
+          <li><strong>累计盈亏曲线</strong>：按月聚合的累计盈亏折线图。</li>
+        </ul>
+
+        <div class="mockup">
+          <div class="mockup-content">
+            <div class="mockup-toolbar">
+              <div class="left">
+                <span class="mockup-badge off">资金统计</span>
+                <span class="mockup-badge off">资金明细</span>
+                <span class="mockup-badge on">盈亏统计</span>
+              </div>
+              <div class="right"><span class="mockup-btn small secondary">⟳ 刷新</span></div>
+            </div>
+
+            <div class="mockup-stats">
+              <div class="mockup-stat">
+                <div class="label">已实现盈亏</div>
+                <div class="value up">+15,820.00</div>
+              </div>
+              <div class="mockup-stat">
+                <div class="label">浮动盈亏</div>
+                <div class="value down">-3,402.00</div>
+              </div>
+              <div class="mockup-stat">
+                <div class="label">总盈亏</div>
+                <div class="value up">+12,418.00</div>
+              </div>
+            </div>
+
+            <div class="mockup-card">
+              <h5 style="margin: 0 0 8px; font-size: 12px;">已清仓交易明细</h5>
+              <table class="mockup-table">
+                <thead>
+                  <tr>
+                    <th>清仓日期</th>
+                    <th>股票</th>
+                    <th>盈亏金额</th>
+                    <th>收益率</th>
+                    <th>持仓天数</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>2025-08-15</td>
+                    <td>比亚迪 (sz002594)</td>
+                    <td class="num up">+12,540.00</td>
+                    <td class="num up">+5.32%</td>
+                    <td>42</td>
+                  </tr>
+                  <tr>
+                    <td>2025-07-22</td>
+                    <td>海康威视 (sz002415)</td>
+                    <td class="num up">+5,460.00</td>
+                    <td class="num up">+3.42%</td>
+                    <td>28</td>
+                  </tr>
+                  <tr>
+                    <td>2025-06-22</td>
+                    <td>中信证券 (sh600030)</td>
+                    <td class="num down">-2,180.00</td>
+                    <td class="num down">-1.85%</td>
+                    <td>18</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="mockup-caption" id="fig-10-3">
+            <strong>图 10-3</strong>资金管理 → 盈亏统计
+            <span class="muted">三张汇总卡 + 已清仓交易明细表</span>
+          </div>
+        </div>
+
+        <p>详细列表展示每笔清仓交易的"盈亏金额、收益率、持仓天数、清仓日期"——可直接用于复盘。</p>
+      </section>
+
+      <!-- ========== 形态检测 ========== -->
+      <section id="pattern">
+        <h2>11. 形态检测</h2>
+
+        <p>形态检测对自选股的日 K 序列做<strong>日本蜡烛图形态识别</strong>，共识别 32 种形态。结果以列表 + K 线标记两种方式呈现。</p>
+
+        <div class="note tip">
+          <span class="label">前置条件</span>
+          必须先在"自选股 → 下载K线"中下载该股票的日 K 数据，且 <strong>K 线根数 ≥ 20</strong>（少于 20 根一律返回"趋势无法判定"，跳过所有形态识别）。
+        </div>
+
+        <div class="mockup">
+          <div class="mockup-content">
+            <div class="mockup-toolbar">
+              <div class="left">
+                <span class="mockup-badge">股票</span>
+                <span class="mockup-input">贵州茅台 (sh600519)</span>
+                <span class="mockup-badge" style="margin-left: 8px;">复权</span>
+                <span class="mockup-badge on">前复权</span>
+                <span class="mockup-badge off">不复权</span>
+              </div>
+              <div class="right"><span class="mockup-btn small">⟳ 检测</span></div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 10px; font-size: 11px;">
+              <span class="mockup-badge">日期窗口</span>
+              <span class="mockup-input">近 30 日</span>
+              <span class="mockup-badge" style="margin-left: 4px;">方向</span>
+              <span class="mockup-badge on">全部</span>
+              <span class="mockup-badge off">看涨</span>
+              <span class="mockup-badge off">看跌</span>
+              <span class="mockup-badge off">转折</span>
+              <span class="mockup-badge" style="margin-left: 4px;">形态</span>
+              <span class="mockup-input">全部形态</span>
+            </div>
+
+            <table class="mockup-table">
+              <thead>
+                <tr>
+                  <th>形态</th>
+                  <th>命中日期</th>
+                  <th>方向</th>
+                  <th>强度</th>
+                  <th>趋势前提</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>晨星</strong></td>
+                  <td>2025-09-10</td>
+                  <td><span style="color:#1a7f37;font-weight:600;">▲ 看涨</span></td>
+                  <td class="num"><strong>0.85</strong></td>
+                  <td>下跌趋势</td>
+                </tr>
+                <tr>
+                  <td><strong>锤子</strong></td>
+                  <td>2025-09-05</td>
+                  <td><span style="color:#1a7f37;font-weight:600;">▲ 看涨</span></td>
+                  <td class="num">0.72</td>
+                  <td>下跌趋势</td>
+                </tr>
+                <tr>
+                  <td><strong>乌云盖顶</strong></td>
+                  <td>2025-09-02</td>
+                  <td><span style="color:#cf222e;font-weight:600;">▼ 看跌</span></td>
+                  <td class="num">0.68</td>
+                  <td>上涨趋势</td>
+                </tr>
+                <tr>
+                  <td><strong>黄昏星</strong></td>
+                  <td>2025-08-28</td>
+                  <td><span style="color:#9a6700;font-weight:600;">◆ 转折</span></td>
+                  <td class="num">0.61</td>
+                  <td>上涨趋势</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div style="margin-top: 14px;">
+              <h5 style="margin: 0 0 6px; font-size: 12px;">K 线定位视图（命中形态处）</h5>
+              <div class="mockup-kline">
+                <div class="y-axis">
+                  <span>1720</span>
+                  <span>1700</span>
+                  <span>1680</span>
+                  <span>1660</span>
+                  <span>1640</span>
+                </div>
+                <div class="canvas">
+                  <div class="mockup-candles">
+                    <div class="mockup-candle down">
+                      <div class="wick"></div>
+                      <div class="body"></div>
+                    </div>
+                    <div class="mockup-candle down">
+                      <div class="wick"></div>
+                      <div class="body"></div>
+                    </div>
+                    <div class="mockup-candle up">
+                      <div class="wick"></div>
+                      <div class="body"></div>
+                    </div>
+                    <div class="mockup-candle up">
+                      <div class="wick"></div>
+                      <div class="body"></div>
+                    </div>
+                    <div class="mockup-candle up">
+                      <div class="wick"></div>
+                      <div class="body"></div>
+                    </div>
+                    <div class="mockup-candle down">
+                      <div class="wick"></div>
+                      <div class="body"></div>
+                    </div>
+                    <div class="mockup-candle down">
+                      <div class="wick"></div>
+                      <div class="body"></div>
+                    </div>
+                    <div class="mockup-candle up">
+                      <div class="wick"></div>
+                      <div class="body"></div>
+                    </div>
+                    <div class="mockup-candle up">
+                      <div class="wick"></div>
+                      <div class="body"></div>
+                    </div>
+                    <div class="mockup-candle up">
+                      <div class="wick"></div>
+                      <div class="body"></div>
+                    </div>
+                  </div>
+                  <span class="mockup-marker bull" style="left: 30%;">▲</span>
+                  <span class="mockup-marker bear" style="left: 60%;">▼</span>
+                  <span class="mockup-marker pivot" style="left: 78%;">◆</span>
+                </div>
+              </div>
+              <div style="margin-top: 4px; font-size: 11px; color: var(--fg-muted);">
+                <span style="color:#1a7f37;">▲</span> 看涨 · <span style="color:#cf222e;">▼</span> 看跌 · <span
+                  style="color:#9a6700;">◆</span> 转折 — 鼠标悬停查看详情
+              </div>
+            </div>
+          </div>
+          <div class="mockup-caption" id="fig-11-1">
+            <strong>图 11-1</strong>形态检测页
+            <span class="muted">上：筛选条 + 命中列表；下：K 线 + 形态标记（自动滚动居中）</span>
+          </div>
+        </div>
+
+        <h3 id="pattern-choose">11.1 选择股票与调整方式</h3>
+        <ol class="steps">
+          <li>顶部"<strong>股票选择器</strong>"：下拉列出<strong>所有自选股</strong>。尚未下载 K 线的股票<strong>禁用</strong>并提示"请先下载 K 线"。</li>
+          <li>"<strong>复权</strong>"切换：默认 <code>前复权</code>，可切换为 <code>不复权</code>。切换或换股<strong>自动</strong>触发重新检测，无需再点按钮。
+          </li>
+          <li>可手动点"<strong>检测</strong>"按钮强制重跑（用于同条件下复检）。</li>
+        </ol>
+
+        <h3 id="pattern-filter">11.2 筛选结果</h3>
+        <p>结果列表上方有三个下拉筛选项：</p>
+        <ul>
+          <li><strong>日期窗口</strong>：近 7 / 30 / 90 日，或"全部"。默认近 30 日。</li>
+          <li><strong>方向</strong>：全部 / <strong>看涨</strong> / <strong>看跌</strong> / <strong>转折预警</strong>。仅展示已出现方向。</li>
+          <li><strong>形态</strong>：32 个形态选项 + "全部形态"。</li>
+        </ul>
+        <p>列表列：<strong>形态名 · 命中日期 · 方向 · 强度 · 趋势前提</strong>。默认按强度排序，可切换为按日期排序。</p>
+
+        <h3 id="pattern-locate">11.3 定位形态</h3>
+        <p>点击列表中的某一行：</p>
+        <ol>
+          <li>页面下方的内嵌 K 线图会<strong>滚动到对应 K 线位置</strong>并居中显示。</li>
+          <li>对应 K 线上方出现形态标记：<strong>▲</strong> 看涨（绿） / <strong>▼</strong> 看跌（红） / <strong>◆</strong> 转折（黄）。</li>
+          <li>鼠标悬停形态标记可看到形态名、强度、对应 K 线日期。</li>
+        </ol>
+
+        <h3>11.4 形态清单</h3>
+
+        <div class="grid cols-3">
+          <div>
+            <strong>单根（9 种）</strong>
+            <ul>
+              <li>十字星 / 长腿十字星 / 墓碑十字 / 蜻蜓十字</li>
+              <li>锤子 / 上吊 / 倒锤子 / 流星</li>
+              <li>光头光脚</li>
+            </ul>
+          </div>
+          <div>
+            <strong>双根（10 种）</strong>
+            <ul>
+              <li>阳包阴 / 阴包阳</li>
+              <li>乌云盖顶 / 刺透</li>
+              <li>看涨孕线 / 看跌孕线</li>
+              <li>十字星孕线（上 / 下）</li>
+              <li>颈上线 / 颈内线</li>
+            </ul>
+          </div>
+          <div>
+            <strong>三根及以上（13 种）</strong>
+            <ul>
+              <li>晨星 / 暮星</li>
+              <li>看涨弃婴 / 看跌弃婴</li>
+              <li>三白兵 / 三黑鸦</li>
+              <li>思考线</li>
+              <li>上升三法 / 下降三法</li>
+              <li>插入 / 捉腰带确认 / 分离线 / 铺垫</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="note warn">
+          <span class="label">注意</span>
+          检测结果<strong>不会持久化</strong>——每次切换股票 / 调整方式 / 日期窗口都会重新计算。本模块<strong>不做</strong>：批量扫描全自选股、周线 / 分时形态、历史回测、胜率统计。
+        </div>
+      </section>
+
+      <!-- ========== 指数状态栏 ========== -->
+      <section id="indexbar">
+        <h2>12. 指数状态栏</h2>
+
+        <p>底部固定一行，恒显示<strong>上证指数</strong>与<strong>深成指数</strong>。配色遵循 A 股惯例：</p>
+        <ul>
+          <li><strong>红色</strong>：指数上涨。</li>
+          <li><strong>绿色</strong>：指数下跌。</li>
+          <li><strong>灰色</strong>：数据未更新 / 接口异常。</li>
+        </ul>
+
+        <p>每行格式：</p>
+        <pre class="diagram">上证指数  3245.67  ▲ +18.23 (+0.56%)</pre>
+
+        <p>刷新频率与"轮询间隔"配置一致。指数更新失败会在右侧弹出黄色"<strong>数据更新失败</strong>"提示。</p>
+      </section>
+
+      <!-- ========== 设置 ========== -->
+      <section id="settings">
+        <h2>13. 设置</h2>
+
+        <p>设置页面用于调整全局参数。所有改动在点击底部"<strong>保存</strong>"按钮后才会落库；"<strong>重置</strong>"按钮把所有项恢复到默认配置。</p>
+
+        <div class="mockup">
+          <div class="mockup-content">
+            <div class="mockup-toolbar">
+              <div class="left">
+                <h4>设置</h4>
+              </div>
+              <div class="right">
+                <span class="mockup-btn small secondary">重置</span>
+                <span class="mockup-btn small">保存</span>
+              </div>
+            </div>
+
+            <div class="mockup-card">
+              <h5 style="margin: 0 0 8px; font-size: 12px;">① 交易时间段</h5>
+              <div class="mockup-form" style="grid-template-columns: 110px 1fr 110px 1fr;">
+                <span class="lbl">上午开始</span>
+                <div class="field"><span class="mockup-input">09:30</span></div>
+                <span class="lbl">上午结束</span>
+                <div class="field"><span class="mockup-input">11:30</span></div>
+                <span class="lbl">下午开始</span>
+                <div class="field"><span class="mockup-input">13:00</span></div>
+                <span class="lbl">下午结束</span>
+                <div class="field"><span class="mockup-input">15:00</span></div>
+              </div>
+            </div>
+
+            <div class="mockup-card" style="margin-top: 10px;">
+              <h5 style="margin: 0 0 8px; font-size: 12px;">② 轮询间隔</h5>
+              <div class="mockup-form">
+                <span class="lbl">间隔</span>
+                <div class="field"><span class="mockup-input">5</span><span class="mockup-badge">分钟（1–30）</span></div>
+              </div>
+            </div>
+
+            <div class="mockup-card" style="margin-top: 10px;">
+              <h5 style="margin: 0 0 8px; font-size: 12px;">③ API 设置</h5>
+              <div class="mockup-form">
+                <span class="lbl">提供商</span>
+                <div class="field"><span class="mockup-input lg">新浪财经</span></div>
+                <span class="lbl">接口地址</span>
+                <div class="field"><span class="mockup-input lg">https://hq.sinajs.cn/list=sh600519</span></div>
+              </div>
+            </div>
+
+            <div class="mockup-card" style="margin-top: 10px;">
+              <h5 style="margin: 0 0 8px; font-size: 12px;">④ 数据库备份</h5>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <span class="mockup-btn small">⤓ 备份数据库</span>
+                <span class="mockup-badge">最近备份：2025-09-20 23:00:00</span>
+                <span class="mockup-badge">已保留：8 / 10</span>
+              </div>
+              <div style="margin-top: 6px; font-size: 11px; color: var(--fg-subtle);">
+                自动备份：每日 23:00 + 每次启动时
+              </div>
+            </div>
+          </div>
+          <div class="mockup-caption" id="fig-13-1">
+            <strong>图 13-1</strong>设置页
+            <span class="muted">顶部为保存/重置；下方为四个配置分组（交易时间段 / 轮询 / API / 备份）</span>
+          </div>
+        </div>
+
+        <h3 id="settings-trade">13.1 交易时间段</h3>
+        <p>四个时间字段：</p>
+        <ul>
+          <li>上午开始时间 / 上午结束时间</li>
+          <li>下午开始时间 / 下午结束时间</li>
+        </ul>
+        <p>系统用这两个区间判断"<strong>是否在交易时段</strong>"——仅交易时段内会主动轮询价格，非交易时段跳过轮询以减少无效请求。</p>
+
+        <h3 id="settings-poll">13.2 轮询间隔</h3>
+        <p>正整数，单位<strong>分钟</strong>，范围 1–30。默认 5。</p>
+        <ul>
+          <li>间隔越短，价格越新，但请求越多、可能被行情方限流。</li>
+          <li>间隔越长，请求越省，但价格越旧。</li>
+        </ul>
+
+        <h3 id="settings-api">13.3 API 设置</h3>
+
+        <h4>13.3.1 API 提供商</h4>
+        <p>下拉选择，提供以下内置选项：</p>
+        <table>
+          <thead>
+            <tr>
+              <th>提供商</th>
+              <th>用途</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>新浪财经</td>
+              <td>A 股实时行情（默认）</td>
+            </tr>
+            <tr>
+              <td>东方财富</td>
+              <td>A 股实时行情（备用）</td>
+            </tr>
+            <tr>
+              <td>腾讯财经</td>
+              <td>A 股实时行情（备用）</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>切换提供商会自动填充对应的 API 地址，你也可以手动覆盖。</p>
+
+        <h4>13.3.2 API 地址</h4>
+        <p>完整的 HTTP/HTTPS 接口 URL。修改需谨慎，错误地址会导致价格拉取失败。</p>
+
+        <h3 id="settings-backup">13.4 数据库备份</h3>
+        <p>点击"<strong>备份数据库</strong>"按钮立即生成一份备份：</p>
+        <ul>
+          <li>备份文件命名：<code>stockanalyzer-YYYYMMDD-HHmmss.db</code>。</li>
+          <li>保存位置：与当前数据库文件<strong>相同目录</strong>（即 <code>%APPDATA%\StockAnalyzer\</code>）。</li>
+          <li>仅保留最近 <strong>10 份</strong>备份，超出自动删除最旧。</li>
+          <li>除了手动备份，应用<strong>自动</strong>在启动时和每日定时各做一次备份。</li>
+        </ul>
+
+        <div class="note tip">
+          <span class="label">建议</span>
+          每次进行大量录入（批量补录历史交易、批量下载 K 线）之前，<strong>手动备份一次</strong>，万一录入出错可恢复。
+        </div>
+      </section>
+
+      <!-- ========== 日志 ========== -->
+      <section id="log">
+        <h2>14. 日志查看</h2>
+
+        <p>日志页面是<strong>只读</strong>的滚动日志查看器，用于排障。</p>
+
+        <ul>
+          <li>日志来自主进程 <code>electron-log</code>，按<strong>天</strong>滚动到 <code>%APPDATA%\StockAnalyzer\logs\</code>。</li>
+          <li>页面<strong>每 30 秒自动刷新一次</strong>，最新日志显示在最上方。</li>
+          <li>切到其他页面再回来时自动重新抓取最新内容。</li>
+          <li><strong>不可编辑</strong>日志内容。如需清理，请到上述目录手动删除旧文件。</li>
+        </ul>
+
+        <figure class="mockup">
+          <div class="mockup-window">
+            <div class="mockup-titlebar">
+              <span class="title">StockAnalyzer · 日志查看</span>
+              <span class="controls"><i></i><i></i><i></i></span>
+            </div>
+            <div class="mockup-body" style="background: var(--bg);">
+              <div class="mockup-toolbar">
+                <div class="left">
+                  <span class="mockup-badge on">实时刷新 · 30s</span>
+                  <span class="mockup-input">log-2026-09-21.log</span>
+                </div>
+                <div class="right">
+                  <span class="mockup-btn ghost small">复制</span>
+                  <span class="mockup-btn ghost small">刷新</span>
+                </div>
+              </div>
+              <div class="mockup-log" style="margin-top: 10px;">
+                <div class="mockup-log-head">
+                  <div class="meta">
+                    <span class="dot"></span>
+                    <span>2026-09-21 · 共 1,283 行</span>
+                  </div>
+                  <span>tail -f</span>
+                </div>
+                <div class="mockup-log-body">
+                  <div class="mockup-log-row"><span class="ts">14:32:08</span><span class="lvl info">INFO </span><span
+                      class="scope">[watcher]</span><span class="msg">拉取最新价 <span class="acc">sh600519</span> →
+                      1682.40</span></div>
+                  <div class="mockup-log-row"><span class="ts">14:32:09</span><span class="lvl info">INFO </span><span
+                      class="scope">[watcher]</span><span class="msg">拉取最新价 <span class="acc">sz000001</span> →
+                      12.07</span></div>
+                  <div class="mockup-log-row"><span class="ts">14:32:10</span><span class="lvl debug">DEBUG</span><span
+                      class="scope">[sdk]</span><span class="msg">sina 返回 12 / 12 成功</span></div>
+                  <div class="mockup-log-row"><span class="ts">14:32:30</span><span class="lvl warn">WARN </span><span
+                      class="scope">[watcher]</span><span class="msg"><span class="acc">sh688xxx</span> 行情接口超时（已重试
+                      1/3）</span></div>
+                  <div class="mockup-log-row"><span class="ts">14:32:31</span><span class="lvl info">INFO </span><span
+                      class="scope">[watcher]</span><span class="msg">切换备用 eastmoney 接口 <span
+                        class="ok">OK</span></span></div>
+                  <div class="mockup-log-row"><span class="ts">14:33:00</span><span class="lvl info">INFO </span><span
+                      class="scope">[kline]</span><span class="msg">下载 <span class="acc">sz000858</span> 日 K 60 根（覆盖
+                      2026-07-01 → 2026-09-21）</span></div>
+                  <div class="mockup-log-row"><span class="ts">14:33:01</span><span class="lvl info">INFO </span><span
+                      class="scope">[kline]</span><span class="msg">入库 <span class="ok">60/60</span> 完成</span></div>
+                  <div class="mockup-log-row"><span class="ts">14:33:30</span><span class="lvl error">ERROR</span><span
+                      class="scope">[tradeSync]</span><span class="msg">资金同步失败：fund_id=2 未找到账户，<span
+                        class="acc">跳过</span></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <figcaption class="mockup-caption" id="fig-14-1">
+            <strong>图 14-1</strong> · 日志查看器：实时滚动输出，每 30 秒自动刷新。
+            <span class="muted">顶部状态条显示当前日志文件与连接状态；按级别着色（info / warn / error / debug）。</span>
+          </figcaption>
+        </figure>
+
+        <div class="note warn">
+          <span class="label">注意</span>
+          日志中可能含接口请求 / 错误堆栈，包含股票代码、价格等业务字段，但<strong>不含账号密码</strong>。如需将日志外发排查问题，请确认无隐私敏感信息。
+        </div>
+      </section>
+
+      <!-- ========== 常见问题 ========== -->
+      <section id="faq">
+        <h2>15. 常见问题</h2>
+
+        <h3>15.1 添加自选股时显示"股票代码格式错误"</h3>
+        <p>代码必须以 <code>sh</code> / <code>sz</code> / <code>bj</code> / <code>hk</code> 开头，后接 6 位数字。例如
+          <code>sh600519</code>、<code>sz000001</code>、<code>hk00700</code>。
+        </p>
+
+        <h3>15.2 看不到最新价格</h3>
+        <p>可能原因：</p>
+        <ol>
+          <li>当前不在交易时段——非交易时段不主动轮询。</li>
+          <li>API 接口限流或临时不可达——到"日志"页面查看错误堆栈。</li>
+          <li>轮询间隔设得太大——到"设置"调小（注意不能小于 1 分钟）。</li>
+          <li>代理 / 防火墙拦截——检查系统代理。</li>
+        </ol>
+
+        <h3>15.3 自选股列表里的某只股票突然"最新价"为 0</h3>
+        <p>通常是接口返回异常。该股票仍在数据库，不会丢。点击"刷新"或重启应用可恢复。</p>
+
+        <h3>15.4 持仓里显示的"成本均价"和我记的不一致</h3>
+        <p>StockAnalyzer 使用<strong>移动加权平均法</strong>计算成本。如果你的记录中有<strong>多次买入</strong>且包含卖出，请确认：</p>
+        <ul>
+          <li>所有买入都已录入。</li>
+          <li>所有卖出的价格 / 数量都正确（成本会按"卖出对应成本 = 卖出价 × 数量"反向扣减）。</li>
+        </ul>
+
+        <h3>15.5 网格仿真显示"无 K 线数据"</h3>
+        <p>请先在"自选股 → 下载K线"中下载该股票的日 K 数据，且 <strong>K 线根数 ≥ 20</strong>。日期窗口起点必须 ≤ 已下载的最早一天。</p>
+
+        <h3>15.6 形态检测一直显示"暂无数据"</h3>
+        <p>可能原因：</p>
+        <ul>
+          <li>所选股票未下载 K 线。</li>
+          <li>已下载但 <strong>K 线根数 &lt; 20</strong>。</li>
+          <li>日期窗口内<strong>确实没有命中任何形态</strong>——可尝试切换到"全部"日期窗口或"全部方向"筛选。</li>
+        </ul>
+
+        <h3>15.7 资金明细里的"账户余额"算错了</h3>
+        <p>账户余额由所有资金流水按时间正序<strong>滚动累加</strong>得到。检查：</p>
+        <ol>
+          <li>是否漏录了某笔入金 / 出金。</li>
+          <li>某笔手工录入的金额符号是否填反（出金应填负数）。</li>
+          <li>是否手动删除了自动同步的资金流水——这会导致后续滚动计算基础值错位。</li>
+        </ol>
+
+        <h3>15.8 数据迁移到新电脑</h3>
+        <ol class="steps">
+          <li>在旧电脑的"设置 → 数据库备份"手动备份一次。</li>
+          <li>把 <code>%APPDATA%\StockAnalyzer\stockanalyzer-YYYYMMDD-HHmmss.db</code> 拷贝到新电脑。</li>
+          <li>在新电脑安装 StockAnalyzer，启动一次让它生成默认数据库，然后<strong>退出</strong>。</li>
+          <li>把备份文件改名为 <code>stockanalyzer.db</code>，覆盖到新电脑 <code>%APPDATA%\StockAnalyzer\</code>。</li>
+          <li>重新启动 StockAnalyzer，所有数据恢复。</li>
+        </ol>
+
+        <h3>15.9 应用启动失败 / 闪退</h3>
+        <ol>
+          <li>到"日志"页面查看最近一次错误（如果你能看到的话）。</li>
+          <li>把 <code>%APPDATA%\StockAnalyzer\logs\</code> 下最新一天的日志文件发给开发者。</li>
+          <li>若无法启动，可尝试"安全模式"：删除 <code>%APPDATA%\StockAnalyzer\stockanalyzer.db</code>（<strong>会丢数据，请先备份</strong>）后重启。
+          </li>
+        </ol>
+      </section>
+
+      <!-- ========== 术语表 ========== -->
+      <section id="appendix">
+        <h2>16. 附录 · 术语表</h2>
+
+        <table>
+          <thead>
+            <tr>
+              <th>术语</th>
+              <th>含义</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>自选股</strong></td>
+              <td>用户主动加入监控列表的股票，可设买卖阈值、启停监控。</td>
+            </tr>
+            <tr>
+              <td><strong>持仓</strong></td>
+              <td>当前仍持有的股票及其数量与成本，由交易记录自动汇总，<strong>不可手动录入</strong>。</td>
+            </tr>
+            <tr>
+              <td><strong>历史开仓</strong></td>
+              <td>已清仓（买卖配对最终持仓为 0）的股票及其完整交易链。</td>
+            </tr>
+            <tr>
+              <td><strong>网格交易</strong></td>
+              <td>在价格区间内按固定间距布"买卖档"，每档触发即机械执行。</td>
+            </tr>
+            <tr>
+              <td><strong>网格仿真</strong></td>
+              <td>把网格/阈值策略在历史 K 线上回放一遍，输出模拟盈亏。</td>
+            </tr>
+            <tr>
+              <td><strong>资金明细</strong></td>
+              <td>所有影响账户余额的流水，包括手工录入与交易同步。</td>
+            </tr>
+            <tr>
+              <td><strong>账户余额</strong></td>
+              <td>资金流水中最后一条的 <code>account_balance</code>，由系统滚动计算。</td>
+            </tr>
+            <tr>
+              <td><strong>持仓市值</strong></td>
+              <td>所有当前持仓 <code>最新收盘价 × 持仓数量</code> 之和。</td>
+            </tr>
+            <tr>
+              <td><strong>总资产</strong></td>
+              <td>账户余额 + 持仓市值。</td>
+            </tr>
+            <tr>
+              <td><strong>浮动盈亏</strong></td>
+              <td><code>(最新价 - 成本均价) × 持仓数量</code>，未实现。</td>
+            </tr>
+            <tr>
+              <td><strong>已实现盈亏</strong></td>
+              <td>已清仓周期的累计盈亏，已锁定。</td>
+            </tr>
+            <tr>
+              <td><strong>移动加权平均</strong></td>
+              <td>成本算法：<code>avgCost = Σ(price × qty) / Σ(qty)</code>，每次卖出按对应成本反向扣减。</td>
+            </tr>
+            <tr>
+              <td><strong>前复权 (qfq)</strong></td>
+              <td>以最近一次除权除息为基准，回溯调整历史价格，看趋势更连贯。</td>
+            </tr>
+            <tr>
+              <td><strong>不复权 (none)</strong></td>
+              <td>保留真实成交价，适合核对历史交易记录。</td>
+            </tr>
+            <tr>
+              <td><strong>K 线</strong></td>
+              <td>日级 OHLCV 行情数据（Open / High / Low / Close / Volume）。</td>
+            </tr>
+            <tr>
+              <td><strong>形态识别</strong></td>
+              <td>基于日 K 序列检测日本蜡烛图经典形态（看涨 / 看跌 / 转折预警）。</td>
+            </tr>
+            <tr>
+              <td><strong>阈值全仓策略</strong></td>
+              <td>仅用买入 / 卖出两个触发价做全仓 / 空仓切换的简化策略。</td>
+            </tr>
+            <tr>
+              <td><strong>半仓平衡策略</strong></td>
+              <td>按日收盘动态平衡，使持仓金额持续接近可用资金的 50%。</td>
+            </tr>
+            <tr>
+              <td><strong>MACD / KDJ / MA</strong></td>
+              <td>技术分析常见指标，本应用未内置计算公式，需自行引入第三方库或人工判断。</td>
+            </tr>
+            <tr>
+              <td><strong>复权日</strong></td>
+              <td>发生除权除息的交易日，会同时影响前复权与不复权数据。</td>
+            </tr>
+            <tr>
+              <td><strong>涨跌停</strong></td>
+              <td>A 股个股 ±10%（ST 股 ±5%、科创板 / 创业板 ±20% 等）的当日价格上下限，可能无法按仿真价成交。</td>
+            </tr>
+            <tr>
+              <td><strong>T+1</strong></td>
+              <td>A 股当日买入次日才可卖出。StockAnalyzer 在成本算法中已隐含此规则。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>16.1 键盘快捷键</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>快捷键</th>
+              <th>行为</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>F5</code></td>
+              <td>在自选股页：等同于点击「刷新」</td>
+            </tr>
+            <tr>
+              <td><code>Esc</code></td>
+              <td>关闭当前对话框 / 弹窗</td>
+            </tr>
+            <tr>
+              <td><code>Enter</code></td>
+              <td>在自选股编辑器：输入完代码后回车自动拉取名称</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>其他快捷键未预留，按钮请直接用鼠标点击。</p>
+
+        <h3>16.2 文件位置速查（Windows）</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>文件</th>
+              <th>路径</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>数据库</td>
+              <td><code>%APPDATA%\StockAnalyzer\stockanalyzer.db</code></td>
+              <td>所有业务数据所在</td>
+            </tr>
+            <tr>
+              <td>备份</td>
+              <td><code>%APPDATA%\StockAnalyzer\stockanalyzer-*.db</code></td>
+              <td>手动 / 自动备份</td>
+            </tr>
+            <tr>
+              <td>日志</td>
+              <td><code>%APPDATA%\StockAnalyzer\logs\*.log</code></td>
+              <td>主进程按天滚动</td>
+            </tr>
+            <tr>
+              <td>配置（数据库内）</td>
+              <td><code>app_config</code> 表</td>
+              <td>交易时间段、轮询、API</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>16.3 数据字典速查</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>表名</th>
+              <th>用途</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>watchlist</code></td>
+              <td>自选股</td>
+            </tr>
+            <tr>
+              <td><code>trade_records</code></td>
+              <td>交易记录（买入 / 卖出 / 分红）</td>
+            </tr>
+            <tr>
+              <td><code>transfer_records</code></td>
+              <td>资金明细</td>
+            </tr>
+            <tr>
+              <td><code>kline_data</code></td>
+              <td>K 线数据（按股票代码 + 复权方式区分）</td>
+            </tr>
+            <tr>
+              <td><code>grid_strategies</code></td>
+              <td>网格策略配置</td>
+            </tr>
+            <tr>
+              <td><code>app_config</code></td>
+              <td>全局配置</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>本节仅供排查问题参考，<strong>不建议</strong>直接修改数据库文件。</p>
+
+        <div class="note tip">
+          <span class="label">版本</span>
+          本手册适用于 StockAnalyzer v0.x（2026-09-20 之后的开发分支）。如界面与本手册不一致，请以界面实际显示为准，并查阅最新设计文档 <code>design.html</code>。
+        </div>
+      </section>
+
+    </main>
+  </div>
+</body>
+
+</html>

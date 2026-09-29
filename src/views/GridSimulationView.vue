@@ -188,7 +188,7 @@ const reset = () => {
 };
 
 // 避免未使用变量告警
-void totalAssetsSeries;
+void totalAssetsSeries.value;
 </script>
 
 <template>

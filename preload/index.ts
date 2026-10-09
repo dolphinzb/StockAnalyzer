@@ -298,6 +298,11 @@ const klineAPI: KlineAPI = {
     ipcRenderer.invoke('kline:get-chart-data', stockCode, adjustType),
   getTradeRecords: (stockCode: string) =>
     ipcRenderer.invoke('kline:get-trade-records', stockCode),
+  onKlineUpdated: (callback: (payload: { stockCode: string; adjustTypes: ('' | 'qfq')[] }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: { stockCode: string; adjustTypes: ('' | 'qfq')[] }) => callback(payload);
+    ipcRenderer.on('kline:updated', handler);
+    return () => ipcRenderer.removeListener('kline:updated', handler);
+  },
 };
 
 // 暴露所有 API 到渲染进程

@@ -9,6 +9,7 @@
  * - 下载失败自动重试1次
  */
 
+import { BrowserWindow } from 'electron';
 import log from 'electron-log';
 import { StockSDK } from 'stock-sdk';
 import type { KlineData, KlineDownloadResult } from '../../shared/types';
@@ -16,6 +17,12 @@ import { getWatchlist, saveKlineData, getChartData as dbGetChartData } from '../
 
 // StockSDK 模块级单例
 const sdk = new StockSDK();
+
+/** 获取主窗口（用于向渲染进程广播事件，参考 alertService 模式） */
+function getMainWindow(): BrowserWindow | null {
+  const windows = BrowserWindow.getAllWindows();
+  return windows.length > 0 ? windows[0] : null;
+}
 
 // 交易日历缓存（当日有效，存储交易日日期字符串数组）
 let tradingCalendarCache: string[] | null = null;
@@ -237,6 +244,20 @@ export async function downloadKline(
   }
 
   log.info(`K线数据下载完成: ${stockCode}, 不复权=${unadjustedCount || 0}条, 前复权=${adjustedCount || 0}条`);
+
+  // 下载成功后广播 kline:updated，通知形态检测等消费方刷新缓存的 K 线数据
+  // （覆盖手动下载与自动调度两条路径，二者都经过此函数）
+  if (overallSuccess) {
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('kline:updated', {
+        stockCode,
+        adjustTypes: typesToDownload,
+      });
+      log.info(`已广播 kline:updated 事件: ${stockCode}`);
+    }
+  }
+
   return result;
 }
 

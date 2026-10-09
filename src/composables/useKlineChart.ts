@@ -97,6 +97,11 @@ export interface TooltipInfo {
   patternDirection?: PatternDirection;
   /** 形态信号强度 0~1 */
   patternStrength?: number;
+  /**
+   * 弹出方向：'top' 表示显示在标注上方，'bottom' 表示显示在标注下方。
+   * 依据标注在画布中的纵向位置自动选择，避免 tooltip 被容器上/下边缘裁剪。
+   */
+  placement?: 'top' | 'bottom';
 }
 
 /**
@@ -758,6 +763,9 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     const mouseX = event.clientX - rect.left;
     const mouseY = event.clientY - rect.top;
 
+    // 标注位于画布上半区时 tooltip 向下弹出，否则向上弹出，避免被容器裁剪
+    const placementFor = (anchorY: number): 'top' | 'bottom' => (anchorY < rect.height / 2 ? 'bottom' : 'top');
+
     // 优先检查形态标注（位置更靠外）
     for (const area of patternMarkerAreas) {
       const dx = mouseX - area.x;
@@ -767,7 +775,8 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
         tooltipInfo.value = {
           visible: true,
           x: area.x,
-          y: area.y - 30,
+          y: area.y,
+          placement: placementFor(area.y),
           tradeType: '',
           tradePrice: 0,
           tradeCount: 0,
@@ -789,7 +798,8 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
         tooltipInfo.value = {
           visible: true,
           x: area.x,
-          y: area.y - 30,
+          y: area.y,
+          placement: placementFor(area.y),
           tradeType: area.record.tradeType,
           tradePrice: area.record.tradePrice,
           tradeCount: area.record.tradeCount,

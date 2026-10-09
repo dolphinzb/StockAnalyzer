@@ -20,7 +20,7 @@
  * - 错误/空态/数据不足 三态分支提示
  */
 
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { REGISTRY } from '../../shared/patterns';
 import type { CandlestickPatternCode, KlineData, PatternDirection, PatternHit, TradeRecord } from '../../shared/types';
 import { useKlineChart, type TooltipInfo } from '../composables/useKlineChart';
@@ -271,9 +271,17 @@ watch(
 );
 
 /**
- * 卸载时清理图表资源
+ * 挂载时订阅 K 线更新事件，确保更新 K 线后形态检测自动刷新
+ */
+onMounted(() => {
+  store.setupKlineUpdateListener();
+});
+
+/**
+ * 卸载时清理图表资源与事件订阅，避免内存泄漏
  */
 onBeforeUnmount(() => {
+  store.disposeKlineUpdateListener();
   klineChart.destroy();
 });
 </script>
@@ -452,6 +460,7 @@ onBeforeUnmount(() => {
         <div
           v-if="tooltipInfo.visible && tooltipInfo.patternCode"
           class="pattern-tooltip"
+          :class="`placement-${tooltipInfo.placement ?? 'top'}`"
           :style="{ left: tooltipInfo.x + 'px', top: tooltipInfo.y + 'px' }"
         >
           <div class="tooltip-name" :class="`dir-${tooltipInfo.patternDirection}`">
@@ -832,7 +841,13 @@ onBeforeUnmount(() => {
   pointer-events: none;
   z-index: 10;
   white-space: nowrap;
-  transform: translateX(-50%);
+  /* 默认显示在标注上方（锚定元素底边）；由 placement-* 类切换方向 */
+  transform: translate(-50%, calc(-100% - 14px));
+
+  /* 标注位于画布上半区时改为下方弹出，避免被容器顶部裁剪 */
+  &.placement-bottom {
+    transform: translate(-50%, 14px);
+  }
 
   .tooltip-name {
     font-weight: 600;

@@ -222,6 +222,47 @@ export const usePatternScanStore = defineStore('patternScan', () => {
     focusedHit.value = hit;
   }
 
+  /**
+   * 重新拉取当前股票 K 线并检测（保留股票选择与筛选条件）
+   * - 供 K 线更新事件（kline:updated）及手动刷新复用
+   */
+  async function reload(): Promise<void> {
+    const stock = currentStock.value;
+    if (!stock) return;
+    await loadAndDetect(stock.stockCode, adjustType.value);
+  }
+
+  // ----------------- K 线更新事件订阅 -----------------
+
+  /** kline:updated 事件取消订阅函数（订阅后置位，避免重复订阅/泄漏） */
+  let klineUpdateUnsub: (() => void) | null = null;
+
+  /**
+   * 订阅 K 线更新事件：当更新的是当前选中股票时，自动重新拉取并检测。
+   * 解决"更新 K 线后形态检测仍使用首次加载老数据"的问题。
+   * 由 PatternScanView 在挂载时调用，卸载时调用 disposeKlineUpdateListener。
+   */
+  function setupKlineUpdateListener(): void {
+    if (klineUpdateUnsub) return; // 防止重复订阅
+    klineUpdateUnsub = window.klineAPI.onKlineUpdated(payload => {
+      const stock = currentStock.value;
+      if (!stock) return;
+      if (payload.stockCode === stock.stockCode) {
+        void reload();
+      }
+    });
+  }
+
+  /**
+   * 取消 K 线更新事件订阅（组件卸载时调用，避免内存泄漏）
+   */
+  function disposeKlineUpdateListener(): void {
+    if (klineUpdateUnsub) {
+      klineUpdateUnsub();
+      klineUpdateUnsub = null;
+    }
+  }
+
   // ----------------- Internal -----------------
 
   /**
@@ -272,5 +313,8 @@ export const usePatternScanStore = defineStore('patternScan', () => {
     resetFilters,
     runDetection,
     focusHit,
+    reload,
+    setupKlineUpdateListener,
+    disposeKlineUpdateListener,
   };
 });

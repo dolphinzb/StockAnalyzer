@@ -772,6 +772,12 @@ export interface KlineAPI {
   getChartData(stockCode: string, adjustType: '' | 'qfq'): Promise<KlineData[]>;
   /** 获取交易记录数据（复用已有TradeRecord实体，查询全部历史记录） */
   getTradeRecords(stockCode: string): Promise<TradeRecord[]>;
+  /**
+   * 订阅 K 线数据更新事件（下载/刷新成功后由主进程广播）
+   * @param callback 回调，参数为更新事件 { stockCode, adjustTypes }
+   * @returns 取消订阅函数（调用即移除监听，避免内存泄漏）
+   */
+  onKlineUpdated(callback: (payload: { stockCode: string; adjustTypes: ('' | 'qfq')[] }) => void): () => void;
 }
 
 /**

@@ -204,6 +204,7 @@ onBeforeUnmount(() => {
         <div
           v-if="tooltipInfo.visible"
           class="trade-tooltip"
+          :class="`placement-${tooltipInfo.placement ?? 'top'}`"
           :style="{ left: tooltipInfo.x + 'px', top: tooltipInfo.y + 'px' }"
         >
           <div class="tooltip-type" :class="'type-' + tooltipInfo.tradeType.toLowerCase()">
@@ -342,7 +343,13 @@ onBeforeUnmount(() => {
   pointer-events: none;
   z-index: 10;
   white-space: nowrap;
-  transform: translateX(-50%);
+  /* 默认显示在标注上方（锚定元素底边）；由 placement-* 类切换方向 */
+  transform: translate(-50%, calc(-100% - 14px));
+
+  /* 标注位于画布上半区时改为下方弹出，避免被容器顶部裁剪 */
+  &.placement-bottom {
+    transform: translate(-50%, 14px);
+  }
 
   .tooltip-type {
     font-weight: 600;

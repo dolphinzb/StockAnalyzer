@@ -41,6 +41,7 @@
     "src/**/*.tsx",
     "src/**/*.vue",
     "shared/types/**/*.ts",
-    "shared/patterns/**/*.ts"
+    "shared/patterns/**/*.ts",
+    "shared/utils/**/*.ts"
   ]
 }

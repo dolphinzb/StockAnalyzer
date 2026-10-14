@@ -19,6 +19,7 @@
     "electron/**/*.ts",
     "preload/**/*.ts",
     "shared/types/**/*.ts",
+    "shared/utils/**/*.ts",
     "scripts/**/*.ts",
     "vite.config.ts"
   ]

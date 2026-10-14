@@ -13,6 +13,7 @@ import { BrowserWindow } from 'electron';
 import log from 'electron-log';
 import { StockSDK } from 'stock-sdk';
 import type { KlineData, KlineDownloadResult } from '../../shared/types';
+import { isFund } from '../../shared/utils/securities';
 import { getWatchlist, saveKlineData, getChartData as dbGetChartData } from '../database';
 
 // StockSDK 模块级单例
@@ -39,11 +40,11 @@ let downloadTimeout: NodeJS.Timeout | null = null;
 function isValidSecurityCode(stockCode: string): boolean {
   // A股：深市主板(0)、创业板(3)、沪市主板(6)
   const isAStock = /^[036]\d{5}$/.test(stockCode);
-  
-  // 基金：上交所ETF(51)、深交所ETF(15)、深交所LOF(16)、上交所LOF(50)、上交所货币基金(52)、上交所债券ETF(511)
-  const isFund = /^(51|15|16|50|52|511)\d{4}$/.test(stockCode);
-  
-  return isAStock || isFund;
+
+  // 场内基金（ETF/LOF/货币）：前缀识别（上交所 50/51/52/56/58、深交所 15/16/18），复用共享识别逻辑
+  const fund = isFund(stockCode) && /^\d{6}$/.test(stockCode);
+
+  return isAStock || fund;
 }
 
 /**
@@ -56,18 +57,18 @@ function getStockCodeWithPrefix(stockCode: string): string {
   if (stockCode.startsWith('sh') || stockCode.startsWith('sz') || stockCode.startsWith('bj')) {
     return stockCode;
   }
-  
-  // 沪市股票和基金（6开头股票、51/50/52/511开头基金）
-  if (/^[6]/.test(stockCode) || /^(51|50|52|511)/.test(stockCode)) {
+
+  // 场内基金（ETF/LOF/货币）：上交所 5 开头 → sh，深交所 1 开头 → sz
+  // 复用共享 isFund，自动覆盖 50/51/52/56/58（科创板ETF）等全部基金前缀
+  if (isFund(stockCode)) {
+    return /^[5]/.test(stockCode) ? `sh${stockCode}` : `sz${stockCode}`;
+  }
+
+  // A股：沪市 6 开头 → sh，深市 0/3 开头 → sz
+  if (/^[6]/.test(stockCode)) {
     return `sh${stockCode}`;
   }
-  
-  // 深市股票和基金（0/3开头股票、15/16开头基金）
-  if (/^[03]/.test(stockCode) || /^(15|16)/.test(stockCode)) {
-    return `sz${stockCode}`;
-  }
-  
-  // 默认返回深市格式
+
   return `sz${stockCode}`;
 }
 

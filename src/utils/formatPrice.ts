@@ -1,27 +1,14 @@
+import { isFund } from '../../shared/utils/securities';
+
 /**
  * 价格格式化工具模块
  * 
  * 根据证券类型（股票/基金）自动调整价格显示精度：
  * - 股票：2位小数（精确到分）
- * - 基金：3位小数（精确到厘）
+ * - 基金（ETF/LOF/货币基金等）：3位小数（精确到厘）
  * 
- * 基金识别规则（基于代码前缀）：
- * - 51xxxx: 上交所ETF基金
- * - 15xxxx: 深交所ETF基金
- * - 16xxxx: 深交所LOF基金
- * - 50xxxx: 上交所LOF基金
- * - 52xxxx: 上交所货币基金
- * - 511xxx: 上交所债券ETF
+ * 场内基金（ETF/LOF/货币）交易价格精确到厘；证券类型识别 isFund 见 shared/utils/securities.ts。
  */
-
-/**
- * 判断是否为基金
- * @param stockCode 股票代码
- * @returns true 表示是基金，false 表示是股票
- */
-export function isFund(stockCode: string): boolean {
-  return /^(51|15|16|50|52|511)/.test(stockCode);
-}
 
 /**
  * 获取价格显示精度

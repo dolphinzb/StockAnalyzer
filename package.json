@@ -11,6 +11,7 @@
     "dev:electron": "npm run build:electron && electron .",
     "build": "npm run build:electron && vite build",
     "build:electron": "tsc -p tsconfig.node.json",
+    "deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-and-deploy.ps1",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -10,11 +10,13 @@
  * - 鼠标拖动查看不同日期范围
  * - 鼠标滚轮缩放查看不同时间段
  * - 交易标注 + 形态标注悬停检测与 tooltip
+ * - K线数据悬停tooltip（悬停某一交易日显示日期/开高低收/涨跌额/涨跌幅）
  * - requestAnimationFrame 节流重绘
  */
 
 import { onUnmounted, ref, type Ref } from 'vue';
 import type { KlineData, PatternDirection, PatternHit, TradeRecord } from '../../shared/types';
+import { getPricePrecision } from '../utils/formatPrice';
 
 /** 绘制配置常量 */
 const CHART_CONFIG = {
@@ -63,6 +65,8 @@ const CHART_CONFIG = {
   COLOR_TOOLTIP_BG: 'rgba(0, 0, 0, 0.8)',
   /** tooltip 文字颜色 */
   COLOR_TOOLTIP_TEXT: '#ffffff',
+  /** K线数据tooltip锚点X钳制半宽（防止tooltip被容器左右边缘裁剪） */
+  KLINE_TOOLTIP_HALF_WIDTH: 90,
   /** 形态标注 - 看涨（绿色，置于蜡烛下方，远离 B 标注） */
   COLOR_PATTERN_BULLISH: '#10b981',
   /** 形态标注 - 看跌（红色，置于蜡烛上方，远离 S/D 标注） */
@@ -104,6 +108,34 @@ export interface TooltipInfo {
   placement?: 'top' | 'bottom';
 }
 
+/** K线数据 tooltip 信息（悬停某一交易日时展示） */
+export interface KlineTooltipInfo {
+  /** 是否可见 */
+  visible: boolean;
+  /** 锚点 X 坐标（悬停蜡烛中心，经边界钳制） */
+  x: number;
+  /** 锚点 Y 坐标（鼠标 Y） */
+  y: number;
+  /** 弹出方向：'top' 显示在锚点上方，'bottom' 显示在锚点下方 */
+  placement: 'top' | 'bottom';
+  /** 交易日期 (YYYY-MM-DD) */
+  date: string;
+  /** 开盘价 */
+  open: number;
+  /** 收盘价 */
+  close: number;
+  /** 最高价 */
+  high: number;
+  /** 最低价 */
+  low: number;
+  /** 涨跌额（null 表示数据缺失，展示占位符；直接读取K线已存储字段，不前端计算） */
+  changeAmount: number | null;
+  /** 涨跌幅 %（null 表示数据缺失，展示占位符；直接读取K线已存储字段，不前端计算） */
+  changePercent: number | null;
+  /** 涨跌趋势（驱动着色：涨红/跌绿/平灰） */
+  trend: 'up' | 'down' | 'flat';
+}
+
 /**
  * K线图 Canvas 渲染 composable
  * @param canvasRef Canvas 元素引用
@@ -123,6 +155,21 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     tradePrice: 0,
     tradeCount: 0,
     holdingCount: 0,
+  });
+  /** K线数据 tooltip 信息 */
+  const klineTooltipInfo = ref<KlineTooltipInfo>({
+    visible: false,
+    x: 0,
+    y: 0,
+    placement: 'top',
+    date: '',
+    open: 0,
+    close: 0,
+    high: 0,
+    low: 0,
+    changeAmount: null,
+    changePercent: null,
+    trend: 'flat',
   });
 
   /** 当前K线数据 */
@@ -156,6 +203,8 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     zoomLevel.value = 1.0;
     markerAreas = [];
     patternMarkerAreas = [];
+    // 重置K线数据tooltip状态
+    klineTooltipInfo.value = { ...klineTooltipInfo.value, visible: false };
     requestRedraw();
   }
 
@@ -194,6 +243,50 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
   }
 
   /**
+   * 计算当前可见窗口参数
+   * - 绘制（drawChart）与悬停命中检测（checkKlineHit）共用，保证缩放/平移后不错位
+   * - 对 offsetX 做与数据范围一致的 clamp
+   * @returns 图表宽度、可见起始数据索引、可见K线数量、动态蜡烛步长
+   */
+  function getVisibleWindow(): {
+    chartWidth: number;
+    startIdx: number;
+    visibleCount: number;
+    dynamicCandleStep: number;
+  } {
+    const canvas = canvasRef.value;
+    if (!canvas) {
+      return { chartWidth: 0, startIdx: 0, visibleCount: 0, dynamicCandleStep: CHART_CONFIG.CANDLE_STEP };
+    }
+
+    const chartWidth = canvas.getBoundingClientRect().width - CHART_CONFIG.PRICE_AXIS_WIDTH;
+    // 根据缩放级别计算实际可见数量：zoomLevel越大，可见数量越少（放大）
+    const baseVisibleCount = Math.floor(chartWidth / CHART_CONFIG.CANDLE_STEP);
+    const visibleCount = Math.max(5, Math.floor(baseVisibleCount / zoomLevel.value));
+    const maxOffset = Math.max(0, klineData.length - visibleCount);
+    const currentOffset = Math.min(Math.max(0, offsetX.value), maxOffset);
+
+    // 可见起始数据索引（从右向左展示，最新数据在右侧）
+    const startIdx = klineData.length - visibleCount - currentOffset;
+    // 动态蜡烛步长（根据实际可见数量均分画布宽度）
+    const dynamicCandleStep = chartWidth / visibleCount;
+
+    return { chartWidth, startIdx, visibleCount, dynamicCandleStep };
+  }
+
+  /**
+   * tooltip锚点X钳制：将锚点X限制在图表有效宽度内，防止tooltip被容器左右边缘裁剪
+   * K线数据tooltip与交易/形态标注tooltip共用，保证两类tooltip水平定位策略一致
+   * @param x 原始锚点X（蜡烛/标注中心）
+   * @param chartWidth 图表区域宽度
+   */
+  function clampAnchorX(x: number, chartWidth: number): number {
+    const halfWidth = CHART_CONFIG.KLINE_TOOLTIP_HALF_WIDTH;
+    const maxX = Math.max(halfWidth, chartWidth - halfWidth);
+    return Math.min(Math.max(x, halfWidth), maxX);
+  }
+
+  /**
    * 主绘制函数
    * 按顺序绘制：背景 → 坐标轴网格 → 蜡烛图 → 成交量 → 交易标注 → 坐标轴文字
    */
@@ -220,7 +313,7 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     // 无数据时显示提示
     if (klineData.length === 0) return;
 
-    // 计算各区域尺寸
+    // 计算各区域尺寸（可见窗口参数由绘制与命中检测共用的 getVisibleWindow() 计算，保证不错位）
     const chartWidth = width - CHART_CONFIG.PRICE_AXIS_WIDTH;
     const candleAreaHeight = height * CHART_CONFIG.CANDLE_AREA_RATIO - CHART_CONFIG.PADDING_TOP;
     const volumeAreaTop = candleAreaHeight + CHART_CONFIG.PADDING_TOP;
@@ -228,21 +321,11 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     const dateAxisTop = height - CHART_CONFIG.DATE_AXIS_HEIGHT;
 
     // 计算可见范围内的K线数据（根据缩放级别动态调整）
-    const baseVisibleCount = Math.floor(chartWidth / CHART_CONFIG.CANDLE_STEP);
-    // 根据缩放级别计算实际可见数量：zoomLevel越大，可见数量越少（放大）
-    const actualVisibleCount = Math.max(5, Math.floor(baseVisibleCount / zoomLevel.value));
-    const maxOffset = Math.max(0, klineData.length - actualVisibleCount);
-    const currentOffset = Math.min(Math.max(0, offsetX.value), maxOffset);
-
-    // 获取可见范围内的数据（从右向左展示，最新数据在右侧）
-    const startIdx = klineData.length - actualVisibleCount - currentOffset;
-    const endIdx = startIdx + actualVisibleCount;
+    const { startIdx, visibleCount, dynamicCandleStep } = getVisibleWindow();
+    const endIdx = startIdx + visibleCount;
     const visibleKlines = klineData.slice(Math.max(0, startIdx), endIdx);
 
     if (visibleKlines.length === 0) return;
-
-    // 计算动态蜡烛步长（根据实际可见数量均分画布宽度）
-    const dynamicCandleStep = chartWidth / actualVisibleCount;
 
     // 计算价格范围
     const priceMin = Math.min(...visibleKlines.map(k => k.low ?? 0));
@@ -622,12 +705,15 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     ctx.fillStyle = CHART_CONFIG.COLOR_AXIS_TEXT;
     ctx.font = '11px monospace';
 
+    // 价格轴标签精度与证券类型一致（基金3位小数，股票2位小数），与tooltip精度统一
+    const pricePrecision = getPricePrecision(visibleKlines[0].stockCode);
+
     // 价格轴标签（右侧）
     ctx.textAlign = 'left';
     for (let i = 0; i <= 4; i++) {
       const price = priceMax - (priceRange * i) / 4;
       const y = CHART_CONFIG.PADDING_TOP + (candleAreaHeight * i) / 4;
-      ctx.fillText(price.toFixed(2), chartWidth + 5, y + 4);
+      ctx.fillText(price.toFixed(pricePrecision), chartWidth + 5, y + 4);
     }
 
     // 成交量轴标签
@@ -672,25 +758,19 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     if (klineData.length === 0) return;
     if (endIndex < 0 || endIndex >= klineData.length) return;
 
-    // 计算当前可见窗口
-    const canvas = canvasRef.value;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const chartWidth = rect.width - CHART_CONFIG.PRICE_AXIS_WIDTH;
-    const baseVisibleCount = Math.floor(chartWidth / CHART_CONFIG.CANDLE_STEP);
-    const actualVisibleCount = Math.max(5, Math.floor(baseVisibleCount / zoomLevel.value));
-    const startIdx = klineData.length - actualVisibleCount - offsetX.value;
-    const visibleEndIdx = startIdx + actualVisibleCount;
+    // 计算当前可见窗口（与绘制共用同一窗口计算）
+    const { startIdx, visibleCount } = getVisibleWindow();
+    const visibleEndIdx = startIdx + visibleCount;
 
     // 若已可见则不调整
     if (endIndex >= startIdx && endIndex < visibleEndIdx) {
       return;
     }
 
-    // 居中显示：目标 startIdx = endIndex - floor(actualVisibleCount / 2)
-    const targetStart = endIndex - Math.floor(actualVisibleCount / 2);
-    const maxOffset = Math.max(0, klineData.length - actualVisibleCount);
-    const targetOffset = Math.max(0, klineData.length - actualVisibleCount - targetStart);
+    // 居中显示：目标 startIdx = endIndex - floor(visibleCount / 2)
+    const targetStart = endIndex - Math.floor(visibleCount / 2);
+    const maxOffset = Math.max(0, klineData.length - visibleCount);
+    const targetOffset = Math.max(0, klineData.length - visibleCount - targetStart);
     offsetX.value = Math.min(targetOffset, maxOffset);
     requestRedraw();
   }
@@ -702,6 +782,9 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     isDragging = true;
     dragStartX = event.clientX;
     dragStartOffset = offsetX.value;
+    // 开始拖动时隐藏tooltip，避免平移过程中tooltip停留或闪烁
+    tooltipInfo.value = { ...tooltipInfo.value, visible: false };
+    klineTooltipInfo.value = { ...klineTooltipInfo.value, visible: false };
     // 改变鼠标样式
     if (canvasRef.value) {
       canvasRef.value.style.cursor = 'grabbing';
@@ -717,18 +800,13 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
       const deltaX = event.clientX - dragStartX;
       // 向左拖动（查看更早数据）→ offsetX 增大
       // 使用动态步长计算拖动灵敏度
-      const canvas = canvasRef.value;
-      if (!canvas) return;
-      const chartWidth = canvas.getBoundingClientRect().width - CHART_CONFIG.PRICE_AXIS_WIDTH;
-      const baseVisibleCount = Math.floor(chartWidth / CHART_CONFIG.CANDLE_STEP);
-      const actualVisibleCount = Math.max(5, Math.floor(baseVisibleCount / zoomLevel.value));
-      const dynamicCandleStep = chartWidth / actualVisibleCount;
+      const { visibleCount, dynamicCandleStep } = getVisibleWindow();
 
       const deltaOffset = Math.round(deltaX / dynamicCandleStep);
       const newOffset = dragStartOffset + deltaOffset;
 
       // 计算最大偏移量
-      const maxOffset = Math.max(0, klineData.length - actualVisibleCount);
+      const maxOffset = Math.max(0, klineData.length - visibleCount);
 
       offsetX.value = Math.min(Math.max(0, newOffset), maxOffset);
       requestRedraw();
@@ -762,9 +840,11 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     const rect = canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left;
     const mouseY = event.clientY - rect.top;
+    const { chartWidth } = getVisibleWindow();
 
-    // 标注位于画布上半区时 tooltip 向下弹出，否则向上弹出，避免被容器裁剪
-    const placementFor = (anchorY: number): 'top' | 'bottom' => (anchorY < rect.height / 2 ? 'bottom' : 'top');
+    // 统一锚定策略（与K线数据tooltip一致）：水平锚定悬停蜡烛/标注中心X并钳制防溢出，
+    // 垂直取鼠标Y，方向按鼠标处于图表上下半区确定；保证两类tooltip与鼠标位置关系一致、切换不跳变
+    const placementForMouse = (): 'top' | 'bottom' => (mouseY < rect.height / 2 ? 'bottom' : 'top');
 
     // 优先检查形态标注（位置更靠外）
     for (const area of patternMarkerAreas) {
@@ -774,9 +854,9 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
         const hit = area.hit;
         tooltipInfo.value = {
           visible: true,
-          x: area.x,
-          y: area.y,
-          placement: placementFor(area.y),
+          x: clampAnchorX(area.x, chartWidth),
+          y: mouseY,
+          placement: placementForMouse(),
           tradeType: '',
           tradePrice: 0,
           tradeCount: 0,
@@ -786,6 +866,8 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
           patternDirection: hit.direction,
           patternStrength: hit.strength,
         };
+        // 命中标注时隐藏K线数据tooltip（两类tooltip互斥）
+        klineTooltipInfo.value = { ...klineTooltipInfo.value, visible: false };
         return;
       }
     }
@@ -797,20 +879,88 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
       if (dx * dx + dy * dy <= area.radius * area.radius) {
         tooltipInfo.value = {
           visible: true,
-          x: area.x,
-          y: area.y,
-          placement: placementFor(area.y),
+          x: clampAnchorX(area.x, chartWidth),
+          y: mouseY,
+          placement: placementForMouse(),
           tradeType: area.record.tradeType,
           tradePrice: area.record.tradePrice,
           tradeCount: area.record.tradeCount,
           holdingCount: area.record.holdingCount,
         };
+        // 命中标注时隐藏K线数据tooltip（两类tooltip互斥）
+        klineTooltipInfo.value = { ...klineTooltipInfo.value, visible: false };
         return;
       }
     }
 
-    // 都没有命中则隐藏
+    // 最后检查K线蜡烛命中（悬停某一交易日显示K线数据tooltip）
+    const klineHit = checkKlineHit(mouseX, mouseY, rect);
+    if (klineHit) {
+      klineTooltipInfo.value = klineHit;
+      tooltipInfo.value = { ...tooltipInfo.value, visible: false };
+      return;
+    }
+
+    // 都没有命中则隐藏（保证任一时刻只显示一个tooltip）
     tooltipInfo.value = { ...tooltipInfo.value, visible: false };
+    klineTooltipInfo.value = { ...klineTooltipInfo.value, visible: false };
+  }
+
+  /**
+   * 检测鼠标是否悬停在某根蜡烛（某一交易日）上
+   * - 使用与绘制共用的 getVisibleWindow() 参数，保证缩放/平移后命中准确
+   * - 价格字段（开/收/高/低）任一缺失时不命中，保证tooltip数据可信
+   * - 涨跌额/涨跌幅直接读取K线数据已存储字段，不做前端计算
+   * @param mouseX 鼠标相对Canvas的X坐标
+   * @param mouseY 鼠标相对Canvas的Y坐标
+   * @param rect Canvas边界矩形（用于弹出方向判断）
+   * @returns 命中返回K线数据tooltip信息，未命中返回null
+   */
+  function checkKlineHit(mouseX: number, mouseY: number, rect: DOMRect): KlineTooltipInfo | null {
+    if (klineData.length === 0) return null;
+
+    const { chartWidth, startIdx, visibleCount, dynamicCandleStep } = getVisibleWindow();
+    // 价格轴区域（右侧）不参与命中
+    if (mouseX >= chartWidth || dynamicCandleStep <= 0) return null;
+
+    // 索引除法命中：每根蜡烛及其间距归属该蜡烛，与视觉宽度一致
+    const mouseIndex = Math.floor(mouseX / dynamicCandleStep);
+    if (mouseIndex < 0 || mouseIndex >= visibleCount) return null;
+
+    // 可见数据不足可见数量时，绘制从索引0开始（见 drawChart 的 slice(max(0, startIdx), ...)）
+    const dataIndex = Math.max(0, startIdx) + mouseIndex;
+    if (dataIndex < 0 || dataIndex >= klineData.length) return null;
+
+    const kline = klineData[dataIndex];
+    if (kline.open == null || kline.close == null || kline.high == null || kline.low == null) {
+      return null;
+    }
+
+    // 涨跌信息读取已存储字段（数据库已持久化）；null表示数据缺失，展示占位符
+    const changeAmount = kline.changeAmount ?? null;
+    const changePercent = kline.changePercent ?? null;
+    const trend: KlineTooltipInfo['trend'] =
+      changeAmount == null ? 'flat' : changeAmount > 0 ? 'up' : changeAmount < 0 ? 'down' : 'flat';
+
+    // 锚点X锚定蜡烛中心并钳制在有效范围内，防止tooltip被容器左右边缘裁剪
+    const candleCenterX = mouseIndex * dynamicCandleStep + dynamicCandleStep / 2;
+    const clampedX = clampAnchorX(candleCenterX, chartWidth);
+
+    return {
+      visible: true,
+      x: clampedX,
+      y: mouseY,
+      // 与标注tooltip一致：鼠标位于图表上半区时向下弹出，避免被容器裁剪
+      placement: mouseY < rect.height / 2 ? 'bottom' : 'top',
+      date: kline.tradeDate,
+      open: kline.open,
+      close: kline.close,
+      high: kline.high,
+      low: kline.low,
+      changeAmount,
+      changePercent,
+      trend,
+    };
   }
 
   /**
@@ -827,16 +977,11 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
 
     const rect = canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left;
-    const chartWidth = rect.width - CHART_CONFIG.PRICE_AXIS_WIDTH;
 
-    // 计算当前的动态步长和可见数量
-    const baseVisibleCount = Math.floor(chartWidth / CHART_CONFIG.CANDLE_STEP);
-    const oldActualVisibleCount = Math.max(5, Math.floor(baseVisibleCount / zoomLevel.value));
-    const oldDynamicCandleStep = chartWidth / oldActualVisibleCount;
+    // 计算当前的动态步长和可见数量（与绘制共用同一窗口计算）
+    const { chartWidth, startIdx, dynamicCandleStep: oldDynamicCandleStep } = getVisibleWindow();
 
     // 计算鼠标位置对应的K线索引（相对于可见区域的起始索引）
-    const currentOffset = Math.min(Math.max(0, offsetX.value), Math.max(0, klineData.length - oldActualVisibleCount));
-    const startIdx = klineData.length - oldActualVisibleCount - currentOffset;
     const mouseKlineIndex = Math.floor(mouseX / oldDynamicCandleStep) + startIdx;
 
     // 应用缩放：向上滚动(deltaY < 0)放大，向下滚动(deltaY > 0)缩小
@@ -850,6 +995,7 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     zoomLevel.value = newZoomLevel;
 
     // 计算新的可见数量和步长
+    const baseVisibleCount = Math.floor(chartWidth / CHART_CONFIG.CANDLE_STEP);
     const newActualVisibleCount = Math.max(5, Math.floor(baseVisibleCount / newZoomLevel));
     const newDynamicCandleStep = chartWidth / newActualVisibleCount;
 
@@ -871,6 +1017,7 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
   function onMouseLeave(): void {
     isDragging = false;
     tooltipInfo.value = { ...tooltipInfo.value, visible: false };
+    klineTooltipInfo.value = { ...klineTooltipInfo.value, visible: false };
     if (canvasRef.value) {
       canvasRef.value.style.cursor = 'grab';
     }
@@ -892,6 +1039,8 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     patternMarkerAreas = [];
     // 重置缩放级别
     zoomLevel.value = 1.0;
+    // 重置K线数据tooltip状态
+    klineTooltipInfo.value = { ...klineTooltipInfo.value, visible: false };
   }
 
   // 组件卸载时自动清理
@@ -903,6 +1052,7 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     offsetX,
     zoomLevel,
     tooltipInfo,
+    klineTooltipInfo,
     setData,
     setPatternMarkers,
     clearPatternMarkers,

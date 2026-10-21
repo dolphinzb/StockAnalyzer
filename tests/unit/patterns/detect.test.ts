@@ -93,7 +93,6 @@ describe('shared/patterns detectPatterns & registry', () => {
     // 倒数第 2 根：再走一个小阴线
     candles.push(buildCandle(p, p - 0.3, p + 0.2, p - 0.5));
     // 最后一根：大阳线吞没前一根
-    const prevBody = 0.3;
     const bigOpen = p - 0.4;
     const bigClose = p + 0.5;
     candles.push(buildCandle(bigOpen, bigClose, bigClose + 0.1, bigOpen - 0.1));

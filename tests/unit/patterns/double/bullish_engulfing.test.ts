@@ -33,6 +33,9 @@ describe('bullish_engulfing', () => {
       mkCandle(10, 10.1, 9, 9),
       mkCandle(8.5, 10.6, 8.4, 10.5),
     );
-    expect(bullish_engulfing.detector(makeCtx(candles, candles.length - 1))).toBeNull();
+    // 强制 trend='up'（拼入的低价形态蜡烛会令自动趋势翻转为 down，此处验证趋势门禁）
+    const ctx = makeCtx(candles, candles.length - 1);
+    ctx.trend = { direction: 'up', ma5: 10, ma10: 10 };
+    expect(bullish_engulfing.detector(ctx)).toBeNull();
   });
 });

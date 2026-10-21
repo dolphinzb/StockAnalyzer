@@ -10,7 +10,10 @@ describe('tweeter_top', () => {
       mkCandle(10, 12, 9.9, 11.5),
       mkCandle(11, 12.005, 10.9, 11.6),
     );
-    const hit = tweeter_top.detector(makeCtx(candles, candles.length - 1));
+    // 强制 trend='up'（mkUptrend(20) 末值 ~20，加入低位蜡烛会令最近 MA 翻转）
+    const ctx = makeCtx(candles, candles.length - 1);
+    ctx.trend = { direction: 'up', ma5: 10, ma10: 10 };
+    const hit = tweeter_top.detector(ctx);
     expect(hit).not.toBeNull();
     expect(hit!.direction).toBe('bearish');
   });

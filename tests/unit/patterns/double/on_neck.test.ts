@@ -42,6 +42,9 @@ describe('on_neck', () => {
       mkCandle(12, 12.1, 10.9, 11),
       mkCandle(10.5, 11.2, 10.4, 11.005),
     );
-    expect(on_neck.detector(makeCtx(candles, candles.length - 1))).toBeNull();
+    // 强制 trend='up'（拼入的低价形态蜡烛会令自动趋势翻转为 down，此处验证趋势门禁）
+    const ctx = makeCtx(candles, candles.length - 1);
+    ctx.trend = { direction: 'up', ma5: 10, ma10: 10 };
+    expect(on_neck.detector(ctx)).toBeNull();
   });
 });

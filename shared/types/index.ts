@@ -114,7 +114,7 @@ export type IndexDirection = 'up' | 'down' | 'flat';
  * 指数数据
  */
 export interface IndexData {
-  /** 指数代码 (sh000001/sz399001) */
+  /** 指数代码 (sh000001/sz399001/sh000688) */
   code: string;
   /** 指数名称 (上证指数/深成指数) */
   name: string;

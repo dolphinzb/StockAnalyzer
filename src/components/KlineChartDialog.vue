@@ -9,11 +9,13 @@
  * - 底部显示"暂无K线数据，请先下载"空状态提示
  * - 弹窗关闭时释放 Canvas 资源
  * - 交易标注悬停显示 tooltip
+ * - K线数据悬停显示 tooltip（日期/开高低收/涨跌额/涨跌幅）
  */
 
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import Modal from './Modal.vue';
-import { useKlineChart, type TooltipInfo } from '../composables/useKlineChart';
+import { useKlineChart, type KlineTooltipInfo, type TooltipInfo } from '../composables/useKlineChart';
+import { getPricePrecision } from '../utils/formatPrice';
 import type { KlineData, TradeRecord } from '../types';
 
 const props = defineProps<{
@@ -28,6 +30,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
 }>();
+
+/** 价格显示精度（基金3位小数，股票2位小数），tooltip与价格轴统一使用 */
+const pricePrecision = computed(() => getPricePrecision(props.stockCode));
 
 /** Canvas 元素引用 */
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -50,6 +55,21 @@ const tooltipInfo = ref<TooltipInfo>({
   tradePrice: 0,
   tradeCount: 0,
   holdingCount: 0,
+});
+/** K线数据 tooltip 信息 */
+const klineTooltipInfo = ref<KlineTooltipInfo>({
+  visible: false,
+  x: 0,
+  y: 0,
+  placement: 'top',
+  date: '',
+  open: 0,
+  close: 0,
+  high: 0,
+  low: 0,
+  changeAmount: null,
+  changePercent: null,
+  trend: 'flat',
 });
 
 /**
@@ -129,6 +149,45 @@ function syncTooltip(info: TooltipInfo): void {
   tooltipInfo.value = { ...info };
 }
 
+/**
+ * K线数据tooltip信息同步
+ */
+function syncKlineTooltip(info: KlineTooltipInfo): void {
+  klineTooltipInfo.value = { ...info };
+}
+
+/**
+ * 鼠标移动事件处理：悬停检测 + 同步两类tooltip
+ */
+function handleMouseMove(e: MouseEvent): void {
+  klineChart.onMouseMove(e);
+  syncTooltip(klineChart.tooltipInfo.value);
+  syncKlineTooltip(klineChart.klineTooltipInfo.value);
+}
+
+/**
+ * 格式化价格显示：精度随证券类型（基金3位小数，股票2位小数）
+ */
+function formatPrice(value: number): string {
+  return value.toFixed(pricePrecision.value);
+}
+
+/**
+ * 格式化涨跌额：带方向符号（+/-），精度随证券类型；平盘无符号
+ */
+function formatChange(value: number): string {
+  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+  return `${sign}${Math.abs(value).toFixed(pricePrecision.value)}`;
+}
+
+/**
+ * 格式化涨跌幅：带方向符号（+/-）与百分号，精度随证券类型；平盘无符号
+ */
+function formatPercent(value: number): string {
+  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+  return `${sign}${Math.abs(value).toFixed(pricePrecision.value)}%`;
+}
+
 // 监听弹窗打开，加载数据
 watch(() => props.modelValue, async (visible) => {
   if (visible) {
@@ -194,7 +253,7 @@ onBeforeUnmount(() => {
           ref="canvasRef"
           class="kline-canvas"
           @mousedown="klineChart.onMouseDown"
-          @mousemove="(e: MouseEvent) => { klineChart.onMouseMove(e); syncTooltip(klineChart.tooltipInfo.value); }"
+          @mousemove="handleMouseMove"
           @mouseup="klineChart.onMouseUp"
           @mouseleave="klineChart.onMouseLeave"
           @wheel="klineChart.onWheel"
@@ -211,16 +270,42 @@ onBeforeUnmount(() => {
             {{ tooltipInfo.tradeType === 'BUY' ? '买入' : tooltipInfo.tradeType === 'SELL' ? '卖出' : '分红' }}
           </div>
           <div class="tooltip-detail">
-            <span>价格：{{ tooltipInfo.tradePrice.toFixed(2) }}</span>
+            <span>价格：{{ formatPrice(tooltipInfo.tradePrice) }}</span>
             <span>数量：{{ tooltipInfo.tradeCount }}</span>
             <span>持仓：{{ tooltipInfo.holdingCount }}</span>
+          </div>
+        </div>
+
+        <!-- K线数据 Tooltip（悬停某一交易日显示K线数据） -->
+        <div
+          v-if="klineTooltipInfo.visible"
+          class="kline-tooltip"
+          :class="[`placement-${klineTooltipInfo.placement}`, `trend-${klineTooltipInfo.trend}`]"
+          :style="{ left: klineTooltipInfo.x + 'px', top: klineTooltipInfo.y + 'px' }"
+        >
+          <div class="tooltip-date">{{ klineTooltipInfo.date }}</div>
+          <div class="tooltip-row"><span>最高价</span><span>{{ formatPrice(klineTooltipInfo.high) }}</span></div>
+          <div class="tooltip-row"><span>最低价</span><span>{{ formatPrice(klineTooltipInfo.low) }}</span></div>
+          <div class="tooltip-row"><span>开盘价</span><span>{{ formatPrice(klineTooltipInfo.open) }}</span></div>
+          <div class="tooltip-row"><span>收盘价</span><span>{{ formatPrice(klineTooltipInfo.close) }}</span></div>
+          <div class="tooltip-row">
+            <span>涨跌幅</span>
+            <span class="trend-value">
+              {{ klineTooltipInfo.changePercent == null ? '—' : formatPercent(klineTooltipInfo.changePercent) }}
+            </span>
+          </div>
+          <div class="tooltip-row">
+            <span>涨跌额</span>
+            <span class="trend-value">
+              {{ klineTooltipInfo.changeAmount == null ? '—' : formatChange(klineTooltipInfo.changeAmount) }}
+            </span>
           </div>
         </div>
       </div>
 
       <!-- 操作提示 -->
       <div v-if="!isEmpty" class="chart-hint">
-        💡 滚轮缩放 | 拖动平移
+        💡 悬停查看K线数据 | 滚轮缩放 | 拖动平移
       </div>
     </div>
   </Modal>
@@ -343,10 +428,10 @@ onBeforeUnmount(() => {
   pointer-events: none;
   z-index: 10;
   white-space: nowrap;
-  /* 默认显示在标注上方（锚定元素底边）；由 placement-* 类切换方向 */
+  /* 默认显示在锚点上方；由 placement-* 类切换方向（锚点为悬停蜡烛中心X + 鼠标Y） */
   transform: translate(-50%, calc(-100% - 14px));
 
-  /* 标注位于画布上半区时改为下方弹出，避免被容器顶部裁剪 */
+  /* 鼠标位于画布上半区时改为下方弹出，避免被容器顶部裁剪 */
   &.placement-bottom {
     transform: translate(-50%, 14px);
   }
@@ -367,6 +452,46 @@ onBeforeUnmount(() => {
     font-size: 11px;
     color: #d1d5db;
   }
+}
+
+/* K线数据 Tooltip（悬停某一交易日显示） */
+.kline-tooltip {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.85);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 10;
+  white-space: nowrap;
+  /* 默认显示在锚点上方；由 placement-* 类切换方向 */
+  transform: translate(-50%, calc(-100% - 14px));
+
+  /* 鼠标位于画布上半区时改为下方弹出，避免被容器顶部裁剪 */
+  &.placement-bottom {
+    transform: translate(-50%, 14px);
+  }
+
+  .tooltip-date {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #f3f4f6;
+  }
+
+  .tooltip-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 11px;
+    line-height: 1.7;
+    color: #d1d5db;
+  }
+
+  /* 涨跌着色（与K线涨跌色一致：涨红/跌绿/平灰） */
+  &.trend-up .trend-value { color: #e53935; }
+  &.trend-down .trend-value { color: #43a047; }
+  &.trend-flat .trend-value { color: #9e9e9e; }
 }
 
 /* 操作提示 */

@@ -1,5 +1,6 @@
 import log from 'electron-log';
 import type { TradeRecord } from '../database';
+import { isFund } from '../../shared/utils/securities';
 
 export const TRADE_FEE_RATE = 0.0003;
 export const MIN_FEE = 5;
@@ -41,18 +42,23 @@ export interface BuyBatch {
 
 /**
  * 计算买入交易的资金流出金额（买入金额+手续费+过户费）
- * 复用现有手续费常量，与calcHoldingPrice中的手续费计算逻辑保持一致
+ * 股票：佣金(最低5元)+过户费；ETF/基金：仅佣金(免最低5元)，免过户费
  * @param tradePrice 交易单价
  * @param tradeCount 交易数量
- * @param stockCode 股票代码（用于判断交易所）
+ * @param stockCode 证券代码（用于判断是否为基金）
  * @returns 买入金额+手续费+过户费
  */
 export function calcStockBuyAmount(tradePrice: number, tradeCount: number, stockCode: string): number {
   const absCount = Math.abs(tradeCount);
-  const exchange = getExchange(stockCode);
-  const tradeFee = Math.round(Math.max(absCount * tradePrice * TRADE_FEE_RATE, MIN_FEE) * 100) / 100;
-  const transferFee = Math.round(absCount * tradePrice * TRANSFER_FEE_RATE * 100) / 100;  // 过户费：沪深两市都收取
   const tradeAmount = absCount * tradePrice;
+
+  if (isFund(stockCode)) {
+    const commission = Math.round(tradeAmount * TRADE_FEE_RATE * 100) / 100;
+    return tradeAmount + commission;
+  }
+
+  const tradeFee = Math.round(Math.max(tradeAmount * TRADE_FEE_RATE, MIN_FEE) * 100) / 100;
+  const transferFee = Math.round(tradeAmount * TRANSFER_FEE_RATE * 100) / 100;  // 过户费：沪深两市都收取
 
   const totalFee = tradeFee + transferFee;
   return tradeAmount + totalFee;
@@ -60,18 +66,24 @@ export function calcStockBuyAmount(tradePrice: number, tradeCount: number, stock
 
 /**
  * 计算卖出交易的资金流入金额（卖出金额-手续费-印花税-过户费）
- * 复用现有手续费常量，与calcHoldingPrice中的手续费计算逻辑保持一致
+ * 股票：佣金(最低5元)+印花税+过户费；ETF/基金：仅佣金(免最低5元)，免印花税、免过户费
  * @param tradePrice 交易单价
  * @param tradeCount 交易数量
- * @param stockCode 股票代码（用于判断交易所）
+ * @param stockCode 证券代码（用于判断是否为基金）
  * @returns 卖出金额-手续费-印花税-过户费
  */
 export function calcStockSellAmount(tradePrice: number, tradeCount: number, stockCode: string): number {
   const absCount = Math.abs(tradeCount);
-  const exchange = getExchange(stockCode);
-  const tradeFee = Math.round(Math.max(absCount * tradePrice * TRADE_FEE_RATE, MIN_FEE) * 100) / 100;
-  const transferFee = Math.round(absCount * tradePrice * TRANSFER_FEE_RATE * 100) / 100;  // 过户费：沪深两市都收取
   const tradeAmount = absCount * tradePrice;
+
+  if (isFund(stockCode)) {
+    const commission = Math.round(tradeAmount * TRADE_FEE_RATE * 100) / 100;
+    return tradeAmount - commission;
+  }
+
+  const exchange = getExchange(stockCode);
+  const tradeFee = Math.round(Math.max(tradeAmount * TRADE_FEE_RATE, MIN_FEE) * 100) / 100;
+  const transferFee = Math.round(tradeAmount * TRANSFER_FEE_RATE * 100) / 100;  // 过户费：沪深两市都收取
   const stampTax = Math.round(tradeAmount * (exchange === 'BEIJING' ? 0 : SHANGHAI_STAMP_TAX_RATE) * 100) / 100;
 
   const totalFee = tradeFee + stampTax + transferFee;
@@ -228,6 +240,9 @@ export function calcHoldingPrice(
   tradeCount: number,
   stockCode: string
 ): CalcResult {
+  const fund = isFund(stockCode);
+  const commissionMin = fund ? 0 : MIN_FEE;  // ETF/基金佣金免最低5元
+
   if (tradeType === 'DIVIDEND') {
     if (preRecord) {
       return {
@@ -238,11 +253,13 @@ export function calcHoldingPrice(
     return { holdingCount: 0, holdingPrice: 0 };
   }
 
-  if (!preRecord) {
-    const exchange = getExchange(stockCode);
-    const tradeFee = Math.round(Math.max(tradeCount * tradePrice * TRADE_FEE_RATE, MIN_FEE) * 100) / 100;
-    const transferFee = Math.round(tradeCount * tradePrice * TRANSFER_FEE_RATE * 100) / 100;  // 过户费：沪深两市都收取
+  const tradeAmount = Math.abs(tradeCount) * tradePrice;
+  // 佣金：ETF/基金免最低5元
+  const tradeFee = Math.round(Math.max(tradeAmount * TRADE_FEE_RATE, commissionMin) * 100) / 100;
+  // 过户费：仅股票收取（沪深两市双向）；ETF/基金免过户费
+  const transferFee = fund ? 0 : Math.round(tradeAmount * TRANSFER_FEE_RATE * 100) / 100;
 
+  if (!preRecord) {
     const totalCost = tradeCount * tradePrice + tradeFee + transferFee;
 
     const newHoldingPrice = Math.round((totalCost * 1000) / tradeCount) / 1000;
@@ -252,12 +269,8 @@ export function calcHoldingPrice(
     };
   }
 
-  const exchange = getExchange(stockCode);
-  const tradeFee = Math.round(Math.max(tradeCount * tradePrice * TRADE_FEE_RATE, MIN_FEE) * 100) / 100;
-  const transferFee = Math.round(tradeCount * tradePrice * TRANSFER_FEE_RATE * 100) / 100;  // 过户费：沪深两市都收取
-
   if (tradeType === 'BUY') {
-    // 买入：沪深两市都收取佣金和过户费
+    // 买入：股票收佣金+过户费；ETF/基金仅收佣金
     const newHoldingPrice = Math.round(
       (preRecord.holdingCount * preRecord.holdingPrice +
         tradeCount * tradePrice +
@@ -273,15 +286,15 @@ export function calcHoldingPrice(
   }
 
   if (tradeType === 'SELL') {
-    let taxRate = 0;
-    if (exchange === 'SHENZHEN') {
-      taxRate = SHENZHEN_STAMP_TAX_RATE;
-    } else if (exchange === 'SHANGHAI') {
-      taxRate = SHANGHAI_STAMP_TAX_RATE;
+    // 印花税：仅股票卖出收取；ETF/基金免印花税
+    let tax = 0;
+    if (!fund) {
+      const exchange = getExchange(stockCode);
+      const stampTaxRate = exchange === 'BEIJING' ? 0 : SHANGHAI_STAMP_TAX_RATE;
+      tax = -Math.round(tradeCount * tradePrice * stampTaxRate * 100) / 100;
     }
-    const tax = -Math.round(tradeCount * tradePrice * taxRate * 100) / 100;
 
-    // 卖出：沪深两市都收取佣金、印花税和过户费
+    // 卖出：股票收佣金+印花税+过户费；ETF/基金仅收佣金
     const newHoldingPrice = Math.round(
       (preRecord.holdingCount * preRecord.holdingPrice +
         tradeCount * tradePrice +

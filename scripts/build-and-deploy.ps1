@@ -56,12 +56,15 @@ else {
 if (-not $SkipBuild) {
     # ---------- 2. 构建 ----------
     Write-Step "执行 npm run build"
-    & npm run build
+    # 注意：不要用 & 调用运算符（& npm run build），否则 nvm4w 的 npm.ps1 会
+    # 把 InvocationName 当成 "&"，Substring 切错字符导致 npm 收到 "pm" 而报错。
+    # 直接以命令名调用（不带 &），InvocationName 才是正确的 "npm"。
+    npm run build
     if ($LASTEXITCODE -ne 0) { throw "npm run build 失败，退出码：$LASTEXITCODE" }
 
     # ---------- 3. 打包 ----------
     Write-Step "执行 npx electron-builder --win"
-    & npx electron-builder --win
+    npx electron-builder --win
     if ($LASTEXITCODE -ne 0) { throw "electron-builder 打包失败，退出码：$LASTEXITCODE" }
 }
 

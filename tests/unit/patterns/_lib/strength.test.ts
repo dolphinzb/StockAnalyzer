@@ -79,27 +79,33 @@ describe('shared/patterns/_lib/strength', () => {
 
   describe('monotonicity for hammer (lower shadow / body)', () => {
     // 锤子线下影线 ≥ 2 倍实体为最低要求，≥ 3 倍实体为理想
-    const body = 1;
-    const lower = 2.5; // 介于 2 与 3 之间
-    const strength = strengthByRatio(lower, 2 * body, 3 * body);
-    expect(strength).toBeGreaterThan(0);
-    expect(strength).toBeLessThan(1);
+    it('scores longer lower shadow strictly higher', () => {
+      const body = 1;
+      const lower = 2.5; // 介于 2 与 3 之间
+      const strength = strengthByRatio(lower, 2 * body, 3 * body);
+      expect(strength).toBeGreaterThan(0);
+      expect(strength).toBeLessThan(1);
 
-    const stronger = strengthByRatio(3.5, 2, 3);
-    expect(stronger).toBeGreaterThan(strength);
+      const stronger = strengthByRatio(3.5, 2, 3);
+      expect(stronger).toBeGreaterThan(strength);
+    });
   });
 
   describe('monotonicity for bullish_engulfing (curr/prev body ratio)', () => {
     // 吞没形态要求 curr 实体 ≥ 1.5 倍 prev；理想 ≥ 2 倍
-    const weaker = strengthByRatio(1.6, 1.5, 2.0);
-    const stronger = strengthByRatio(1.9, 1.5, 2.0);
-    expect(stronger).toBeGreaterThan(weaker);
+    it('scores larger engulfing ratio strictly higher', () => {
+      const weaker = strengthByRatio(1.6, 1.5, 2.0);
+      const stronger = strengthByRatio(1.9, 1.5, 2.0);
+      expect(stronger).toBeGreaterThan(weaker);
+    });
   });
 
   describe('monotonicity for morning_star (penetration)', () => {
     // 启明星要求末根阳线收盘 ≥ 中点 + 0.5 × 首根实体；理想 1.0
-    const weaker = strengthByRatio(0.6, 0.5, 1.0);
-    const stronger = strengthByRatio(0.85, 0.5, 1.0);
-    expect(stronger).toBeGreaterThan(weaker);
+    it('scores deeper penetration strictly higher', () => {
+      const weaker = strengthByRatio(0.6, 0.5, 1.0);
+      const stronger = strengthByRatio(0.85, 0.5, 1.0);
+      expect(stronger).toBeGreaterThan(weaker);
+    });
   });
 });

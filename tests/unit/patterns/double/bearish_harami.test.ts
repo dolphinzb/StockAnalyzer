@@ -11,7 +11,10 @@ describe('bearish_harami', () => {
       mkCandle(9, 12.1, 8.9, 12),
       mkCandle(11, 11.1, 10.4, 10.5),
     );
-    const hit = bearish_harami.detector(makeCtx(candles, candles.length - 1));
+    // 强制 trend='up'（mkUptrend(20) 末值 ~20，加入低位蜡烛会令最近 MA 翻转）
+    const ctx = makeCtx(candles, candles.length - 1);
+    ctx.trend = { direction: 'up', ma5: 10, ma10: 10 };
+    const hit = bearish_harami.detector(ctx);
     expect(hit).not.toBeNull();
     expect(hit!.direction).toBe('bearish');
   });

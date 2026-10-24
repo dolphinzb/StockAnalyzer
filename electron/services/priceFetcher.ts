@@ -6,9 +6,10 @@ import { loadConfig } from '../database';
 import { checkAndTriggerAlert, type PriceUpdate } from './alertService';
 
 // 指数代码常量（带前缀）
-const INDEX_CODES = ['sh000001', 'sz399001'];
+const INDEX_CODES = ['sh000001', 'sh000688', 'sz399001'];
 const INDEX_NAMES: Record<string, string> = {
   'sh000001': '上证指数',
+  'sh000688': '科创50',
   'sz399001': '深成指数',
 };
 

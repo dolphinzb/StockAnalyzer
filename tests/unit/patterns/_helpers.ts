@@ -61,7 +61,8 @@ export function mkUptrend(count: number, startPrice = 10, step = 0.5): KlineData
   for (let i = 0; i < count; i++) {
     const open = price;
     const close = price + step;
-    candles.push(mkCandle(open, open - 0.1, close - 0.1, close));
+    // 合法 OHLC：high 需 ≥ close，low 需 ≤ open（与 mkDowntrend 镜像）
+    candles.push(mkCandle(open, close + 0.1, open - 0.1, close));
     price = close;
   }
   return candles;

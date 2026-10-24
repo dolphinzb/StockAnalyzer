@@ -11,7 +11,10 @@ describe('dark_cloud_cover', () => {
       mkCandle(10, 12.1, 9.9, 12),
       mkCandle(12.5, 12.6, 10.3, 10.4),
     );
-    const hit = dark_cloud_cover.detector(makeCtx(candles, candles.length - 1));
+    // 强制 trend='up'（mkUptrend(20) 末值 ~20，加入低位蜡烛会令最近 MA 翻转）
+    const ctx = makeCtx(candles, candles.length - 1);
+    ctx.trend = { direction: 'up', ma5: 10, ma10: 10 };
+    const hit = dark_cloud_cover.detector(ctx);
     expect(hit).not.toBeNull();
     expect(hit!.direction).toBe('bearish');
   });

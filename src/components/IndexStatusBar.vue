@@ -25,6 +25,31 @@
       </template>
     </div>
 
+    <!-- 科创50指数（中间） -->
+    <div class="index-item center">
+      <template v-if="kc50Index">
+        <span class="index-name">{{ kc50Index.name }}</span>
+        <span class="index-price" :class="getPriceClass(kc50Index.direction)">
+          {{ formatPrice(kc50Index.price) }}
+        </span>
+        <span class="index-change" :class="getPriceClass(kc50Index.direction)">
+          <svg v-if="kc50Index.direction === 'up'" class="arrow" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 4l-8 8h5v8h6v-8h5z"/>
+          </svg>
+          <svg v-if="kc50Index.direction === 'down'" class="arrow" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 20l8-8h-5v-8h-6v8h-5z"/>
+          </svg>
+          {{ formatChange(kc50Index.change) }}
+        </span>
+        <span class="index-change-percent" :class="getPriceClass(kc50Index.direction)">
+          ({{ formatChangePercent(kc50Index.changePercent) }})
+        </span>
+      </template>
+      <template v-else>
+        <span class="placeholder">--</span>
+      </template>
+    </div>
+
     <!-- 深成指数（右侧） -->
     <div class="index-item right">
       <template v-if="szIndex">
@@ -72,6 +97,10 @@ const shIndex = computed<IndexData | null>(() => {
 
 const szIndex = computed<IndexData | null>(() => {
   return props.indexDataState.indices.find(i => i.code === 'sz399001') || null;
+});
+
+const kc50Index = computed<IndexData | null>(() => {
+  return props.indexDataState.indices.find(i => i.code === 'sh000688') || null;
 });
 
 // 是否有错误状态
@@ -136,6 +165,10 @@ function formatChangePercent(percent: number): string {
   justify-content: flex-end;
 }
 
+.index-item.center {
+  justify-content: center;
+}
+
 .index-name {
   color: #333;
   font-weight: 500;
@@ -181,6 +214,7 @@ function formatChangePercent(percent: number): string {
 
 .error-indicator {
   position: absolute;
+  top: -20px;
   left: 50%;
   transform: translateX(-50%);
   background-color: rgba(255, 152, 0, 0.9);

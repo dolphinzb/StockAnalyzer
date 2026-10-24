@@ -9,7 +9,10 @@ describe('hanging_man', () => {
       ...mkUptrend(20),
       mkCandle(10, 10.6, 9, 10.5),
     );
-    const hit = hanging_man.detector(makeCtx(candles, candles.length - 1));
+    // 强制 trend='up'（mkUptrend(20) 末值 ~20，加入低位蜡烛会令最近 MA 翻转）
+    const ctx = makeCtx(candles, candles.length - 1);
+    ctx.trend = { direction: 'up', ma5: 10, ma10: 10 };
+    const hit = hanging_man.detector(ctx);
     expect(hit).not.toBeNull();
     expect(hit!.direction).toBe('bearish');
   });

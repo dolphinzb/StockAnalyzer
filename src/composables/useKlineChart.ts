@@ -73,6 +73,8 @@ const CHART_CONFIG = {
   COLOR_PATTERN_BEARISH: '#f43f5e',
   /** 形态标注 - 转折预警（琥珀色，置于蜡烛上方更高位置） */
   COLOR_PATTERN_WARNING: '#f59e0b',
+  /** 形态标注图元垂直半高（▲/▼/◆ 上下各约6px），用于边界钳制防止图元越出画布不可见 */
+  PATTERN_GLYPH_HALF_HEIGHT: 6,
   /** 拖动灵敏度（鼠标移动1px对应的数据偏移量） */
   DRAG_SENSITIVITY: 1,
 };
@@ -563,8 +565,10 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
    * - bullish: 绿色 ▲（向上三角），置于蜡烛下方 BUY 标注下方 +30 像素
    * - bearish: 红色 ▼（向下三角），置于蜡烛上方 SELL 标注上方 -45 像素
    * - warning: 琥珀色 ◆（菱形），置于蜡烛上方更高位置 -60 像素
+   * - 纵向位置经边界钳制：股价处于可见区间高位/低位时，固定偏移会把图元推出画布
+   *   （如高位看跌标记基准Y为负，三角形被裁剪不可见），钳制后图元始终完整可见
    * - 仅绘制 hit.endIndex 落在当前可见 K 线范围内的命中
-   * - 同时填充 patternMarkerAreas 用于悬停 tooltip
+   * - 同时填充 patternMarkerAreas 用于悬停 tooltip（与绘制位置一致）
    *
    * @param startIdx 可见范围内第一根 K 线在 klineData 中的索引
    */
@@ -587,6 +591,12 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     // 相同 endIndex 可能有多条命中（不同形态），按方向分组绘制避免重叠
     // 这里使用简单的 Y 偏移累加：bullish 累加正方向，bearish/warning 累加负方向
     const offsetByEndIndex = new Map<number, number>();
+
+    // 蜡烛图区域上下边界：形态图元钳制范围，保证任何股价位置下图元完整可见
+    const areaTop = CHART_CONFIG.PADDING_TOP;
+    const areaBottom = CHART_CONFIG.PADDING_TOP + candleAreaHeight;
+    const minY = areaTop + CHART_CONFIG.PATTERN_GLYPH_HALF_HEIGHT;
+    const maxY = areaBottom - CHART_CONFIG.PATTERN_GLYPH_HALF_HEIGHT;
 
     for (const hit of patternHits) {
       // 仅绘制当前可见范围内的形态
@@ -623,8 +633,13 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
       // 同一 endIndex 多条命中时按方向错开纵向位置
       const stackOffset = offsetByEndIndex.get(hit.endIndex) ?? 0;
       const stackDir = hit.direction === 'bullish' ? 1 : -1;
-      const y = baseY + stackDir * stackOffset * 12;
+      const rawY = baseY + stackDir * stackOffset * 12;
       offsetByEndIndex.set(hit.endIndex, stackOffset + 1);
+
+      // 边界钳制：股价处于可见区间高位时，看跌/转折标记的固定上偏移会把图元推出画布顶部
+      // （如基准Y为负，三角形被裁剪不可见）；处于低位时看涨标记同理被推出底部。
+      // 钳制后图元完整落在蜡烛图区域内，tooltip 命中区域与绘制位置保持一致
+      const y = Math.min(Math.max(rawY, minY), maxY);
 
       // 绘制形态图形
       drawPatternGlyph(ctx, x, y, hit.direction, color);

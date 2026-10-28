@@ -1,5 +1,6 @@
 import log from 'electron-log';
 import { Database } from 'sql.js';
+import type { FundOverview, HoldingMarketDetail } from '../../shared/types';
 
 /**
  * 资金管理服务
@@ -893,14 +894,10 @@ export class FundService {
 
   /**
    * 获取当前资金概览
-   * 包含当前账户余额、当前持仓总市值和总资产
+   * 包含当前账户余额、当前持仓总市值、总资产，以及逐只持仓市值明细
    * @returns 资金概览数据
    */
-  async getFundOverview(): Promise<{
-    currentAccountBalance: number;
-    currentHoldingsMarketValue: number;
-    totalAssets: number;
-  }> {
+  async getFundOverview(): Promise<FundOverview> {
     try {
       // 1. 获取当前账户余额（最后一条transfer_records的account_balance）
       const currentAccountBalance = await this.getAccountBalance();
@@ -918,10 +915,13 @@ export class FundService {
       `);
 
       let currentHoldingsMarketValue = 0;
+      // 逐只持仓明细：与汇总同步收集，供前端饼图与持仓明细表格使用
+      const holdings: HoldingMarketDetail[] = [];
 
       if (positionsResult.length > 0 && positionsResult[0].values.length > 0) {
         for (const row of positionsResult[0].values) {
           const stockCode = row[0] as string;
+          const stockName = row[1] as string;
           const holdingCount = row[2] as number;
 
           // 获取该股票最新的收盘价（从kline_data表）
@@ -933,20 +933,45 @@ export class FundService {
 
           if (klineResult.length > 0 && klineResult[0].values.length > 0) {
             const closePrice = klineResult[0].values[0][0] as number;
-            currentHoldingsMarketValue += closePrice * holdingCount;
+            // 单只市值保留两位小数，保证明细之和与汇总口径一致
+            const marketValue = Number((closePrice * holdingCount).toFixed(2));
+            currentHoldingsMarketValue += marketValue;
+
+            holdings.push({
+              stockCode,
+              stockName,
+              holdingCount,
+              closePrice,
+              marketValue,
+              hasKlineData: true,
+            });
+          } else {
+            // 缺少行情数据：市值无法计算，但仍保留在明细中由前端降级展示
+            holdings.push({
+              stockCode,
+              stockName,
+              holdingCount,
+              closePrice: 0,
+              marketValue: 0,
+              hasKlineData: false,
+            });
           }
         }
       }
 
+      // 汇总值再次收敛到两位小数，消除累加浮点误差
+      currentHoldingsMarketValue = Number(currentHoldingsMarketValue.toFixed(2));
+
       // 3. 计算总资产
       const totalAssets = currentAccountBalance + currentHoldingsMarketValue;
 
-      log.info(`获取资金概览成功，账户余额: ${currentAccountBalance}, 持仓市值: ${currentHoldingsMarketValue}, 总资产: ${totalAssets}`);
+      log.info(`获取资金概览成功，账户余额: ${currentAccountBalance}, 持仓市值: ${currentHoldingsMarketValue}, 总资产: ${totalAssets}, 持仓标的数: ${holdings.length}`);
 
       return {
         currentAccountBalance: Number(currentAccountBalance.toFixed(2)),
-        currentHoldingsMarketValue: Number(currentHoldingsMarketValue.toFixed(2)),
+        currentHoldingsMarketValue,
         totalAssets: Number(totalAssets.toFixed(2)),
+        holdings,
       };
     } catch (error) {
       log.error('getFundOverview error:', error);

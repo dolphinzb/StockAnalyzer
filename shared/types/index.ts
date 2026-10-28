@@ -551,8 +551,27 @@ export interface TransferRecordUpdate {
 }
 
 /**
+ * 单只持仓标的的市值明细
+ * 用于资金统计页「持仓明细」表格与资产分布饼图的逐只展示
+ */
+export interface HoldingMarketDetail {
+  /** 标的价格代码 */
+  stockCode: string;
+  /** 标的名称 */
+  stockName: string;
+  /** 持仓数量 */
+  holdingCount: number;
+  /** 最新收盘价（无行情数据时为 0） */
+  closePrice: number;
+  /** 单只持仓市值（收盘价 × 持仓数量，保留两位小数；无行情数据时为 0） */
+  marketValue: number;
+  /** 是否存在可用的行情数据（false 时市值无法计算） */
+  hasKlineData: boolean;
+}
+
+/**
  * 资金概览数据
- * 包含当前账户余额、持仓市值和总资产
+ * 包含当前账户余额、持仓市值和总资产，以及逐只持仓明细
  */
 export interface FundOverview {
   /** 当前账户余额（元） */
@@ -561,6 +580,8 @@ export interface FundOverview {
   currentHoldingsMarketValue: number;
   /** 总资产（账户余额 + 持仓市值，元） */
   totalAssets: number;
+  /** 逐只持仓市值明细（按当前持仓口径，仅包含 holding_count > 0 的标的） */
+  holdings: HoldingMarketDetail[];
 }
 
 /**

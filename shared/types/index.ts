@@ -782,6 +782,80 @@ export interface KlineDownloadInput {
 }
 
 /**
+ * 批量K线下载输入参数
+ * 手动批量下载多只自选股K线数据时的请求参数
+ */
+export interface KlineBatchDownloadInput {
+  /** 股票代码列表（纯数字，如 ['000001', '510050']） */
+  stockCodes: string[];
+  /** 开始日期 (YYYYMMDD) */
+  startDate: string;
+  /** 结束日期 (YYYYMMDD) */
+  endDate: string;
+  /** 复权类型数组（可选，默认 ['', 'qfq']，与stock-sdk的adjust参数一致） */
+  adjustTypes?: ('' | 'qfq')[];
+}
+
+/**
+ * 批量下载中单只股票的下载结果
+ */
+export interface KlineBatchStockResult {
+  /** 股票代码（纯数字） */
+  stockCode: string;
+  /** 股票名称 */
+  stockName: string;
+  /** 是否成功（所选复权类型中至少一种返回条数大于0） */
+  success: boolean;
+  /** 不复权数据条数 */
+  unadjustedCount?: number;
+  /** 前复权数据条数 */
+  adjustedCount?: number;
+  /** 不复权失败原因 */
+  unadjustedError?: string;
+  /** 前复权失败原因 */
+  adjustedError?: string;
+  /** 失败原因（汇总展示用） */
+  error?: string;
+}
+
+/**
+ * 批量K线下载汇总结果
+ */
+export interface KlineBatchDownloadSummary {
+  /** 是否成功（全部股票均下载成功） */
+  success: boolean;
+  /** 请求下载的股票总数 */
+  total: number;
+  /** 成功只数 */
+  successCount: number;
+  /** 失败只数 */
+  failedCount: number;
+  /** 逐只下载结果（按请求顺序） */
+  results: KlineBatchStockResult[];
+  /** 整体失败原因（参数校验失败、任务互斥等） */
+  error?: string;
+}
+
+/**
+ * 批量K线下载进度事件负载
+ * 主进程在每只股票开始/完成下载时推送
+ */
+export interface KlineBatchProgressPayload {
+  /** 阶段：started 开始下载该股票 | completed 该股票下载完成 */
+  phase: 'started' | 'completed';
+  /** 当前处理序号（1-based） */
+  index: number;
+  /** 本批股票总数 */
+  total: number;
+  /** 股票代码（纯数字） */
+  stockCode: string;
+  /** 股票名称 */
+  stockName?: string;
+  /** 单只结果（phase === 'completed' 时提供） */
+  result?: KlineBatchStockResult;
+}
+
+/**
  * K线数据API类型 - 通过 preload contextBridge 暴露给渲染进程
  */
 export interface KlineAPI {
@@ -799,6 +873,18 @@ export interface KlineAPI {
    * @returns 取消订阅函数（调用即移除监听，避免内存泄漏）
    */
   onKlineUpdated(callback: (payload: { stockCode: string; adjustTypes: ('' | 'qfq')[] }) => void): () => void;
+  /**
+   * 批量下载多只股票的K线数据（主进程串行执行）
+   * @param input 批量下载参数（股票代码列表、日期范围、复权类型）
+   * @returns 批量下载汇总结果（含逐只结果）
+   */
+  downloadKlineBatch(input: KlineBatchDownloadInput): Promise<KlineBatchDownloadSummary>;
+  /**
+   * 订阅批量下载进度事件（主进程每只股票开始/完成时广播）
+   * @param callback 回调，参数为进度负载
+   * @returns 取消订阅函数（调用即移除监听，避免内存泄漏）
+   */
+  onBatchDownloadProgress(callback: (payload: KlineBatchProgressPayload) => void): () => void;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AddTradeResult, CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategyAPI, IndexData, KlineAPI, KlineDownloadInput, OpenResult, PositionResult, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
+import type { AddTradeResult, CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategyAPI, IndexData, KlineAPI, KlineBatchDownloadInput, KlineBatchProgressPayload, KlineDownloadInput, OpenResult, PositionResult, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
 
 // LogAPI 本地定义
 interface LogReadResult {
@@ -302,6 +302,13 @@ const klineAPI: KlineAPI = {
     const handler = (_event: Electron.IpcRendererEvent, payload: { stockCode: string; adjustTypes: ('' | 'qfq')[] }) => callback(payload);
     ipcRenderer.on('kline:updated', handler);
     return () => ipcRenderer.removeListener('kline:updated', handler);
+  },
+  downloadKlineBatch: (input: KlineBatchDownloadInput) =>
+    ipcRenderer.invoke('kline:download-batch', input),
+  onBatchDownloadProgress: (callback: (payload: KlineBatchProgressPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: KlineBatchProgressPayload) => callback(payload);
+    ipcRenderer.on('kline:batch-progress', handler);
+    return () => ipcRenderer.removeListener('kline:batch-progress', handler);
   },
 };
 

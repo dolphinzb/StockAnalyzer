@@ -12,7 +12,13 @@
 import { BrowserWindow } from 'electron';
 import log from 'electron-log';
 import { StockSDK } from 'stock-sdk';
-import type { KlineData, KlineDownloadResult } from '../../shared/types';
+import type {
+  KlineBatchDownloadSummary,
+  KlineBatchProgressPayload,
+  KlineBatchStockResult,
+  KlineData,
+  KlineDownloadResult
+} from '../../shared/types';
 import { isFund } from '../../shared/utils/securities';
 import { getWatchlist, saveKlineData, getChartData as dbGetChartData } from '../database';
 
@@ -73,24 +79,11 @@ function getStockCodeWithPrefix(stockCode: string): string {
 }
 
 /**
- * 判断股票代码是否为A股（已废弃，使用 isValidSecurityCode 替代）
- * @deprecated 请使用 isValidSecurityCode()
- * A股代码规则：6位数字，以0（深市主板）、3（创业板）、6（沪市主板）开头
- * @param stockCode 股票代码
- * @returns 是否为A股
+ * 验证证券代码是否合法（6位数字 + 支持的A股/基金类型）
+ * @param stockCode 证券代码
+ * @throws 代码无效时抛出错误
  */
-function isAStockCode(stockCode: string): boolean {
-  return /^\d{6}$/.test(stockCode) && /^[036]/.test(stockCode);
-}
-
-/**
- * 验证下载输入参数
- * @param stockCode 股票代码
- * @param startDate 开始日期 (YYYYMMDD)
- * @param endDate 结束日期 (YYYYMMDD)
- * @throws 参数无效时抛出错误
- */
-export function validateDownloadInput(stockCode: string, startDate: string, endDate: string): void {
+export function validateSecurityCode(stockCode: string): void {
   // 验证股票代码为6位数字
   if (!stockCode || !/^\d{6}$/.test(stockCode)) {
     throw new Error('INVALID_STOCK_CODE: 股票代码必须为6位数字');
@@ -100,7 +93,16 @@ export function validateDownloadInput(stockCode: string, startDate: string, endD
   if (!isValidSecurityCode(stockCode)) {
     throw new Error('INVALID_STOCK_CODE: 不支持的证券类型，仅支持A股和基金');
   }
+}
 
+/**
+ * 验证日期范围（格式、先后顺序、不得晚于当前日期）
+ * 单只下载与批量下载共用，保证校验口径一致
+ * @param startDate 开始日期 (YYYYMMDD)
+ * @param endDate 结束日期 (YYYYMMDD)
+ * @throws 日期无效时抛出错误
+ */
+export function validateDateRange(startDate: string, endDate: string): void {
   // 验证开始日期格式
   if (!startDate || !/^\d{8}$/.test(startDate)) {
     throw new Error('INVALID_DATE_RANGE: 开始日期格式无效，应为YYYYMMDD');
@@ -121,6 +123,18 @@ export function validateDownloadInput(stockCode: string, startDate: string, endD
   if (endDate > today) {
     throw new Error('INVALID_DATE_RANGE: 结束日期不能晚于当前日期');
   }
+}
+
+/**
+ * 验证下载输入参数
+ * @param stockCode 股票代码
+ * @param startDate 开始日期 (YYYYMMDD)
+ * @param endDate 结束日期 (YYYYMMDD)
+ * @throws 参数无效时抛出错误
+ */
+export function validateDownloadInput(stockCode: string, startDate: string, endDate: string): void {
+  validateSecurityCode(stockCode);
+  validateDateRange(startDate, endDate);
 }
 
 /**
@@ -301,24 +315,258 @@ export async function isTradingDay(): Promise<boolean> {
  * @param stockCode 股票代码
  * @param startDate 开始日期 (YYYYMMDD)
  * @param endDate 结束日期 (YYYYMMDD)
+ * @param adjustTypes 复权类型数组（可选，默认 ['', 'qfq']）
  * @returns 下载结果
  */
-export async function downloadWithRetry(stockCode: string, startDate: string, endDate: string): Promise<KlineDownloadResult> {
+export async function downloadWithRetry(
+  stockCode: string,
+  startDate: string,
+  endDate: string,
+  adjustTypes?: ('' | 'qfq')[]
+): Promise<KlineDownloadResult> {
   // 首次尝试
-  let result = await downloadKline(stockCode, startDate, endDate);
+  let result = await downloadKline(stockCode, startDate, endDate, adjustTypes);
 
   // 首次失败时重试1次
   if (!result.success) {
     log.info(`K线数据下载重试: ${stockCode}`);
-    result = await downloadKline(stockCode, startDate, endDate);
+    result = await downloadKline(stockCode, startDate, endDate, adjustTypes);
+  }
+
+  return result;
+}
+
+/** 批量下载互斥标志：同一时刻只允许一个批量任务（手动批量或定时自动） */
+let batchDownloading = false;
+
+/** 批量下载可选配置 */
+export interface DownloadBatchOptions {
+  /** 单只失败是否重试1次（默认 false；定时自动下载传 true） */
+  retry?: boolean;
+  /** 逐只进度回调（每只开始/完成时触发） */
+  onProgress?: (payload: KlineBatchProgressPayload) => void;
+}
+
+/**
+ * 判断当前是否已有批量下载任务在执行
+ * @returns 是否有批量下载任务进行中
+ */
+export function isBatchDownloading(): boolean {
+  return batchDownloading;
+}
+
+/**
+ * 验证批量下载输入参数（整批预校验，任一非法则整批拒绝）
+ * @param stockCodes 股票代码列表
+ * @param startDate 开始日期 (YYYYMMDD)
+ * @param endDate 结束日期 (YYYYMMDD)
+ * @param adjustTypes 复权类型数组（可选）
+ * @throws 参数无效时抛出错误
+ */
+export function validateBatchDownloadInput(
+  stockCodes: string[],
+  startDate: string,
+  endDate: string,
+  adjustTypes?: ('' | 'qfq')[]
+): void {
+  if (!Array.isArray(stockCodes) || stockCodes.length === 0) {
+    throw new Error('INVALID_STOCK_CODES: 请至少选择一只股票');
+  }
+
+  if (adjustTypes && adjustTypes.length === 0) {
+    throw new Error('INVALID_ADJUST_TYPES: 请至少选择一种复权类型');
+  }
+
+  validateDateRange(startDate, endDate);
+
+  for (const stockCode of stockCodes) {
+    validateSecurityCode(stockCode);
+  }
+}
+
+/**
+ * 构建单只股票的批量下载结果
+ * 成功判定：所选复权类型中至少一种返回条数大于0。
+ * 接口未抛错但所选复权类型均返回0条时视为失败（与自动下载统计口径一致）。
+ * @param downloadResult 单只下载结果
+ * @param stockCode 股票代码
+ * @param stockName 股票名称
+ * @param adjustTypes 本次请求的复权类型
+ * @returns 批量下载中的单只结果
+ */
+export function buildBatchStockResult(
+  downloadResult: KlineDownloadResult,
+  stockCode: string,
+  stockName: string,
+  adjustTypes: ('' | 'qfq')[]
+): KlineBatchStockResult {
+  const typesToCheck = adjustTypes.length > 0 ? adjustTypes : (['', 'qfq'] as ('' | 'qfq')[]);
+  const result: KlineBatchStockResult = {
+    stockCode,
+    stockName,
+    success: false,
+  };
+
+  if (typesToCheck.includes('')) {
+    result.unadjustedCount = downloadResult.unadjustedCount ?? 0;
+    if (downloadResult.unadjustedError) {
+      result.unadjustedError = downloadResult.unadjustedError;
+    }
+  }
+
+  if (typesToCheck.includes('qfq')) {
+    result.adjustedCount = downloadResult.adjustedCount ?? 0;
+    if (downloadResult.adjustedError) {
+      result.adjustedError = downloadResult.adjustedError;
+    }
+  }
+
+  result.success = typesToCheck.some(type =>
+    type === '' ? (result.unadjustedCount ?? 0) > 0 : (result.adjustedCount ?? 0) > 0
+  );
+
+  if (!result.success) {
+    const errors: string[] = [];
+    if (typesToCheck.includes('') && result.unadjustedError) {
+      errors.push(`不复权: ${result.unadjustedError}`);
+    }
+    if (typesToCheck.includes('qfq') && result.adjustedError) {
+      errors.push(`前复权: ${result.adjustedError}`);
+    }
+    result.error = errors.length > 0 ? errors.join('; ') : (downloadResult.error || '未获取到K线数据');
   }
 
   return result;
 }
 
 /**
+ * 汇总批量下载结果
+ * @param results 逐只下载结果（按请求顺序）
+ * @returns 批量下载汇总结果（全部成功时 success 为 true）
+ */
+export function buildBatchSummary(results: KlineBatchStockResult[]): KlineBatchDownloadSummary {
+  const successCount = results.filter(result => result.success).length;
+  const failedCount = results.length - successCount;
+
+  return {
+    success: failedCount === 0,
+    total: results.length,
+    successCount,
+    failedCount,
+    results,
+  };
+}
+
+/**
+ * 安全触发进度回调（回调异常不影响下载流程）
+ * @param onProgress 进度回调
+ * @param payload 进度负载
+ */
+function emitProgress(
+  onProgress: ((payload: KlineBatchProgressPayload) => void) | undefined,
+  payload: KlineBatchProgressPayload
+): void {
+  if (!onProgress) return;
+
+  try {
+    onProgress(payload);
+  } catch (error) {
+    log.warn(`批量下载进度回调异常: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * 批量下载多只股票的K线数据
+ * - 整批预校验（日期、复权类型、证券代码），任一非法则整批不启动
+ * - 按入参顺序串行下载（避免并发触发数据源限流）
+ * - 每只开始/完成时通过 onProgress 推送进度
+ * - 与定时自动下载共享互斥标志，同一时刻只允许一个批量任务
+ * @param stocks 待下载的股票列表（代码 + 名称）
+ * @param startDate 开始日期 (YYYYMMDD)
+ * @param endDate 结束日期 (YYYYMMDD)
+ * @param adjustTypes 复权类型数组
+ * @param options 可选配置（重试、进度回调）
+ * @returns 批量下载汇总结果
+ */
+export async function downloadBatch(
+  stocks: { stockCode: string; stockName: string }[],
+  startDate: string,
+  endDate: string,
+  adjustTypes: ('' | 'qfq')[],
+  options: DownloadBatchOptions = {}
+): Promise<KlineBatchDownloadSummary> {
+  // 互斥：已有批量任务（手动或定时）在执行时直接拒绝
+  if (batchDownloading) {
+    throw new Error('BATCH_DOWNLOAD_IN_PROGRESS: 已有批量下载任务正在进行中');
+  }
+
+  const typesToDownload = adjustTypes.length > 0 ? adjustTypes : (['', 'qfq'] as ('' | 'qfq')[]);
+
+  // 整批预校验：任一非法则整批不启动
+  validateBatchDownloadInput(stocks.map(stock => stock.stockCode), startDate, endDate, typesToDownload);
+
+  batchDownloading = true;
+  const total = stocks.length;
+  const results: KlineBatchStockResult[] = [];
+
+  log.info(`开始批量下载K线数据: 共 ${total} 只, ${startDate} ~ ${endDate}, 复权类型: ${typesToDownload.map(type => (type === '' ? '不复权' : '前复权')).join(', ')}`);
+
+  try {
+    for (let i = 0; i < stocks.length; i++) {
+      const stock = stocks[i];
+      const index = i + 1;
+
+      emitProgress(options.onProgress, {
+        phase: 'started',
+        index,
+        total,
+        stockCode: stock.stockCode,
+        stockName: stock.stockName,
+      });
+
+      let downloadResult: KlineDownloadResult;
+      try {
+        downloadResult = options.retry
+          ? await downloadWithRetry(stock.stockCode, startDate, endDate, typesToDownload)
+          : await downloadKline(stock.stockCode, startDate, endDate, typesToDownload);
+      } catch (error) {
+        downloadResult = {
+          success: false,
+          error: error instanceof Error ? error.message : '未知错误',
+        };
+      }
+
+      const result = buildBatchStockResult(downloadResult, stock.stockCode, stock.stockName, typesToDownload);
+      results.push(result);
+
+      emitProgress(options.onProgress, {
+        phase: 'completed',
+        index,
+        total,
+        stockCode: stock.stockCode,
+        stockName: stock.stockName,
+        result,
+      });
+    }
+  } finally {
+    batchDownloading = false;
+  }
+
+  const summary = buildBatchSummary(results);
+  log.info(`批量下载K线数据完成: 共 ${summary.total} 只, 成功 ${summary.successCount} 只, 失败 ${summary.failedCount} 只`);
+
+  for (const result of results) {
+    if (!result.success) {
+      log.info(`  下载失败: ${result.stockCode} ${result.stockName} - ${result.error || '未知错误'}`);
+    }
+  }
+
+  return summary;
+}
+
+/**
  * 执行自动下载所有自选股当日K线数据
- * 串行逐只下载两种复权类型（股票A不复权→前复权→股票B...），失败重试1次，结果记录到日志
+ * 复用 downloadBatch：串行逐只下载两种复权类型，失败重试1次，结果记录到日志
  */
 export async function performAutoDownload(): Promise<void> {
   log.info('开始执行K线数据自动下载（双复权类型）...');
@@ -340,79 +588,44 @@ export async function performAutoDownload(): Promise<void> {
   // 获取今天的日期 (YYYYMMDD)
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
 
-  // 分别统计不复权和前复权的成功/失败数量
-  let unadjustedSuccessCount = 0;
-  let unadjustedFailCount = 0;
-  let adjustedSuccessCount = 0;
-  let adjustedFailCount = 0;
-  
-  const unadjustedFailedStocks: { stockCode: string; stockName: string; error: string }[] = [];
-  const adjustedFailedStocks: { stockCode: string; stockName: string; error: string }[] = [];
-
-  // 串行逐只下载：每只股票依次下载不复权→前复权
-  for (const stock of watchlist) {
-    try {
-      const result = await downloadWithRetry(stock.stockCode, today, today);
-      
-      // 统计不复权结果
-      if (result.unadjustedCount !== undefined && result.unadjustedCount > 0) {
-        unadjustedSuccessCount++;
-      } else {
-        unadjustedFailCount++;
-        unadjustedFailedStocks.push({
-          stockCode: stock.stockCode,
-          stockName: stock.stockName,
-          error: result.unadjustedError || '未知错误',
-        });
-      }
-      
-      // 统计前复权结果
-      if (result.adjustedCount !== undefined && result.adjustedCount > 0) {
-        adjustedSuccessCount++;
-      } else {
-        adjustedFailCount++;
-        adjustedFailedStocks.push({
-          stockCode: stock.stockCode,
-          stockName: stock.stockName,
-          error: result.adjustedError || '未知错误',
-        });
-      }
-    } catch (error) {
-      // 异常情况下，两种复权类型都标记为失败
-      unadjustedFailCount++;
-      adjustedFailCount++;
-      const errorMsg = error instanceof Error ? error.message : '未知错误';
-      unadjustedFailedStocks.push({
-        stockCode: stock.stockCode,
-        stockName: stock.stockName,
-        error: errorMsg,
-      });
-      adjustedFailedStocks.push({
-        stockCode: stock.stockCode,
-        stockName: stock.stockName,
-        error: errorMsg,
-      });
+  let summary: KlineBatchDownloadSummary;
+  try {
+    summary = await downloadBatch(
+      watchlist.map(stock => ({ stockCode: stock.stockCode, stockName: stock.stockName })),
+      today,
+      today,
+      ['', 'qfq'],
+      { retry: true }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.startsWith('BATCH_DOWNLOAD_IN_PROGRESS')) {
+      log.info('已有批量下载任务正在进行中，跳过本次自动下载');
+      return;
     }
+    log.error(`K线数据自动下载失败: ${message}`);
+    return;
   }
+
+  // 按复权类型统计（口径与批量下载一致：条数 > 0 计成功）
+  const unadjustedFailedStocks = summary.results.filter(result => (result.unadjustedCount ?? 0) <= 0);
+  const adjustedFailedStocks = summary.results.filter(result => (result.adjustedCount ?? 0) <= 0);
+  const unadjustedSuccessCount = summary.total - unadjustedFailedStocks.length;
+  const adjustedSuccessCount = summary.total - adjustedFailedStocks.length;
 
   // 记录汇总日志
-  const totalCount = watchlist.length;
-  log.info(`K线数据自动下载完成，共 ${totalCount} 只股票`);
-  log.info(`  不复权: ${unadjustedSuccessCount} 只成功, ${unadjustedFailCount} 只失败`);
-  log.info(`  前复权: ${adjustedSuccessCount} 只成功, ${adjustedFailCount} 只失败`);
-  
+  log.info(`K线数据自动下载完成，共 ${summary.total} 只股票`);
+  log.info(`  不复权: ${unadjustedSuccessCount} 只成功, ${unadjustedFailedStocks.length} 只失败`);
+  log.info(`  前复权: ${adjustedSuccessCount} 只成功, ${adjustedFailedStocks.length} 只失败`);
+
   // 记录不复权失败的股票
-  if (unadjustedFailedStocks.length > 0) {
-    for (const failed of unadjustedFailedStocks) {
-      log.info(`  不复权失败: ${failed.stockCode} ${failed.stockName} - ${failed.error}`);
-    }
+  for (const failed of unadjustedFailedStocks) {
+    log.info(`  不复权失败: ${failed.stockCode} ${failed.stockName} - ${failed.unadjustedError || failed.error || '未知错误'}`);
   }
-  
+
   // 记录前复权失败的股票
-  if (adjustedFailedStocks.length > 0) {
-    for (const failed of adjustedFailedStocks) {
-      log.info(`  前复权失败: ${failed.stockCode} ${failed.stockName} - ${failed.error}`);
-    }
+  for (const failed of adjustedFailedStocks) {
+    log.info(`  前复权失败: ${failed.stockCode} ${failed.stockName} - ${failed.adjustedError || failed.error || '未知错误'}`);
   }
 }
 

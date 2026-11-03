@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import IndexStatusBar from '../components/IndexStatusBar.vue';
+import KlineBatchDownloadDialog from '../components/KlineBatchDownloadDialog.vue';
 import KlineChartDialog from '../components/KlineChartDialog.vue';
 import KlineDownloadDialog from '../components/KlineDownloadDialog.vue';
 import RefreshButton from '../components/RefreshButton.vue';
@@ -21,6 +22,12 @@ const editingStock = ref<number | null>(null);
 // K线下载对话框状态
 const showKlineDialog = ref(false);
 const klineDownloadStock = ref<{ stockCode: string; stockName: string }>({ stockCode: '', stockName: '' });
+
+// 批量下载对话框状态
+const showBatchDialog = ref(false);
+const batchStocks = computed(() =>
+  store.sortedStocks.map(stock => ({ stockCode: stock.stockCode, stockName: stock.stockName }))
+);
 
 const sortedStocks = computed(() => store.sortedStocks);
 const lastRefreshTime = computed(() => store.lastRefreshTime);
@@ -120,6 +127,35 @@ async function handleKlineDownload(payload: {
   }
 }
 
+/** 打开批量下载弹窗（清空上次的逐只状态与汇总） */
+function handleOpenBatchDownload() {
+  if (store.isBatchDownloading) return;
+  store.resetBatchDownloadState();
+  showBatchDialog.value = true;
+}
+
+/** 处理批量下载确认，完成后用 Toast 汇总提示 */
+async function handleBatchDownload(payload: {
+  stockCodes: string[];
+  startDate: string;
+  endDate: string;
+  adjustTypes: ('' | 'qfq')[];
+}) {
+  const summary = await store.downloadKlineBatch(payload);
+
+  // 整体失败（参数校验/任务互斥等），逐只原因保留在弹窗内
+  if (summary.error && summary.results.length === 0) {
+    showToast(`批量下载失败：${summary.error}`, 'error', 0);
+    return;
+  }
+
+  if (summary.failedCount === 0) {
+    showToast(`批量下载完成，成功 ${summary.successCount} 只`, 'success', 3000);
+  } else {
+    showToast(`批量下载完成，成功 ${summary.successCount} 只，失败 ${summary.failedCount} 只`, 'error', 0);
+  }
+}
+
 /** 处理股票名称点击，打开K线弹窗 */
 function handleShowKlineChart(stockCode: string, stockName: string) {
   store.openKlineChart(stockCode, stockName);
@@ -140,6 +176,13 @@ function handleCloseKlineChart() {
           最后刷新: {{ new Date(lastRefreshTime).toLocaleString() }}
         </span>
         <RefreshButton @refresh="store.refreshPrices" :loading="isRefreshing" />
+        <button
+          class="btn-secondary"
+          :disabled="sortedStocks.length === 0 || store.isBatchDownloading"
+          @click="handleOpenBatchDownload"
+        >
+          下载K线
+        </button>
         <button class="btn-add" @click="handleAddStock">添加股票</button>
       </div>
     </header>
@@ -166,6 +209,13 @@ function handleCloseKlineChart() {
       :stock-code="klineDownloadStock.stockCode"
       :stock-name="klineDownloadStock.stockName"
       @download="handleKlineDownload"
+    />
+
+    <KlineBatchDownloadDialog
+      v-model="showBatchDialog"
+      :stocks="batchStocks"
+      :state="store.batchDownloadState"
+      @download="handleBatchDownload"
     />
 
     <KlineChartDialog
@@ -227,6 +277,26 @@ function handleCloseKlineChart() {
 
   &:hover {
     background-color: var(--color-primary-dark);
+  }
+}
+
+.btn-secondary {
+  padding: 0.5rem 1rem;
+  background-color: transparent;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-primary);
+    color: white;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 }
 

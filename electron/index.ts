@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron';
 import log from 'electron-log';
 import fs from 'fs';
 import { join } from 'path';
-import type { AppConfig } from '../shared/types';
+import type { AppConfig, KlineBatchDownloadInput, KlineBatchDownloadSummary } from '../shared/types';
 import {
   addStock,
   closeDatabase,
@@ -42,8 +42,8 @@ import {
   getCycleDetails
 } from './services/historicalTradeService';
 import {
+  downloadBatch,
   downloadKline,
-  getChartData,
   startKlineDownloadScheduler,
   stopKlineDownloadScheduler,
   validateDownloadInput
@@ -740,6 +740,58 @@ ipcMain.handle('kline:download', async (_event, input: {
       success: false,
       error: error instanceof Error ? error.message : '未知错误',
     };
+  }
+});
+
+/**
+ * 批量下载多只股票的K线数据（主进程串行执行，逐只推送进度）
+ */
+ipcMain.handle('kline:download-batch', async (_event, input: KlineBatchDownloadInput) => {
+  log.info('IPC: kline:download-batch', JSON.stringify({
+    stockCodes: input?.stockCodes,
+    startDate: input?.startDate,
+    endDate: input?.endDate,
+    adjustTypes: input?.adjustTypes,
+  }));
+
+  try {
+    // 批量下载的股票均来自自选股，从数据库补齐名称用于进度展示
+    const nameMap = new Map(getWatchlist().map(stock => [stock.stockCode, stock.stockName]));
+    const stocks = (input?.stockCodes ?? []).map(stockCode => ({
+      stockCode,
+      stockName: nameMap.get(stockCode) ?? '',
+    }));
+
+    return await downloadBatch(
+      stocks,
+      input.startDate,
+      input.endDate,
+      input.adjustTypes ?? ['', 'qfq'],
+      {
+        retry: true,
+        onProgress: payload => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('kline:batch-progress', payload);
+          }
+        },
+      }
+    );
+  } catch (error) {
+    log.error('IPC kline:download-batch error:', error);
+    const rawMessage = error instanceof Error ? error.message : '未知错误';
+    // 互斥错误转换为用户可读提示，其余错误原样返回（含参数校验前缀）
+    const errorMessage = rawMessage.startsWith('BATCH_DOWNLOAD_IN_PROGRESS')
+      ? '已有批量下载任务正在进行中，请稍后再试'
+      : rawMessage;
+    const failedSummary: KlineBatchDownloadSummary = {
+      success: false,
+      total: 0,
+      successCount: 0,
+      failedCount: 0,
+      results: [],
+      error: errorMessage,
+    };
+    return failedSummary;
   }
 });
 

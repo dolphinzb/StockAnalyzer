@@ -17,13 +17,31 @@ import type {
   KlineBatchProgressPayload,
   KlineBatchStockResult,
   KlineData,
-  KlineDownloadResult
+  KlineDownloadResult,
+  KlinePeriod
 } from '../../shared/types';
 import { isFund } from '../../shared/utils/securities';
 import { getWatchlist, saveKlineData, getChartData as dbGetChartData } from '../database';
 
 // StockSDK 模块级单例
 const sdk = new StockSDK();
+
+/**
+ * 内部周期标识 → stock-sdk 周期参数 的显式映射
+ * 禁止隐式字符串拼接，避免周期与数据源参数不一致
+ */
+const SDK_PERIODS: Record<KlinePeriod, 'daily' | 'weekly' | 'monthly'> = {
+  d: 'daily',
+  w: 'weekly',
+  m: 'monthly',
+};
+
+/** 周期中文名（日志用） */
+const PERIOD_LABELS: Record<KlinePeriod, string> = {
+  d: '日线',
+  w: '周线',
+  m: '月线',
+};
 
 /** 获取主窗口（用于向渲染进程广播事件，参考 alertService 模式） */
 function getMainWindow(): BrowserWindow | null {
@@ -156,33 +174,36 @@ async function downloadSingleAdjust(
   stockCode: string,
   startDate: string,
   endDate: string,
-  adjustType: '' | 'qfq'
+  adjustType: '' | 'qfq',
+  period: KlinePeriod = 'd'
 ): Promise<{ success: boolean; count?: number; error?: string }> {
+  const periodLabel = PERIOD_LABELS[period] ?? '日线';
+  const adjustLabel = adjustType === 'qfq' ? '前复权' : '不复权';
   try {
     // 判断证券类型并记录日志
     const securityType = /^(51|15|16|50|52|511)\d{4}$/.test(stockCode) ? '基金' : '股票';
-    log.info(`开始下载${securityType}${adjustType === 'qfq' ? '前复权' : '不复权'}K线数据: ${stockCode}, ${startDate} ~ ${endDate}`);
+    log.info(`开始下载${securityType}${periodLabel}${adjustLabel}K线数据: ${stockCode}, ${startDate} ~ ${endDate}`);
 
     // 为stock-sdk添加市场前缀（基金需要正确的前缀才能获取数据）
     const codeWithPrefix = getStockCodeWithPrefix(stockCode);
     log.info(`使用代码格式: ${codeWithPrefix}`);
 
-    // 调用 stock-sdk 获取K线数据
+    // 调用 stock-sdk 获取K线数据（周期由调用方指定，默认为日线）
     const klines = await sdk.getHistoryKline(codeWithPrefix, {
-      period: 'daily',
+      period: SDK_PERIODS[period],
       adjust: adjustType,
       startDate,
       endDate,
     });
 
-    // 保存到数据库（使用纯数字代码）
-    const count = saveKlineData(stockCode, klines, adjustType);
+    // 保存到数据库（使用纯数字代码，按周期写入对应表）
+    const count = saveKlineData(stockCode, klines, adjustType, period);
 
-    log.info(`${securityType}${adjustType === 'qfq' ? '前复权' : '不复权'}K线数据下载完成: ${stockCode}, 共 ${count} 条`);
+    log.info(`${securityType}${periodLabel}${adjustLabel}K线数据下载完成: ${stockCode}, 共 ${count} 条`);
     return { success: true, count };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '未知错误';
-    log.error(`${adjustType === 'qfq' ? '前复权' : '不复权'}K线数据下载失败: ${stockCode}`, errorMessage);
+    log.error(`${periodLabel}${adjustLabel}K线数据下载失败: ${stockCode}`, errorMessage);
     return { success: false, error: errorMessage };
   }
 }
@@ -199,12 +220,14 @@ export async function downloadKline(
   stockCode: string,
   startDate: string,
   endDate: string,
-  adjustTypes?: ('' | 'qfq')[]
+  adjustTypes?: ('' | 'qfq')[],
+  period: KlinePeriod = 'd'
 ): Promise<KlineDownloadResult> {
   // T112：如果未指定adjustTypes，默认下载两种类型
   const typesToDownload = adjustTypes && adjustTypes.length > 0 ? adjustTypes : ['', 'qfq'];
-  
-  log.info(`开始下载K线数据: ${stockCode}, ${startDate} ~ ${endDate}, 复权类型: ${typesToDownload.map(t => t === '' ? '不复权' : '前复权').join(', ')}`);
+  const periodLabel = PERIOD_LABELS[period] ?? '日线';
+
+  log.info(`开始下载${periodLabel}K线数据: ${stockCode}, ${startDate} ~ ${endDate}, 复权类型: ${typesToDownload.map(t => t === '' ? '不复权' : '前复权').join(', ')}`);
 
   // T112：遍历adjustTypes数组，依次下载每种复权类型
   let unadjustedCount: number | undefined;
@@ -214,7 +237,7 @@ export async function downloadKline(
   let overallSuccess = false;
 
   for (const adjustType of typesToDownload) {
-    const result = await downloadSingleAdjust(stockCode, startDate, endDate, adjustType as '' | 'qfq');
+    const result = await downloadSingleAdjust(stockCode, startDate, endDate, adjustType as '' | 'qfq', period);
     
     if (adjustType === '') {
       // 不复权
@@ -258,7 +281,7 @@ export async function downloadKline(
     result.error = errors.join('; ') || '未知错误';
   }
 
-  log.info(`K线数据下载完成: ${stockCode}, 不复权=${unadjustedCount || 0}条, 前复权=${adjustedCount || 0}条`);
+  log.info(`${periodLabel}K线数据下载完成: ${stockCode}, 不复权=${unadjustedCount || 0}条, 前复权=${adjustedCount || 0}条`);
 
   // 下载成功后广播 kline:updated，通知形态检测等消费方刷新缓存的 K 线数据
   // （覆盖手动下载与自动调度两条路径，二者都经过此函数）
@@ -268,8 +291,9 @@ export async function downloadKline(
       mainWindow.webContents.send('kline:updated', {
         stockCode,
         adjustTypes: typesToDownload,
+        periods: [period],
       });
-      log.info(`已广播 kline:updated 事件: ${stockCode}`);
+      log.info(`已广播 kline:updated 事件: ${stockCode}, 周期: ${period}`);
     }
   }
 
@@ -322,15 +346,16 @@ export async function downloadWithRetry(
   stockCode: string,
   startDate: string,
   endDate: string,
-  adjustTypes?: ('' | 'qfq')[]
+  adjustTypes?: ('' | 'qfq')[],
+  period: KlinePeriod = 'd'
 ): Promise<KlineDownloadResult> {
   // 首次尝试
-  let result = await downloadKline(stockCode, startDate, endDate, adjustTypes);
+  let result = await downloadKline(stockCode, startDate, endDate, adjustTypes, period);
 
   // 首次失败时重试1次
   if (!result.success) {
     log.info(`K线数据下载重试: ${stockCode}`);
-    result = await downloadKline(stockCode, startDate, endDate, adjustTypes);
+    result = await downloadKline(stockCode, startDate, endDate, adjustTypes, period);
   }
 
   return result;
@@ -398,12 +423,14 @@ export function buildBatchStockResult(
   downloadResult: KlineDownloadResult,
   stockCode: string,
   stockName: string,
-  adjustTypes: ('' | 'qfq')[]
+  adjustTypes: ('' | 'qfq')[],
+  period: KlinePeriod = 'd'
 ): KlineBatchStockResult {
   const typesToCheck = adjustTypes.length > 0 ? adjustTypes : (['', 'qfq'] as ('' | 'qfq')[]);
   const result: KlineBatchStockResult = {
     stockCode,
     stockName,
+    period,
     success: false,
   };
 
@@ -493,6 +520,7 @@ export async function downloadBatch(
   startDate: string,
   endDate: string,
   adjustTypes: ('' | 'qfq')[],
+  period: KlinePeriod = 'd',
   options: DownloadBatchOptions = {}
 ): Promise<KlineBatchDownloadSummary> {
   // 互斥：已有批量任务（手动或定时）在执行时直接拒绝
@@ -508,8 +536,9 @@ export async function downloadBatch(
   batchDownloading = true;
   const total = stocks.length;
   const results: KlineBatchStockResult[] = [];
+  const periodLabel = PERIOD_LABELS[period] ?? '日线';
 
-  log.info(`开始批量下载K线数据: 共 ${total} 只, ${startDate} ~ ${endDate}, 复权类型: ${typesToDownload.map(type => (type === '' ? '不复权' : '前复权')).join(', ')}`);
+  log.info(`开始批量下载${periodLabel}K线数据: 共 ${total} 只, ${startDate} ~ ${endDate}, 复权类型: ${typesToDownload.map(type => (type === '' ? '不复权' : '前复权')).join(', ')}`);
 
   try {
     for (let i = 0; i < stocks.length; i++) {
@@ -522,13 +551,14 @@ export async function downloadBatch(
         total,
         stockCode: stock.stockCode,
         stockName: stock.stockName,
+        period,
       });
 
       let downloadResult: KlineDownloadResult;
       try {
         downloadResult = options.retry
-          ? await downloadWithRetry(stock.stockCode, startDate, endDate, typesToDownload)
-          : await downloadKline(stock.stockCode, startDate, endDate, typesToDownload);
+          ? await downloadWithRetry(stock.stockCode, startDate, endDate, typesToDownload, period)
+          : await downloadKline(stock.stockCode, startDate, endDate, typesToDownload, period);
       } catch (error) {
         downloadResult = {
           success: false,
@@ -536,7 +566,7 @@ export async function downloadBatch(
         };
       }
 
-      const result = buildBatchStockResult(downloadResult, stock.stockCode, stock.stockName, typesToDownload);
+      const result = buildBatchStockResult(downloadResult, stock.stockCode, stock.stockName, typesToDownload, period);
       results.push(result);
 
       emitProgress(options.onProgress, {
@@ -545,6 +575,7 @@ export async function downloadBatch(
         total,
         stockCode: stock.stockCode,
         stockName: stock.stockName,
+        period,
         result,
       });
     }
@@ -553,7 +584,7 @@ export async function downloadBatch(
   }
 
   const summary = buildBatchSummary(results);
-  log.info(`批量下载K线数据完成: 共 ${summary.total} 只, 成功 ${summary.successCount} 只, 失败 ${summary.failedCount} 只`);
+  log.info(`批量下载${periodLabel}K线数据完成: 共 ${summary.total} 只, 成功 ${summary.successCount} 只, 失败 ${summary.failedCount} 只`);
 
   for (const result of results) {
     if (!result.success) {
@@ -565,8 +596,42 @@ export async function downloadBatch(
 }
 
 /**
+ * 覆盖重下近端周线与月线
+ * 目的：修正当周/当月尚未形成的最后一根K线（周五月末无需额外调度）
+ * 失败只记录日志，不影响日线下载结果
+ * @param stocks 自选股列表
+ */
+async function refreshRecentPeriodKline(
+  stocks: { stockCode: string; stockName: string }[]
+): Promise<void> {
+  if (stocks.length === 0) return;
+
+  const formatDate = (date: Date): string => date.toISOString().slice(0, 10).replace(/-/g, '');
+  const today = formatDate(new Date());
+  const dayMs = 24 * 60 * 60 * 1000;
+  const weeklyStart = formatDate(new Date(Date.now() - 30 * dayMs));
+  const monthlyStart = formatDate(new Date(Date.now() - 90 * dayMs));
+
+  const tasks: { period: KlinePeriod; startDate: string }[] = [
+    { period: 'w', startDate: weeklyStart },
+    { period: 'm', startDate: monthlyStart },
+  ];
+
+  for (const task of tasks) {
+    try {
+      const summary = await downloadBatch(stocks, task.startDate, today, ['', 'qfq'], task.period, { retry: true });
+      log.info(`近端${PERIOD_LABELS[task.period]}刷新完成: 成功 ${summary.successCount} 只, 失败 ${summary.failedCount} 只`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn(`近端${PERIOD_LABELS[task.period]}刷新失败（不影响日线结果）: ${message}`);
+    }
+  }
+}
+
+/**
  * 执行自动下载所有自选股当日K线数据
  * 复用 downloadBatch：串行逐只下载两种复权类型，失败重试1次，结果记录到日志
+ * 日线完成后追加近端周线/月线覆盖刷新（失败不影响日线判定）
  */
 export async function performAutoDownload(): Promise<void> {
   log.info('开始执行K线数据自动下载（双复权类型）...');
@@ -595,6 +660,7 @@ export async function performAutoDownload(): Promise<void> {
       today,
       today,
       ['', 'qfq'],
+      'd',
       { retry: true }
     );
   } catch (error) {
@@ -627,6 +693,11 @@ export async function performAutoDownload(): Promise<void> {
   for (const failed of adjustedFailedStocks) {
     log.info(`  前复权失败: ${failed.stockCode} ${failed.stockName} - ${failed.adjustedError || failed.error || '未知错误'}`);
   }
+
+  // 日线完成后刷新近端周线/月线（失败仅记日志，不影响日线结果）
+  await refreshRecentPeriodKline(
+    watchlist.map(stock => ({ stockCode: stock.stockCode, stockName: stock.stockName }))
+  );
 }
 
 /**
@@ -682,25 +753,23 @@ export function stopKlineDownloadScheduler(): void {
 }
 
 /**
- * 获取K线图展示数据（支持前复权/不复权）
- * 通过 stock-sdk 的 adjust 参数获取对应复权类型的K线数据
+ * 获取K线图展示数据（从数据库读取，支持周期与前复权/不复权切换）
  * @param stockCode 股票代码（纯数字）
- * @param adjust 复权方式：'qfq' 前复权 | '' 不复权
- * @returns K线数据数组
- */
-/**
- * 获取K线图展示数据（从数据库读取，支持前复权/不复权切换）
- * @param stockCode 股票代码
  * @param adjust 复权类型：'qfq' 前复权 | '' 不复权
+ * @param period K线周期：d 日线 | w 周线 | m 月线（决定查询的数据表）
  * @returns K线数据数组，按交易日期升序排列
  */
-export async function getChartData(stockCode: string, adjust: 'qfq' | ''): Promise<KlineData[]> {
+export async function getChartData(
+  stockCode: string,
+  adjust: 'qfq' | '',
+  period: KlinePeriod = 'd'
+): Promise<KlineData[]> {
   try {
     // adjust 参数已经是数据库使用的格式，无需转换
-    log.info(`获取K线图展示数据（从数据库）: ${stockCode}, 复权方式: ${adjust}`);
+    log.info(`获取K线图展示数据（从数据库）: ${stockCode}, 周期: ${period}, 复权方式: ${adjust}`);
 
-    // 从数据库查询对应复权类型的K线数据
-    const result = dbGetChartData(stockCode, adjust);
+    // 从数据库查询对应周期与复权类型的K线数据
+    const result = dbGetChartData(stockCode, adjust, period);
 
     log.info(`K线图展示数据获取成功: ${stockCode}, 共 ${result.length} 条`);
     return result;

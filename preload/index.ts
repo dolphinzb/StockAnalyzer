@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AddTradeResult, CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategyAPI, IndexData, KlineAPI, KlineBatchDownloadInput, KlineBatchProgressPayload, KlineDownloadInput, OpenResult, PositionResult, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
+import type { AddTradeResult, CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategyAPI, IndexData, KlineAPI, KlineBatchDownloadInput, KlineBatchProgressPayload, KlineDownloadInput, KlinePeriod, OpenResult, PositionResult, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
 
 // LogAPI 本地定义
 interface LogReadResult {
@@ -292,14 +292,14 @@ const fundManagementAPI: FundManagementAPI = {
 const klineAPI: KlineAPI = {
   downloadKline: (input: KlineDownloadInput) =>
     ipcRenderer.invoke('kline:download', input),
-  getKlineData: (stockCode: string, startDate?: string, endDate?: string) =>
-    ipcRenderer.invoke('kline:get-data', stockCode, startDate, endDate),
-  getChartData: (stockCode: string, adjustType: '' | 'qfq') =>
-    ipcRenderer.invoke('kline:get-chart-data', stockCode, adjustType),
+  getKlineData: (stockCode: string, period: KlinePeriod, startDate?: string, endDate?: string) =>
+    ipcRenderer.invoke('kline:get-data', stockCode, period, startDate, endDate),
+  getChartData: (stockCode: string, adjustType: '' | 'qfq', period: KlinePeriod) =>
+    ipcRenderer.invoke('kline:get-chart-data', stockCode, adjustType, period),
   getTradeRecords: (stockCode: string) =>
     ipcRenderer.invoke('kline:get-trade-records', stockCode),
-  onKlineUpdated: (callback: (payload: { stockCode: string; adjustTypes: ('' | 'qfq')[] }) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, payload: { stockCode: string; adjustTypes: ('' | 'qfq')[] }) => callback(payload);
+  onKlineUpdated: (callback: (payload: { stockCode: string; adjustTypes: ('' | 'qfq')[]; periods: KlinePeriod[] }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: { stockCode: string; adjustTypes: ('' | 'qfq')[]; periods: KlinePeriod[] }) => callback(payload);
     ipcRenderer.on('kline:updated', handler);
     return () => ipcRenderer.removeListener('kline:updated', handler);
   },

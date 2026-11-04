@@ -15,7 +15,7 @@
  */
 
 import { onUnmounted, ref, type Ref } from 'vue';
-import type { KlineData, PatternDirection, PatternHit, TradeRecord } from '../../shared/types';
+import type { KlineData, KlinePeriod, PatternDirection, PatternHit, TradeRecord } from '../../shared/types';
 import { getPricePrecision } from '../utils/formatPrice';
 
 /** 绘制配置常量 */
@@ -176,6 +176,8 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
 
   /** 当前K线数据 */
   let klineData: KlineData[] = [];
+  /** 当前K线周期（影响日期轴格式、交易标记归集与形态标记显隐） */
+  let currentPeriod: KlinePeriod = 'd';
   /** 当前交易记录 */
   let tradeRecords: TradeRecord[] = [];
   /** 当前形态命中（来自 setPatternMarkers，独立于交易标注） */
@@ -195,10 +197,12 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
    * 设置数据并触发重绘
    * @param klines K线数据
    * @param trades 交易记录
+   * @param period K线周期（影响日期轴格式、交易标记归集与形态标记显隐）
    */
-  function setData(klines: KlineData[], trades: TradeRecord[]): void {
+  function setData(klines: KlineData[], trades: TradeRecord[], period: KlinePeriod = 'd'): void {
     klineData = klines;
     tradeRecords = trades;
+    currentPeriod = period;
     // 默认显示最新数据（offsetX=0 表示最新数据在右侧）
     offsetX.value = 0;
     // 重置缩放级别为默认值
@@ -350,8 +354,8 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     // 绘制成交量柱状图（使用动态步长）
     drawVolume(ctx, visibleKlines, volumeAreaTop, volumeAreaHeight, volumeMax, dynamicCandleStep);
 
-    // 绘制交易标注（使用动态步长）
-    drawTradeMarkers(ctx, visibleKlines, candleAreaHeight, adjustedPriceMin, adjustedPriceRange, dynamicCandleStep);
+    // 绘制交易标注（使用动态步长；传入窗口起始索引用于周/月线归集判断）
+    drawTradeMarkers(ctx, visibleKlines, Math.max(0, startIdx), candleAreaHeight, adjustedPriceMin, adjustedPriceRange, dynamicCandleStep);
 
     // 绘制形态标注（独立图层，使用与交易标注不同的图形与纵向偏移，避免视觉冲突）
     drawPatternMarkers(ctx, visibleKlines, Math.max(0, startIdx), candleAreaHeight, adjustedPriceMin, adjustedPriceRange, dynamicCandleStep);
@@ -491,24 +495,49 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
   }
 
   /**
+   * 解析交易记录在当前周期下应归属的K线索引（全局序列下标）
+   * - 日线：交易日期与K线日期完全相等
+   * - 周线/月线：取第一根 tradeDate >= 交易日的K线（即该笔交易所属周/月的最后一根）
+   * @param tradeDate 交易日期 (YYYY-MM-DD)
+   * @returns 全局K线索引；无法归属时返回 -1
+   */
+  function resolveTradeKlineIndex(tradeDate: string): number {
+    if (currentPeriod === 'd') {
+      return klineData.findIndex(k => k.tradeDate === tradeDate);
+    }
+    return klineData.findIndex(k => k.tradeDate >= tradeDate);
+  }
+
+  /**
    * 绘制交易标注（B/S/D）
    * 在K线蜡烛图对应日期位置叠加绘制交易点标记
+   * 周线/月线视图下，同一根K线可能归集多笔交易，同类型标记只绘制一次
+   * @param startIdx 可见窗口第一根K线在全局序列中的下标
    * @param dynamicCandleStep 动态蜡烛步长（根据缩放级别计算）
    */
   function drawTradeMarkers(
     ctx: CanvasRenderingContext2D,
     visibleKlines: KlineData[],
+    startIdx: number,
     candleAreaHeight: number,
     priceMin: number,
     priceRange: number,
     dynamicCandleStep: number
   ): void {
     markerAreas = []; // 重置标注区域缓存
+    const drawnMarkerKeys = new Set<string>(); // 同柱同类型标记去重
 
     for (const record of tradeRecords) {
-      // 查找交易日期对应的K线索引
-      const klineIndex = visibleKlines.findIndex(k => k.tradeDate === record.tradeDate);
-      if (klineIndex === -1) continue; // 交易日期不在可见K线范围内
+      // 解析该笔交易在当前周期下归属的K线（周/月线归集到所属周期的最后一根）
+      const globalIndex = resolveTradeKlineIndex(record.tradeDate);
+      if (globalIndex === -1) continue;
+      const klineIndex = globalIndex - startIdx;
+      if (klineIndex < 0 || klineIndex >= visibleKlines.length) continue; // 不在可见窗口内
+
+      // 同一根K线上的同类型标记只绘制一次，避免多笔交易完全重叠
+      const markerKey = `${klineIndex}:${record.tradeType}`;
+      if (drawnMarkerKeys.has(markerKey)) continue;
+      drawnMarkerKeys.add(markerKey);
 
       const kline = visibleKlines[klineIndex];
       const x = klineIndex * dynamicCandleStep + dynamicCandleStep / 2;
@@ -582,6 +611,9 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     dynamicCandleStep: number
   ): void {
     patternMarkerAreas = [];
+
+    // 形态识别以日线序列为前提，周线/月线视图下不渲染形态标记（避免索引错位误标）
+    if (currentPeriod !== 'd') return;
 
     if (patternHits.length === 0 || visibleKlines.length === 0) return;
 
@@ -741,8 +773,10 @@ export function useKlineChart(canvasRef: Ref<HTMLCanvasElement | null>) {
     for (let i = 0; i < visibleKlines.length; i += dateStep) {
       const x = i * dynamicCandleStep + dynamicCandleStep / 2;
       const dateStr = visibleKlines[i].tradeDate;
-      // 格式化为 MM-DD
-      const formatted = dateStr.length >= 10 ? dateStr.slice(5, 10) : dateStr;
+      // 日期轴格式随周期变化：月线 YYYY-MM，日线/周线 MM-DD
+      const formatted = currentPeriod === 'm'
+        ? (dateStr.length >= 7 ? dateStr.slice(0, 7) : dateStr)
+        : (dateStr.length >= 10 ? dateStr.slice(5, 10) : dateStr);
       ctx.fillText(formatted, x, dateAxisTop + 18);
     }
   }

@@ -9,6 +9,7 @@ import StockEditor from '../components/StockEditor.vue';
 import StockList from '../components/StockList.vue';
 import { useToast } from '../composables/useToast';
 import { useWatchlistStore } from '../stores/watchlist';
+import { KLINE_PERIOD_LABELS, type KlinePeriod } from '../types';
 
 defineOptions({
   name: 'WatchlistView'
@@ -94,12 +95,14 @@ async function handleKlineDownload(payload: {
   startDate: string;
   endDate: string;
   adjustTypes: ('' | 'qfq')[];
+  period: KlinePeriod;
 }) {
   const result = await store.downloadKline(
     payload.stockCode,
     payload.startDate,
     payload.endDate,
-    payload.adjustTypes
+    payload.adjustTypes,
+    payload.period
   );
 
   // T109-T110：根据用户选择的复权类型显示结果
@@ -111,7 +114,7 @@ async function handleKlineDownload(payload: {
     if (payload.adjustTypes.includes('qfq') && result.adjustedCount !== undefined) {
       parts.push(`${result.adjustedCount} 条前复权数据`);
     }
-    const message = `下载完成，共获取 ${parts.join('，')}`;
+    const message = `${KLINE_PERIOD_LABELS[payload.period]}下载完成，共获取 ${parts.join('，')}`;
     showToast(message, 'success', 3000);
   } else {
     // 部分失败或全部失败
@@ -140,6 +143,7 @@ async function handleBatchDownload(payload: {
   startDate: string;
   endDate: string;
   adjustTypes: ('' | 'qfq')[];
+  period: KlinePeriod;
 }) {
   const summary = await store.downloadKlineBatch(payload);
 

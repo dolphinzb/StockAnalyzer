@@ -16,7 +16,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import Modal from './Modal.vue';
 import { useKlineChart, type KlineTooltipInfo, type TooltipInfo } from '../composables/useKlineChart';
 import { getPricePrecision } from '../utils/formatPrice';
-import type { KlineData, TradeRecord } from '../types';
+import { KLINE_PERIODS, KLINE_PERIOD_LABELS, type KlineData, type KlinePeriod, type TradeRecord } from '../types';
 
 const props = defineProps<{
   /** 是否显示弹窗 */
@@ -38,6 +38,8 @@ const pricePrecision = computed(() => getPricePrecision(props.stockCode));
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 /** 当前复权方式 */
 const adjustType = ref<'' | 'qfq'>('qfq');
+/** 当前K线周期（默认日线） */
+const period = ref<KlinePeriod>('d');
 /** 是否正在加载数据 */
 const isLoading = ref(false);
 /** 是否无数据 */
@@ -73,6 +75,16 @@ const klineTooltipInfo = ref<KlineTooltipInfo>({
 });
 
 /**
+ * 构建空数据提示文案（同时体现周期与复权类型）
+ * @param adjust 复权类型
+ * @param p K线周期
+ */
+function buildEmptyMessage(adjust: '' | 'qfq', p: KlinePeriod): string {
+  const adjustLabel = adjust === 'qfq' ? '前复权' : '不复权';
+  return `暂无${KLINE_PERIOD_LABELS[p]}${adjustLabel}数据，请先下载`;
+}
+
+/**
  * 加载K线数据和交易记录
  */
 async function loadChartData(showEmptyMsg = true): Promise<void> {
@@ -85,23 +97,23 @@ async function loadChartData(showEmptyMsg = true): Promise<void> {
   }
 
   try {
-    // 并行获取K线数据和交易记录
+    // 并行获取K线数据（按周期与复权类型）和交易记录
     const [klines, trades]: [KlineData[], TradeRecord[]] = await Promise.all([
-      window.klineAPI.getChartData(props.stockCode, adjustType.value),
+      window.klineAPI.getChartData(props.stockCode, adjustType.value, period.value),
       window.klineAPI.getTradeRecords(props.stockCode),
     ]);
 
     if (klines.length === 0) {
       isEmpty.value = true;
       if (showEmptyMsg) {
-        errorMsg.value = `暂无${adjustType.value === 'qfq' ? '前复权' : '不复权'}数据，请先下载`;
+        errorMsg.value = buildEmptyMessage(adjustType.value, period.value);
       }
     } else {
       isEmpty.value = false;
       errorMsg.value = '';
-      // 等待 DOM 更新后设置数据并绘制
+      // 等待 DOM 更新后设置数据并绘制（周期影响日期轴与标记归集）
       await nextTick();
-      klineChart.setData(klines, trades);
+      klineChart.setData(klines, trades, period.value);
     }
   } catch (error) {
     isEmpty.value = true;
@@ -131,12 +143,38 @@ async function switchAdjustType(type: '' | 'qfq'): Promise<void> {
   if (isEmpty.value && !wasEmpty) {
     adjustType.value = previousAdjustType;
     isEmpty.value = false; // 恢复到有数据的状态
-    errorMsg.value = `暂无${type === 'qfq' ? '前复权' : '不复权'}数据，请先下载`;
+    errorMsg.value = buildEmptyMessage(type, period.value);
     // 重新绘制当前数据
     await nextTick();
     klineChart.drawChart();
   }
 }
+
+/**
+ * 切换K线周期（日/周/月）
+ * 与复权切换同样的「切换 + 空数据回滚」策略：
+ * 新周期无数据时回滚到原周期并提示先下载
+ */
+async function switchPeriod(next: KlinePeriod): Promise<void> {
+  if (period.value === next) return;
+
+  // 保存当前状态
+  const previousPeriod = period.value;
+  const wasEmpty = isEmpty.value;
+
+  // 尝试加载新周期的数据
+  period.value = next;
+  await loadChartData(false);
+
+  if (isEmpty.value && !wasEmpty) {
+    period.value = previousPeriod;
+    isEmpty.value = false;
+    errorMsg.value = buildEmptyMessage(adjustType.value, next);
+    await nextTick();
+    klineChart.drawChart();
+  }
+}
+
 function handleClose(): void {
   klineChart.destroy();
   emit('update:modelValue', false);
@@ -191,8 +229,9 @@ function formatPercent(value: number): string {
 // 监听弹窗打开，加载数据
 watch(() => props.modelValue, async (visible) => {
   if (visible) {
-    // 重置状态
+    // 重置状态（周期默认日线，复权默认前复权）
     adjustType.value = 'qfq';
+    period.value = 'd';
     isEmpty.value = false;
     errorMsg.value = '';
     await nextTick();
@@ -214,23 +253,40 @@ onBeforeUnmount(() => {
     @update:model-value="handleClose"
   >
     <div class="kline-chart-dialog">
-      <!-- 复权方式切换控件 -->
-      <div class="adjust-switcher">
-        <span class="adjust-label">复权方式：</span>
-        <button
-          class="adjust-btn"
-          :class="{ active: adjustType === 'qfq' }"
-          @click="switchAdjustType('qfq')"
-        >
-          前复权
-        </button>
-        <button
-          class="adjust-btn"
-          :class="{ active: adjustType === '' }"
-          @click="switchAdjustType('')"
-        >
-          不复权
-        </button>
+      <!-- 周期切换 + 复权方式切换 -->
+      <div class="chart-toolbar">
+        <!-- 周期切换控件（单选，默认日线） -->
+        <div class="adjust-switcher">
+          <span class="adjust-label">周期：</span>
+          <button
+            v-for="p in KLINE_PERIODS"
+            :key="p"
+            class="adjust-btn"
+            :class="{ active: period === p }"
+            @click="switchPeriod(p)"
+          >
+            {{ KLINE_PERIOD_LABELS[p] }}
+          </button>
+        </div>
+
+        <!-- 复权方式切换控件 -->
+        <div class="adjust-switcher">
+          <span class="adjust-label">复权方式：</span>
+          <button
+            class="adjust-btn"
+            :class="{ active: adjustType === 'qfq' }"
+            @click="switchAdjustType('qfq')"
+          >
+            前复权
+          </button>
+          <button
+            class="adjust-btn"
+            :class="{ active: adjustType === '' }"
+            @click="switchAdjustType('')"
+          >
+            不复权
+          </button>
+        </div>
       </div>
 
       <!-- K线图 Canvas 区域 -->
@@ -318,7 +374,16 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
-/* 复权方式切换 */
+/* 顶部工具栏：周期切换 + 复权方式切换 */
+.chart-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* 周期 / 复权方式切换 */
 .adjust-switcher {
   display: flex;
   align-items: center;

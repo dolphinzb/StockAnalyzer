@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type { BatchDownloadState, BatchStockStatus } from '../stores/watchlist';
-import type { KlineBatchStockResult } from '../types';
+import { KLINE_PERIODS, KLINE_PERIOD_LABELS, type KlineBatchStockResult, type KlinePeriod } from '../types';
 import DateRangePicker from './DateRangePicker.vue';
 import Modal from './Modal.vue';
 
@@ -15,7 +15,7 @@ const props = defineProps<Props>();
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
-  download: [payload: { stockCodes: string[]; startDate: string; endDate: string; adjustTypes: ('' | 'qfq')[] }];
+  download: [payload: { stockCodes: string[]; startDate: string; endDate: string; adjustTypes: ('' | 'qfq')[]; period: KlinePeriod }];
 }>();
 
 /** 计算默认日期：当日 */
@@ -34,6 +34,9 @@ const dateRange = ref<{ startDate: string; endDate: string }>({
 
 /** 复权类型选择（默认全选） */
 const adjustTypes = ref<('' | 'qfq')[]>(['', 'qfq']);
+
+/** K线周期（单选，默认日线；三个选项互斥，始终有选中项） */
+const period = ref<KlinePeriod>('d');
 
 /** 验证错误信息 */
 const validationError = ref('');
@@ -144,6 +147,7 @@ watch(
     selectedCodes.value = props.stocks.map(stock => stock.stockCode);
     dateRange.value = { startDate: getToday(), endDate: getToday() };
     adjustTypes.value = ['', 'qfq'];
+    period.value = 'd';
     validationError.value = '';
   }
 );
@@ -215,6 +219,7 @@ function handleConfirm() {
     startDate: startDate.replace(/-/g, ''),
     endDate: endDate.replace(/-/g, ''),
     adjustTypes: [...adjustTypes.value],
+    period: period.value,
   });
 }
 </script>
@@ -271,6 +276,16 @@ function handleConfirm() {
       <!-- 下载参数（下载过程中禁用） -->
       <fieldset class="download-options" :disabled="isRunning">
         <DateRangePicker :model-value="dateRange" @change="handleDateChange" />
+
+        <div class="period-section">
+          <label class="section-label">周期：</label>
+          <div class="radio-group">
+            <label v-for="p in KLINE_PERIODS" :key="p" class="radio-item">
+              <input type="radio" :value="p" v-model="period" />
+              <span>{{ KLINE_PERIOD_LABELS[p] }}</span>
+            </label>
+          </div>
+        </div>
 
         <div class="adjust-type-section">
           <label class="section-label">复权类型：</label>
@@ -449,7 +464,8 @@ function handleConfirm() {
   gap: 16px;
 }
 
-.adjust-type-section {
+.adjust-type-section,
+.period-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -460,9 +476,34 @@ function handleConfirm() {
     color: #374151;
   }
 
-  .checkbox-group {
+  .checkbox-group,
+  .radio-group {
     display: flex;
     gap: 16px;
+  }
+
+  .radio-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #374151;
+
+    input[type="radio"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      accent-color: var(--color-primary);
+    }
+
+    span {
+      user-select: none;
+    }
+
+    &:hover {
+      color: var(--color-primary);
+    }
   }
 }
 

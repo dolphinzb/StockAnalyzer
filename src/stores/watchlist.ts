@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
-import type { AddStockInput, Alert, IndexData, IndexDataState, KlineBatchDownloadInput, KlineBatchDownloadSummary, KlineBatchProgressPayload, KlineBatchStockResult, KlineDownloadResult, PriceUpdate, UpdateStockInput, WatchlistStock } from '../types';
+import type { AddStockInput, Alert, IndexData, IndexDataState, KlineBatchDownloadInput, KlineBatchDownloadSummary, KlineBatchProgressPayload, KlineBatchStockResult, KlineDownloadResult, KlinePeriod, PriceUpdate, UpdateStockInput, WatchlistStock } from '../types';
 
 /** 批量下载中单只股票状态 */
 export type BatchStockStatus = 'pending' | 'downloading' | 'success' | 'failed';
@@ -133,13 +133,15 @@ export const useWatchlistStore = defineStore('watchlist', () => {
    * @param startDate 开始日期 (YYYYMMDD)
    * @param endDate 结束日期 (YYYYMMDD)
    * @param adjustTypes 复权类型数组（可选，默认 ['', 'qfq']）
+   * @param period K线周期（单选，默认 'd' 日线）
    * @returns 下载结果
    */
   async function downloadKline(
     stockCode: string,
     startDate: string,
     endDate: string,
-    adjustTypes?: ('' | 'qfq')[]
+    adjustTypes?: ('' | 'qfq')[],
+    period: KlinePeriod = 'd'
   ): Promise<KlineDownloadResult> {
     // 设置下载中状态
     downloadStatusMap.value.set(stockCode, { isDownloading: true, result: null });
@@ -152,6 +154,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
         startDate,
         endDate,
         adjustTypes,
+        period,
       });
       downloadStatusMap.value.set(stockCode, { isDownloading: false, result });
       downloadStatusMap.value = new Map(downloadStatusMap.value);

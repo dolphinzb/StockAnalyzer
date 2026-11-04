@@ -3,7 +3,7 @@ import log from 'electron-log';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import initSqlJs, { Database } from 'sql.js';
-import type { AddTradeResult, AppConfig } from '../shared/types';
+import type { AddTradeResult, AppConfig, KlinePeriod } from '../shared/types';
 import { calcHoldingPrice, type CalcResult } from './services/tradeService';
 
 /**
@@ -61,6 +61,117 @@ export function getDatabasePath(): string {
   return join(app.getPath('home'), '.stockanalyzer', 'stockanalyzer.db');
 }
 
+/**
+ * K线三张表的建表语句（与 sql/init.sql 保持一致）
+ * 运行时无法可靠读取 sql/init.sql（打包后不在 files 白名单内），故内联；
+ * 修改K线表字段时必须同步 sql/init.sql 与本处 DDL
+ */
+export const KLINE_TABLE_DDL = ['kline_daily', 'kline_weekly', 'kline_monthly']
+  .map(
+    table => `
+CREATE TABLE IF NOT EXISTS ${table} (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  stock_code TEXT NOT NULL,
+  trade_date TEXT NOT NULL,
+  adjust_type TEXT NOT NULL DEFAULT '',
+  open REAL,
+  close REAL,
+  high REAL,
+  low REAL,
+  volume REAL,
+  amount REAL,
+  amplitude REAL,
+  change_percent REAL,
+  change_amount REAL,
+  turnover_rate REAL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(stock_code, trade_date, adjust_type)
+);
+CREATE INDEX IF NOT EXISTS idx_${table}_code ON ${table}(stock_code);
+CREATE INDEX IF NOT EXISTS idx_${table}_date ON ${table}(trade_date);
+CREATE INDEX IF NOT EXISTS idx_${table}_code_date_adjust ON ${table}(stock_code, trade_date, adjust_type);`
+  )
+  .join('\n');
+
+/**
+ * 判断数据库对象（表/索引）是否存在
+ */
+function hasDbObject(database: Database, type: 'table' | 'index', name: string): boolean {
+  const result = database.exec(
+    `SELECT name FROM sqlite_master WHERE type = '${type}' AND name = '${name}'`
+  );
+  return result.length > 0 && result[0].values.length > 0;
+}
+
+/**
+ * 统计表行数
+ */
+function countTableRows(database: Database, table: string): number {
+  const result = database.exec(`SELECT COUNT(*) FROM ${table}`);
+  if (result.length === 0 || result[0].values.length === 0) {
+    return 0;
+  }
+  return Number(result[0].values[0][0]);
+}
+
+/**
+ * K线表拆分自动迁移（幂等）
+ * - kline_data 存在且 kline_daily 不存在：改名（不搬行数据）并清理旧索引
+ * - 三表/索引缺失：按新结构补齐（IF NOT EXISTS）
+ * - kline_data 与 kline_daily 同时存在：跳过自动迁移，保留现状并告警
+ * @param database 已加载的数据库实例
+ * @returns 是否发生了需要落盘的变更
+ */
+function migrateKlineTables(database: Database): boolean {
+  const hasLegacy = hasDbObject(database, 'table', 'kline_data');
+  const hasDaily = hasDbObject(database, 'table', 'kline_daily');
+
+  if (hasLegacy && hasDaily) {
+    log.warn('检测到 kline_data 与 kline_daily 同时存在，跳过K线表自动迁移（需人工确认数据归属）');
+    return false;
+  }
+
+  let changed = false;
+
+  if (hasLegacy && !hasDaily) {
+    const beforeCount = countTableRows(database, 'kline_data');
+    database.run('ALTER TABLE kline_data RENAME TO kline_daily');
+    for (const index of [
+      'idx_kline_data_stock_code',
+      'idx_kline_data_trade_date',
+      'idx_kline_data_stock_date_adjust',
+    ]) {
+      database.run(`DROP INDEX IF EXISTS ${index}`);
+    }
+
+    database.run(KLINE_TABLE_DDL);
+
+    const afterCount = countTableRows(database, 'kline_daily');
+    if (afterCount !== beforeCount) {
+      throw new Error(`K线表迁移失败：日线记录数不一致（${beforeCount} → ${afterCount}）`);
+    }
+
+    log.info(`K线表迁移完成：kline_data → kline_daily，日线 ${afterCount} 条，已创建周线/月线表`);
+    changed = true;
+  }
+
+  // 补齐缺失的表与索引（新库、已迁移库、旧库改名后都会走到这里）
+  const needEnsure =
+    !hasDaily ||
+    !hasDbObject(database, 'table', 'kline_weekly') ||
+    !hasDbObject(database, 'table', 'kline_monthly') ||
+    !hasDbObject(database, 'index', 'idx_kline_daily_code_date_adjust');
+
+  if (needEnsure) {
+    database.run(KLINE_TABLE_DDL);
+    log.info('K线三表与索引已就绪（kline_daily / kline_weekly / kline_monthly）');
+    changed = true;
+  }
+
+  return changed;
+}
+
 export async function initDatabase(): Promise<void> {
   const dbPath = getDatabasePath();
   log.info(`初始化数据库: ${dbPath}`);
@@ -77,6 +188,12 @@ export async function initDatabase(): Promise<void> {
       const fileBuffer = readFileSync(dbPath);
       db = new SQL.Database(fileBuffer);
       log.info('数据库文件加载成功');
+
+      // 存量库自动迁移：kline_data → kline_daily，并补齐周线/月线表（幂等）
+      const klineMigrated = migrateKlineTables(db);
+      if (klineMigrated) {
+        saveDatabase();
+      }
     } else {
       log.warn('数据库文件不存在:', dbPath);
       throw new Error('数据库文件不存在，请先通过迁移脚本初始化数据库');
@@ -567,6 +684,30 @@ export function getTradeRecordsByStockCode(stockCode: string): TradeRecord[] {
 
 
 /**
+ * K线周期 → 数据表名 的白名单映射
+ * 所有拼接表名的 SQL 必须经 tableOf() 取表名，禁止直接用外部入参拼接
+ */
+export const KLINE_TABLES: Record<KlinePeriod, string> = {
+  d: 'kline_daily',
+  w: 'kline_weekly',
+  m: 'kline_monthly',
+};
+
+/**
+ * 获取周期对应的K线数据表名（白名单校验）
+ * @param period K线周期 d|w|m
+ * @returns 数据表名
+ * @throws 周期非法时抛错 INVALID_PERIOD（不静默返回空结果）
+ */
+export function tableOf(period: KlinePeriod): string {
+  const table = KLINE_TABLES[period];
+  if (!table) {
+    throw new Error(`INVALID_PERIOD: 不支持的K线周期 ${String(period)}`);
+  }
+  return table;
+}
+
+/**
  * stock-sdk 返回的K线数据项类型
  */
 interface HistoryKlineItem {
@@ -585,27 +726,62 @@ interface HistoryKlineItem {
 }
 
 /**
- * 批量保存K线数据到数据库
- * 使用事务批量INSERT OR REPLACE，按股票代码+交易日期去重
- * @param stockCode 股票代码（纯数字）
- * @param klines stock-sdk返回的K线数据数组
- * @returns 保存的数据条数
+ * 计算当前周期的起始日（周线取本周一，月线取本月 1 号）
+ * 用本地时间手工拼串，避免 toISOString 的 UTC 时区偏移
+ * @param period K线周期（周线/月线）
+ * @returns 起始日期 YYYY-MM-DD
  */
+export function getCurrentPeriodStart(period: 'w' | 'm'): string {
+  const now = new Date();
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  if (period === 'm') {
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+  }
+  // getDay(): 周日=0，转换为「周一=0」后再回退到本周一
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  monday.setDate(monday.getDate() - ((now.getDay() + 6) % 7));
+  return `${monday.getFullYear()}-${pad(monday.getMonth() + 1)}-${pad(monday.getDate())}`;
+}
+
 /**
  * 批量保存K线数据到数据库
  * 使用事务批量INSERT OR REPLACE，按股票代码+交易日期+复权类型去重
+ * 周线/月线：写入前清除当前周期内的旧记录，避免未完成周期按不同 trade_date 堆出多行
  * @param stockCode 股票代码（纯数字）
  * @param klines stock-sdk返回的K线数据数组
  * @param adjustType 复权类型：'' 不复权 | 'qfq' 前复权
+ * @param period K线周期：d 日线 | w 周线 | m 月线（决定写入的数据表）
+ * @param target 目标数据库实例（默认取全局库，测试可注入内存库）
  * @returns 保存的数据条数
  */
-export function saveKlineData(stockCode: string, klines: HistoryKlineItem[], adjustType: '' | 'qfq' = ''): number {
-  const database = getDb();
+export function saveKlineData(
+  stockCode: string,
+  klines: HistoryKlineItem[],
+  adjustType: '' | 'qfq' = '',
+  period: KlinePeriod = 'd',
+  target?: Database
+): number {
+  const database = target ?? getDb();
   const now = new Date().toISOString();
+  const table = tableOf(period);
 
   try {
     // 开启事务
     database.run('BEGIN TRANSACTION');
+
+    // 周线/月线：数据源对未完成周期返回的 trade_date 是「最新交易日」（11-04 → 11-05 → …），
+    // 不清理会按不同日期堆出同一周期的多行。仅当本批数据包含当前周期的记录时才清理，
+    // 避免下载纯历史区间时误删库中已有的当前周期数据。
+    if (period !== 'd') {
+      const periodStart = getCurrentPeriodStart(period);
+      const hasCurrentPeriodBar = klines.some(kline => (kline.date || '') >= periodStart);
+      if (hasCurrentPeriodBar) {
+        database.run(
+          `DELETE FROM ${table} WHERE stock_code = ? AND adjust_type = ? AND trade_date >= ?`,
+          [stockCode, adjustType, periodStart]
+        );
+      }
+    }
 
     for (const kline of klines) {
       // 去除股票代码前缀（如 sz000001 → 000001）
@@ -613,7 +789,7 @@ export function saveKlineData(stockCode: string, klines: HistoryKlineItem[], adj
       const tradeDate = kline.date || '';
 
       database.run(
-        `INSERT OR REPLACE INTO kline_data 
+        `INSERT OR REPLACE INTO ${table} 
          (stock_code, trade_date, adjust_type, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -638,13 +814,16 @@ export function saveKlineData(stockCode: string, klines: HistoryKlineItem[], adj
 
     // 提交事务
     database.run('COMMIT');
-    saveDatabase();
-    log.info(`K线数据保存成功: ${stockCode}, 复权类型: ${adjustType}, 共 ${klines.length} 条`);
+    // 注入外部数据库实例（测试）时不落全局库文件
+    if (!target) {
+      saveDatabase();
+    }
+    log.info(`K线数据保存成功: ${stockCode}, 周期: ${period}, 复权类型: ${adjustType}, 共 ${klines.length} 条`);
     return klines.length;
   } catch (error) {
     // 事务回滚
     database.run('ROLLBACK');
-    log.error(`K线数据保存失败: ${stockCode}, 复权类型: ${adjustType}`, error);
+    log.error(`K线数据保存失败: ${stockCode}, 周期: ${period}, 复权类型: ${adjustType}`, error);
     throw error;
   }
 }
@@ -676,15 +855,22 @@ function rowToKlineData(row: any[]): import('../shared/types').KlineData {
 /**
  * 查询K线数据
  * @param stockCode 股票代码（纯数字）
+ * @param period K线周期：d 日线 | w 周线 | m 月线（决定查询的数据表）
  * @param startDate 开始日期 (YYYY-MM-DD)，可选
  * @param endDate 结束日期 (YYYY-MM-DD)，可选
  * @returns K线数据数组，按交易日期升序排列
  */
-export function getKlineData(stockCode: string, startDate?: string, endDate?: string): import('../shared/types').KlineData[] {
+export function getKlineData(
+  stockCode: string,
+  period: KlinePeriod = 'd',
+  startDate?: string,
+  endDate?: string
+): import('../shared/types').KlineData[] {
   const database = getDb();
+  const table = tableOf(period);
 
-  let query = `SELECT id, stock_code, trade_date, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at
-               FROM kline_data WHERE stock_code = ?`;
+  let query = `SELECT id, stock_code, trade_date, adjust_type, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at
+               FROM ${table} WHERE stock_code = ?`;
   const params: any[] = [stockCode];
 
   // 添加日期范围过滤
@@ -709,16 +895,22 @@ export function getKlineData(stockCode: string, startDate?: string, endDate?: st
 }
 
 /**
- * 获取K线图展示数据（从数据库查询，支持前复权/不复权切换）
+ * 获取K线图展示数据（从数据库查询，支持周期与前复权/不复权切换）
  * @param stockCode 股票代码
  * @param adjustType 复权类型：'' 不复权 | 'qfq' 前复权
+ * @param period K线周期：d 日线 | w 周线 | m 月线（决定查询的数据表）
  * @returns K线数据数组，按交易日期升序排列
  */
-export function getChartData(stockCode: string, adjustType: '' | 'qfq'): import('../shared/types').KlineData[] {
+export function getChartData(
+  stockCode: string,
+  adjustType: '' | 'qfq',
+  period: KlinePeriod = 'd'
+): import('../shared/types').KlineData[] {
   const database = getDb();
+  const table = tableOf(period);
 
   const query = `SELECT id, stock_code, trade_date, adjust_type, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at
-                 FROM kline_data WHERE stock_code = ? AND adjust_type = ? ORDER BY trade_date ASC`;
+                 FROM ${table} WHERE stock_code = ? AND adjust_type = ? ORDER BY trade_date ASC`;
 
   const result = database.exec(query, [stockCode, adjustType]);
 

@@ -100,6 +100,7 @@ export type {
   KlineData,
   KlineDownloadInput,
   KlineDownloadResult,
+  KlinePeriod,
   LogAPI,
   OpenResult,
   PaginatedTradeRecords,
@@ -109,4 +110,7 @@ export type {
   TradeDetail,
   TradeRecord
 } from '../shared/types';
+
+// 常量值需用普通导出（不能放在 export type 中）
+export { KLINE_PERIODS, KLINE_PERIOD_LABELS } from '../shared/types';
 

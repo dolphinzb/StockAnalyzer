@@ -34,16 +34,39 @@ function freezeToWednesday(): void {
 /**
  * 构造 stock-sdk 返回的 K 线项（仅保留被测字段）
  */
-function kline(date: string) {
+function kline(date: string, close = 11) {
   return {
     code: 'sh600519',
     date,
     open: 10,
-    close: 11,
+    close,
     high: 12,
     low: 9,
     volume: 1000,
   } as never;
+}
+
+/**
+ * 读取指定表按交易日期升序的第一行关键字段（用于断言行身份是否稳定）
+ */
+function firstRow(table: string): {
+  id: number;
+  tradeDate: string;
+  close: number;
+  createdAt: string;
+  updatedAt: string;
+} {
+  const result = database.exec(
+    `SELECT id, trade_date, close, created_at, updated_at FROM ${table} ORDER BY trade_date`
+  );
+  const row = result[0].values[0];
+  return {
+    id: Number(row[0]),
+    tradeDate: String(row[1]),
+    close: Number(row[2]),
+    createdAt: String(row[3]),
+    updatedAt: String(row[4]),
+  };
 }
 
 /**
@@ -132,5 +155,43 @@ describe('周线/月线未完成周期的覆盖写入', () => {
     saveKlineData('600519', [kline('2026-11-05')], 'qfq', 'w', database);
 
     expect(tradeDates('kline_weekly')).toEqual(['2026-11-04', '2026-11-05']);
+  });
+});
+
+describe('重复写入的行身份稳定性（UPSERT 语义）', () => {
+  it('历史区间重复写入不改变 id 与 created_at，只刷新行情字段', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 4, 15, 30, 0));
+    saveKlineData('600519', [kline('2026-10-30', 11)], 'qfq', 'w', database);
+    const before = firstRow('kline_weekly');
+
+    vi.setSystemTime(new Date(2026, 10, 6, 15, 30, 0));
+    saveKlineData('600519', [kline('2026-10-30', 22)], 'qfq', 'w', database);
+    const after = firstRow('kline_weekly');
+
+    // 不得堆出重复行
+    expect(tradeDates('kline_weekly')).toEqual(['2026-10-30']);
+    // id 与首次入库时间保持稳定（INSERT OR REPLACE 会变）
+    expect(after.id).toBe(before.id);
+    expect(after.createdAt).toBe(before.createdAt);
+    // 行情字段与 updated_at 正常刷新
+    expect(after.close).toBe(22);
+    expect(after.updatedAt).not.toBe(before.updatedAt);
+  });
+
+  it('日线重复写入同一交易日不改变 id 与 created_at', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 4, 15, 30, 0));
+    saveKlineData('600519', [kline('2026-11-04', 11)], '', 'd', database);
+    const before = firstRow('kline_daily');
+
+    vi.setSystemTime(new Date(2026, 10, 6, 15, 30, 0));
+    saveKlineData('600519', [kline('2026-11-04', 12)], '', 'd', database);
+    const after = firstRow('kline_daily');
+
+    expect(tradeDates('kline_daily')).toEqual(['2026-11-04']);
+    expect(after.id).toBe(before.id);
+    expect(after.createdAt).toBe(before.createdAt);
+    expect(after.close).toBe(12);
   });
 });

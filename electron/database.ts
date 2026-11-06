@@ -745,7 +745,8 @@ export function getCurrentPeriodStart(period: 'w' | 'm'): string {
 
 /**
  * 批量保存K线数据到数据库
- * 使用事务批量INSERT OR REPLACE，按股票代码+交易日期+复权类型去重
+ * 使用事务批量 UPSERT（ON CONFLICT DO UPDATE），按股票代码+交易日期+复权类型去重
+ * 使用 UPSERT 而非 INSERT OR REPLACE：后者冲突时先删后插，会导致 id 变化、created_at 被重置
  * 周线/月线：写入前清除当前周期内的旧记录，避免未完成周期按不同 trade_date 堆出多行
  * @param stockCode 股票代码（纯数字）
  * @param klines stock-sdk返回的K线数据数组
@@ -788,10 +789,24 @@ export function saveKlineData(
       const pureCode = kline.code ? kline.code.replace(/^(sh|sz)/, '') : stockCode;
       const tradeDate = kline.date || '';
 
+      // UPSERT：唯一键冲突时走 DO UPDATE，保留原 id 与 created_at（首次入库时间），
+      // 仅刷新行情字段与 updated_at；or REPLACE 会先删后插，导致 id 变化、created_at 丢失
       database.run(
-        `INSERT OR REPLACE INTO ${table} 
+        `INSERT INTO ${table} 
          (stock_code, trade_date, adjust_type, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(stock_code, trade_date, adjust_type) DO UPDATE SET
+           open = excluded.open,
+           close = excluded.close,
+           high = excluded.high,
+           low = excluded.low,
+           volume = excluded.volume,
+           amount = excluded.amount,
+           amplitude = excluded.amplitude,
+           change_percent = excluded.change_percent,
+           change_amount = excluded.change_amount,
+           turnover_rate = excluded.turnover_rate,
+           updated_at = excluded.updated_at`,
         [
           pureCode,
           tradeDate,

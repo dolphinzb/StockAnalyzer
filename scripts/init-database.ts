@@ -78,13 +78,13 @@ function needsMigration(): boolean {
   const database = getDb();
   
   try {
-    // 检查kline_data表是否有adjust_type字段
-    const klineColumns = database.exec(`PRAGMA table_info(kline_data)`);
+    // 检查kline_daily表是否有adjust_type字段
+    const klineColumns = database.exec(`PRAGMA table_info(kline_daily)`);
     const hasAdjustType = klineColumns.length > 0 && 
       klineColumns[0].values.some((col: any) => col[1] === 'adjust_type');
     
     if (!hasAdjustType) {
-      console.log('✅ 检测到需要迁移：kline_data表缺少 adjust_type 字段');
+      console.log('✅ 检测到需要迁移：kline_daily表缺少 adjust_type 字段');
       return true;
     }
     
@@ -140,6 +140,45 @@ function executeInitSql(): void {
   console.log('正在执行数据库初始化...');
   database.run(sqlContent);
   console.log('✅ 数据库初始化完成');
+}
+
+/**
+ * 检查三张K线表（日/周/月）结构是否一致
+ * 三表必须同构，列集合不一致说明存在 schema 漂移
+ */
+function checkKlineTableConsistency(): void {
+  const database = getDb();
+  const tables = ['kline_daily', 'kline_weekly', 'kline_monthly'];
+  const columnSets = tables.map(table => {
+    const info = database.exec(`PRAGMA table_info(${table})`);
+    const columns = info.length > 0 ? info[0].values.map((row: any[]) => String(row[1])) : [];
+    return { table, columns };
+  });
+
+  const missing = columnSets.find(item => item.columns.length === 0);
+  if (missing) {
+    console.warn(`⚠️  K线表 ${missing.table} 不存在，跳过结构一致性检查`);
+    return;
+  }
+
+  const baseTable = columnSets[0];
+  const baseKey = baseTable.columns.join(',');
+  let consistent = true;
+
+  for (const item of columnSets.slice(1)) {
+    if (item.columns.join(',') !== baseKey) {
+      consistent = false;
+      console.warn(`⚠️  K线表结构不一致: ${item.table} 与 ${baseTable.table} 的列集合不同`);
+      console.warn(`   ${baseTable.table}: ${baseKey}`);
+      console.warn(`   ${item.table}: ${item.columns.join(',')}`);
+    }
+  }
+
+  if (consistent) {
+    console.log('✅ 三张K线表结构一致');
+  } else {
+    console.warn('⚠️  请检查 sql/init.sql 中三张K线表的字段定义，确保完全一致');
+  }
 }
 
 /**
@@ -199,7 +238,21 @@ async function runMigration(): Promise<void> {
   console.log('1️⃣  初始化数据库连接...');
   await initializeDatabase();
   console.log('✅ 数据库连接成功\n');
-  
+
+  // 前置检查：旧版单表 kline_data 必须先通过专用迁移脚本改名，
+  // 否则本脚本的「删表重建」流程会丢失日线数据
+  const database = getDb();
+  const legacyKline = database.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='kline_data'");
+  const hasLegacyKline = legacyKline.length > 0 && legacyKline[0].values.length > 0;
+  const dailyKline = database.exec('PRAGMA table_info(kline_daily)');
+  const hasDailyKline = dailyKline.length > 0 && dailyKline[0].values.length > 0;
+
+  if (hasLegacyKline && !hasDailyKline) {
+    console.error('❌ 检测到旧版K线表 kline_data，但缺少 kline_daily');
+    console.error('   请先执行K线表拆分迁移：npm run migrate-kline-tables');
+    process.exit(1);
+  }
+
   // 检查是否需要迁移
   console.log('2️⃣  检查迁移状态...');
   if (!needsMigration()) {
@@ -239,10 +292,10 @@ async function runMigration(): Promise<void> {
       const transferRecordsBackup = transferData.length > 0 ? transferData[0].values : [];
       console.log(`  ✓ 备份了 ${transferRecordsBackup.length} 条转账记录`);
       
-      // 备份kline_data表数据
-      const klineData = database.exec('SELECT * FROM kline_data ORDER BY id ASC');
+      // 备份kline_daily表数据（周线/月线表可重新下载，不做备份）
+      const klineData = database.exec('SELECT * FROM kline_daily ORDER BY id ASC');
       const klineDataBackup = klineData.length > 0 ? klineData[0].values : [];
-      console.log(`  ✓ 备份了 ${klineDataBackup.length} 条K线数据`);
+      console.log(`  ✓ 备份了 ${klineDataBackup.length} 条日K线数据`);
       
       // 备份watchlist_stocks表数据
       const watchlistData = database.exec('SELECT * FROM watchlist_stocks ORDER BY id ASC');
@@ -261,7 +314,9 @@ async function runMigration(): Promise<void> {
       
       // 删除所有表（按依赖顺序）
       console.log('\n正在清理旧表结构...');
-      database.run('DROP TABLE IF EXISTS kline_data');
+      database.run('DROP TABLE IF EXISTS kline_daily');
+      database.run('DROP TABLE IF EXISTS kline_weekly');
+      database.run('DROP TABLE IF EXISTS kline_monthly');
       database.run('DROP TABLE IF EXISTS transfer_records');
       database.run('DROP TABLE IF EXISTS watchlist_stocks');
       database.run('DROP TABLE IF EXISTS trade_record');
@@ -270,6 +325,7 @@ async function runMigration(): Promise<void> {
       
       // 执行init.sql初始化新表结构
       executeInitSql();
+      checkKlineTableConsistency();
       
       // 恢复数据
       console.log('\n正在恢复数据...');
@@ -331,17 +387,17 @@ async function runMigration(): Promise<void> {
         console.log(`  ✓ 恢复了 ${tradeBackup.length} 条交易记录`);
       }
       
-      // 恢复kline_data数据
+      // 恢复kline_daily数据
       if (klineDataBackup.length > 0) {
         for (const row of klineDataBackup) {
           // 旧数据没有adjust_type字段，设置为默认值''
           database.run(
-            `INSERT OR IGNORE INTO kline_data (id, stock_code, trade_date, adjust_type, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at)
+            `INSERT OR IGNORE INTO kline_daily (id, stock_code, trade_date, adjust_type, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at)
              VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [row[0], row[1], row[2], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14], row[15]]
           );
         }
-        console.log(`  ✓ 恢复了 ${klineDataBackup.length} 条K线数据`);
+        console.log(`  ✓ 恢复了 ${klineDataBackup.length} 条日K线数据`);
       }
       
       // 保存数据库

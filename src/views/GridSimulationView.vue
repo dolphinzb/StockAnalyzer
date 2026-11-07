@@ -148,8 +148,8 @@ const runSimulation = async () => {
   result.value = null;
   try {
     const input = buildInput();
-    // 获取不复权日 K 数据（adjustType = '' 表示不复权），再按开始日期过滤
-    const allKlines = await window.klineAPI.getChartData(input.stockCode, '');
+    // 获取不复权日 K 数据（adjustType = '' 表示不复权，period = 'd' 固定日线），再按开始日期过滤
+    const allKlines = await window.klineAPI.getChartData(input.stockCode, '', 'd');
     const klines = allKlines.filter(k => k.tradeDate >= input.startDate);
     if (!klines || klines.length === 0) {
       showToast('该股票历史数据不足', 'error');

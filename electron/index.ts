@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron';
 import log from 'electron-log';
 import fs from 'fs';
 import { join } from 'path';
-import type { AppConfig } from '../shared/types';
+import type { AppConfig, KlineBatchDownloadInput, KlineBatchDownloadSummary, KlinePeriod } from '../shared/types';
 import {
   addStock,
   closeDatabase,
@@ -42,8 +42,8 @@ import {
   getCycleDetails
 } from './services/historicalTradeService';
 import {
+  downloadBatch,
   downloadKline,
-  getChartData,
   startKlineDownloadScheduler,
   stopKlineDownloadScheduler,
   validateDownloadInput
@@ -552,7 +552,7 @@ ipcMain.handle('get-profit-statistics', async (_event, startDate: string, endDat
 });
 
 /**
- * 获取指定日期的持仓市值（使用kline_data收盘价计算）
+ * 获取指定日期的持仓市值（使用kline_daily收盘价计算）
  */
 ipcMain.handle('get-holdings-market-value', async (_event, date: string) => {
   log.debug('IPC: get-holdings-market-value', date);
@@ -717,6 +717,29 @@ ipcMain.handle('backup:manual', async () => {
   }
 });
 
+/** 合法的K线周期集合（白名单校验，防止表名注入与静默查空表） */
+const VALID_KLINE_PERIODS = new Set<string>(['d', 'w', 'm']);
+
+/**
+ * 校验并归一化K线周期入参
+ * @param period 原始入参
+ * @param required 是否必填（true 时缺省直接报错；false 时缺省返回 'd' 日线）
+ * @returns 归一化后的周期
+ * @throws INVALID_PERIOD 周期缺失或非法
+ */
+function assertKlinePeriod(period: unknown, required = false): KlinePeriod {
+  if (period === undefined || period === null || period === '') {
+    if (required) {
+      throw new Error('INVALID_PERIOD: 缺少K线周期参数');
+    }
+    return 'd';
+  }
+  if (typeof period !== 'string' || !VALID_KLINE_PERIODS.has(period)) {
+    throw new Error(`INVALID_PERIOD: 不支持的K线周期 ${String(period)}`);
+  }
+  return period as KlinePeriod;
+}
+
 /**
  * 下载K线数据（T116-T117：接收adjustTypes参数）
  */
@@ -725,6 +748,7 @@ ipcMain.handle('kline:download', async (_event, input: {
   startDate: string;
   endDate: string;
   adjustTypes?: ('' | 'qfq')[];
+  period?: KlinePeriod;
 }) => {
   log.info('IPC: kline:download', JSON.stringify(input));
   try {
@@ -733,7 +757,9 @@ ipcMain.handle('kline:download', async (_event, input: {
     if (input.adjustTypes && input.adjustTypes.length === 0) {
       throw new Error('请至少选择一种复权类型');
     }
-    return await downloadKline(input.stockCode, input.startDate, input.endDate, input.adjustTypes);
+    // 周期缺省按日线处理，非法值直接拒绝
+    const period = assertKlinePeriod(input.period);
+    return await downloadKline(input.stockCode, input.startDate, input.endDate, input.adjustTypes, period);
   } catch (error) {
     log.error('IPC kline:download error:', error);
     return {
@@ -744,12 +770,70 @@ ipcMain.handle('kline:download', async (_event, input: {
 });
 
 /**
+ * 批量下载多只股票的K线数据（主进程串行执行，逐只推送进度）
+ */
+ipcMain.handle('kline:download-batch', async (_event, input: KlineBatchDownloadInput) => {
+  log.info('IPC: kline:download-batch', JSON.stringify({
+    stockCodes: input?.stockCodes,
+    startDate: input?.startDate,
+    endDate: input?.endDate,
+    adjustTypes: input?.adjustTypes,
+    period: input?.period,
+  }));
+
+  try {
+    // 批量下载的股票均来自自选股，从数据库补齐名称用于进度展示
+    const nameMap = new Map(getWatchlist().map(stock => [stock.stockCode, stock.stockName]));
+    const stocks = (input?.stockCodes ?? []).map(stockCode => ({
+      stockCode,
+      stockName: nameMap.get(stockCode) ?? '',
+    }));
+
+    // 周期为单值，缺省按日线
+    const period = assertKlinePeriod(input?.period);
+
+    return await downloadBatch(
+      stocks,
+      input.startDate,
+      input.endDate,
+      input.adjustTypes ?? ['', 'qfq'],
+      period,
+      {
+        retry: true,
+        onProgress: payload => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('kline:batch-progress', payload);
+          }
+        },
+      }
+    );
+  } catch (error) {
+    log.error('IPC kline:download-batch error:', error);
+    const rawMessage = error instanceof Error ? error.message : '未知错误';
+    // 互斥错误转换为用户可读提示，其余错误原样返回（含参数校验前缀）
+    const errorMessage = rawMessage.startsWith('BATCH_DOWNLOAD_IN_PROGRESS')
+      ? '已有批量下载任务正在进行中，请稍后再试'
+      : rawMessage;
+    const failedSummary: KlineBatchDownloadSummary = {
+      success: false,
+      total: 0,
+      successCount: 0,
+      failedCount: 0,
+      results: [],
+      error: errorMessage,
+    };
+    return failedSummary;
+  }
+});
+
+/**
  * 获取K线数据
  */
-ipcMain.handle('kline:get-data', async (_event, stockCode: string, startDate?: string, endDate?: string) => {
-  log.debug('IPC: kline:get-data', stockCode, startDate, endDate);
+ipcMain.handle('kline:get-data', async (_event, stockCode: string, period: KlinePeriod, startDate?: string, endDate?: string) => {
+  log.debug('IPC: kline:get-data', stockCode, period, startDate, endDate);
   try {
-    return dbGetKlineData(stockCode, startDate, endDate);
+    const normalizedPeriod = assertKlinePeriod(period);
+    return dbGetKlineData(stockCode, normalizedPeriod, startDate, endDate);
   } catch (error) {
     log.error('IPC kline:get-data error:', error);
     throw error;
@@ -757,12 +841,14 @@ ipcMain.handle('kline:get-data', async (_event, stockCode: string, startDate?: s
 });
 
 /**
- * 获取K线图展示数据（支持前复权/不复权）
+ * 获取K线图展示数据（支持周期与前复权/不复权）
+ * 周期为必填参数：缺省不兜底为日线，避免静默查错表
  */
-ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjustType: '' | 'qfq') => {
-  log.info('IPC: kline:get-chart-data', stockCode, adjustType);
+ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjustType: '' | 'qfq', period?: KlinePeriod) => {
+  log.info('IPC: kline:get-chart-data', stockCode, adjustType, period);
   try {
-    return dbGetChartData(stockCode, adjustType);
+    const normalizedPeriod = assertKlinePeriod(period, true);
+    return dbGetChartData(stockCode, adjustType, normalizedPeriod);
   } catch (error) {
     log.error('IPC kline:get-chart-data error:', error);
     throw error;

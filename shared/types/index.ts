@@ -469,9 +469,9 @@ export interface ProfitStatistics {
   openingAccountBalance: number;
   /** 期末账户余额（来自transfer_records表截止期末日期最近记录的account_balance） */
   closingAccountBalance: number;
-  /** 期初持仓市值（来自kline_data各持股收盘价×持仓数量之和） */
+  /** 期初持仓市值（来自kline_daily各持股收盘价×持仓数量之和） */
   openingHoldingsValue: number;
-  /** 期末持仓市值（来自kline_data各持股收盘价×持仓数量之和） */
+  /** 期末持仓市值（来自kline_daily各持股收盘价×持仓数量之和） */
   closingHoldingsValue: number;
   /** 期初持仓股数（各持股holding_count之和，口径与持仓市值一致：仅统计有K线数据的持股） */
   openingHoldingsCount: number;
@@ -628,7 +628,7 @@ export interface FundManagementAPI {
   deleteTransferRecord(id: number): Promise<{ success: boolean }>;
   /** 获取指定时间段的盈亏统计（包含期初/期末账户余额、持仓市值、转入/转出金额） */
   getProfitStatistics(startDate: string, endDate: string): Promise<ProfitStatistics>;
-  /** 获取指定日期的持仓市值（使用kline_data收盘价计算） */
+  /** 获取指定日期的持仓市值（使用kline_daily收盘价计算） */
   getHoldingsMarketValue(date: string): Promise<HoldingsMarketValueResult>;
   /** 获取指定时间段内的资金转入转出统计（来自transfer_records表IN/OUT类型） */
   getTradeStatsInRange(startDate: string, endDate: string): Promise<TradeStatsResult>;
@@ -707,6 +707,23 @@ export interface TradeRecord {
 }
 
 /**
+ * K线周期
+ * d 日线 | w 周线 | m 月线
+ * 每个周期对应独立的数据表（kline_daily / kline_weekly / kline_monthly）
+ */
+export type KlinePeriod = 'd' | 'w' | 'm';
+
+/** 全部K线周期（顺序：日、周、月） */
+export const KLINE_PERIODS: KlinePeriod[] = ['d', 'w', 'm'];
+
+/** K线周期中文标签 */
+export const KLINE_PERIOD_LABELS: Record<KlinePeriod, string> = {
+  d: '日线',
+  w: '周线',
+  m: '月线',
+};
+
+/**
  * K线数据记录
  * 代表一只股票某一天的日K线数据
  */
@@ -779,6 +796,88 @@ export interface KlineDownloadInput {
   endDate: string;
   /** 复权类型数组（可选，默认 ['', 'qfq']，与stock-sdk的adjust参数一致） */
   adjustTypes?: ('' | 'qfq')[];
+  /** K线周期（可选，默认 'd' 日线） */
+  period?: KlinePeriod;
+}
+
+/**
+ * 批量K线下载输入参数
+ * 手动批量下载多只自选股K线数据时的请求参数
+ */
+export interface KlineBatchDownloadInput {
+  /** 股票代码列表（纯数字，如 ['000001', '510050']） */
+  stockCodes: string[];
+  /** 开始日期 (YYYYMMDD) */
+  startDate: string;
+  /** 结束日期 (YYYYMMDD) */
+  endDate: string;
+  /** 复权类型数组（可选，默认 ['', 'qfq']，与stock-sdk的adjust参数一致） */
+  adjustTypes?: ('' | 'qfq')[];
+  /** K线周期（单选，可选，默认 'd' 日线） */
+  period?: KlinePeriod;
+}
+
+/**
+ * 批量下载中单只股票的下载结果
+ */
+export interface KlineBatchStockResult {
+  /** 股票代码（纯数字） */
+  stockCode: string;
+  /** 股票名称 */
+  stockName: string;
+  /** 本次下载的K线周期 */
+  period?: KlinePeriod;
+  /** 是否成功（所选复权类型中至少一种返回条数大于0） */
+  success: boolean;
+  /** 不复权数据条数 */
+  unadjustedCount?: number;
+  /** 前复权数据条数 */
+  adjustedCount?: number;
+  /** 不复权失败原因 */
+  unadjustedError?: string;
+  /** 前复权失败原因 */
+  adjustedError?: string;
+  /** 失败原因（汇总展示用） */
+  error?: string;
+}
+
+/**
+ * 批量K线下载汇总结果
+ */
+export interface KlineBatchDownloadSummary {
+  /** 是否成功（全部股票均下载成功） */
+  success: boolean;
+  /** 请求下载的股票总数 */
+  total: number;
+  /** 成功只数 */
+  successCount: number;
+  /** 失败只数 */
+  failedCount: number;
+  /** 逐只下载结果（按请求顺序） */
+  results: KlineBatchStockResult[];
+  /** 整体失败原因（参数校验失败、任务互斥等） */
+  error?: string;
+}
+
+/**
+ * 批量K线下载进度事件负载
+ * 主进程在每只股票开始/完成下载时推送
+ */
+export interface KlineBatchProgressPayload {
+  /** 阶段：started 开始下载该股票 | completed 该股票下载完成 */
+  phase: 'started' | 'completed';
+  /** 当前处理序号（1-based） */
+  index: number;
+  /** 本批股票总数 */
+  total: number;
+  /** 股票代码（纯数字） */
+  stockCode: string;
+  /** 股票名称 */
+  stockName?: string;
+  /** 本次批量任务的K线周期 */
+  period?: KlinePeriod;
+  /** 单只结果（phase === 'completed' 时提供） */
+  result?: KlineBatchStockResult;
 }
 
 /**
@@ -787,18 +886,30 @@ export interface KlineDownloadInput {
 export interface KlineAPI {
   /** 下载指定股票的K线数据 */
   downloadKline(input: KlineDownloadInput): Promise<KlineDownloadResult>;
-  /** 获取指定股票的K线数据 */
-  getKlineData(stockCode: string, startDate?: string, endDate?: string): Promise<KlineData[]>;
-  /** 获取K线图展示数据（从数据库读取，支持前复权/不复权切换） */
-  getChartData(stockCode: string, adjustType: '' | 'qfq'): Promise<KlineData[]>;
+  /** 获取指定股票的K线数据（按周期选择数据表） */
+  getKlineData(stockCode: string, period: KlinePeriod, startDate?: string, endDate?: string): Promise<KlineData[]>;
+  /** 获取K线图展示数据（从数据库读取，支持周期与前复权/不复权切换） */
+  getChartData(stockCode: string, adjustType: '' | 'qfq', period: KlinePeriod): Promise<KlineData[]>;
   /** 获取交易记录数据（复用已有TradeRecord实体，查询全部历史记录） */
   getTradeRecords(stockCode: string): Promise<TradeRecord[]>;
   /**
    * 订阅 K 线数据更新事件（下载/刷新成功后由主进程广播）
-   * @param callback 回调，参数为更新事件 { stockCode, adjustTypes }
+   * @param callback 回调，参数为更新事件 { stockCode, adjustTypes, periods }
    * @returns 取消订阅函数（调用即移除监听，避免内存泄漏）
    */
-  onKlineUpdated(callback: (payload: { stockCode: string; adjustTypes: ('' | 'qfq')[] }) => void): () => void;
+  onKlineUpdated(callback: (payload: { stockCode: string; adjustTypes: ('' | 'qfq')[]; periods: KlinePeriod[] }) => void): () => void;
+  /**
+   * 批量下载多只股票的K线数据（主进程串行执行）
+   * @param input 批量下载参数（股票代码列表、日期范围、复权类型）
+   * @returns 批量下载汇总结果（含逐只结果）
+   */
+  downloadKlineBatch(input: KlineBatchDownloadInput): Promise<KlineBatchDownloadSummary>;
+  /**
+   * 订阅批量下载进度事件（主进程每只股票开始/完成时广播）
+   * @param callback 回调，参数为进度负载
+   * @returns 取消订阅函数（调用即移除监听，避免内存泄漏）
+   */
+  onBatchDownloadProgress(callback: (payload: KlineBatchProgressPayload) => void): () => void;
 }
 
 /**

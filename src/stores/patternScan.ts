@@ -247,6 +247,8 @@ export const usePatternScanStore = defineStore('patternScan', () => {
     klineUpdateUnsub = window.klineAPI.onKlineUpdated(payload => {
       const stock = currentStock.value;
       if (!stock) return;
+      // 形态检测固定使用日线数据：周线/月线更新不触发重算
+      if (payload.periods && !payload.periods.includes('d')) return;
       if (payload.stockCode === stock.stockCode) {
         void reload();
       }
@@ -267,6 +269,7 @@ export const usePatternScanStore = defineStore('patternScan', () => {
 
   /**
    * 拉取指定股票 K 线并立即执行检测
+   * - 形态识别以日线序列为前提，固定取 period='d'，不随K线图周期变化
    * - 拉取失败：设置 errorMessage，不清空已有数据（避免破坏用户先前选择）
    * - 拉取成功：覆盖 klines，触发 runDetection
    * @param stockCode 股票代码
@@ -276,7 +279,7 @@ export const usePatternScanStore = defineStore('patternScan', () => {
     isDetecting.value = true;
     errorMessage.value = null;
     try {
-      const data = await window.klineAPI.getChartData(stockCode, adj);
+      const data = await window.klineAPI.getChartData(stockCode, adj, 'd');
       klines.value = data ?? [];
       runDetection();
     } catch (err) {

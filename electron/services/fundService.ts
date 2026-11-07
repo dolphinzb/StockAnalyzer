@@ -537,8 +537,8 @@ export class FundService {
   }
 
   /**
-   * 获取指定日期的持仓市值（使用kline_data收盘价计算）
-   * 对每只持股，从kline_data获取指定日期的收盘价，无数据时使用最近前一个交易日收盘价
+   * 获取指定日期的持仓市值（使用kline_daily收盘价计算）
+   * 对每只持股，从kline_daily获取指定日期的收盘价，无数据时使用最近前一个交易日收盘价
    * @param date 目标日期 (YYYY-MM-DD)
    * @param inclusive 是否包含目标当天：true=边界为 trade_date <= date（默认，用于期末/月末快照）；
    *                  false=边界为 trade_date < date（严格小于，用于期初快照，即上一交易日收盘状态）
@@ -593,9 +593,10 @@ export class FundService {
         const stockName = row[1] as string;
         const holdingCount = row[2] as number;
 
-        // 从kline_data获取指定日期或最近前一个交易日的收盘价（边界与持仓查询一致）
+        // 从kline_daily获取指定日期或最近前一个交易日的收盘价（边界与持仓查询一致）
+        // 估值固定使用日线收盘价，不受K线图所选周期影响
         const klineResult = this.db.exec(`
-          SELECT close FROM kline_data
+          SELECT close FROM kline_daily
           WHERE stock_code = ? AND trade_date ${dateOp} ?
           ORDER BY trade_date DESC LIMIT 1
         `, [stockCode, date]);
@@ -924,9 +925,9 @@ export class FundService {
           const stockName = row[1] as string;
           const holdingCount = row[2] as number;
 
-          // 获取该股票最新的收盘价（从kline_data表）
+          // 获取该股票最新的收盘价（从kline_daily表；估值固定使用日线，不受图表周期影响）
           const klineResult = this.db.exec(`
-            SELECT close FROM kline_data
+            SELECT close FROM kline_daily
             WHERE stock_code = ? AND close IS NOT NULL
             ORDER BY trade_date DESC LIMIT 1
           `, [stockCode]);

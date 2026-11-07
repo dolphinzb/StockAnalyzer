@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import DateRangePicker from './DateRangePicker.vue';
 import Modal from './Modal.vue';
+import { KLINE_PERIODS, KLINE_PERIOD_LABELS, type KlinePeriod } from '../types';
 
 interface Props {
   modelValue: boolean;
@@ -13,7 +14,7 @@ const props = defineProps<Props>();
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
-  download: [payload: { stockCode: string; startDate: string; endDate: string; adjustTypes: ('' | 'qfq')[] }];
+  download: [payload: { stockCode: string; startDate: string; endDate: string; adjustTypes: ('' | 'qfq')[]; period: KlinePeriod }];
 }>();
 
 /** 计算默认开始日期：当日 */
@@ -36,6 +37,9 @@ const dateRange = ref<{ startDate: string; endDate: string }>({
 
 /** 复权类型选择（T101：默认全选，与stock-sdk的adjust参数一致） */
 const adjustTypes = ref<('' | 'qfq')[]>(['', 'qfq']);
+
+/** K线周期（单选，默认日线；切换周期不改动日期范围） */
+const period = ref<KlinePeriod>('d');
 
 /** 验证错误信息 */
 const validationError = ref('');
@@ -95,12 +99,13 @@ function handleConfirm() {
   const startDateParam = startDate.replace(/-/g, '');
   const endDateParam = endDate.replace(/-/g, '');
 
-  // T103：传递adjustTypes参数给父组件
+  // T103：传递adjustTypes参数给父组件；周期为单值，一并传递
   emit('download', {
     stockCode: props.stockCode,
     startDate: startDateParam,
     endDate: endDateParam,
     adjustTypes: [...adjustTypes.value],
+    period: period.value,
   });
 
   // 关闭对话框
@@ -129,6 +134,17 @@ function handleCancel() {
         :model-value="dateRange"
         @change="handleDateChange"
       />
+
+      <!-- 周期选择（单选，默认日线） -->
+      <div class="period-section">
+        <label class="section-label">周期：</label>
+        <div class="radio-group">
+          <label v-for="p in KLINE_PERIODS" :key="p" class="radio-item">
+            <input type="radio" :value="p" v-model="period" />
+            <span>{{ KLINE_PERIOD_LABELS[p] }}</span>
+          </label>
+        </div>
+      </div>
 
       <!-- T100：复权类型复选框组 -->
       <div class="adjust-type-section">
@@ -190,6 +206,48 @@ function handleCancel() {
   .stock-name {
     font-size: 14px;
     color: #6b7280;
+  }
+}
+
+/* 周期选择区域样式（单选） */
+.period-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .section-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #374151;
+  }
+
+  .radio-group {
+    display: flex;
+    gap: 16px;
+
+    .radio-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      color: #374151;
+
+      input[type="radio"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+        accent-color: var(--color-primary);
+      }
+
+      span {
+        user-select: none;
+      }
+
+      &:hover {
+        color: var(--color-primary);
+      }
+    }
   }
 }
 

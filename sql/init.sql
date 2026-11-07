@@ -65,9 +65,13 @@ CREATE INDEX IF NOT EXISTS idx_transfer_date_desc ON transfer_records(transfer_d
 CREATE INDEX IF NOT EXISTS idx_transfer_type_date ON transfer_records(type, transfer_date);
 
 -- ============================================
--- 5. K线数据表（支持前复权）
+-- 5. K线数据表（日线 / 周线 / 月线，三表同构）
+-- 注意：三张表结构必须保持完全一致（字段集合与唯一键），
+--       任何字段变更都必须同步修改 kline_daily / kline_weekly / kline_monthly 三处。
 -- ============================================
-CREATE TABLE IF NOT EXISTS kline_data (
+
+-- 日线
+CREATE TABLE IF NOT EXISTS kline_daily (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   stock_code TEXT NOT NULL,
   trade_date TEXT NOT NULL,
@@ -87,10 +91,60 @@ CREATE TABLE IF NOT EXISTS kline_data (
   UNIQUE(stock_code, trade_date, adjust_type)
 );
 
--- 创建索引优化查询性能
-CREATE INDEX IF NOT EXISTS idx_kline_data_stock_code ON kline_data(stock_code);
-CREATE INDEX IF NOT EXISTS idx_kline_data_trade_date ON kline_data(trade_date);
-CREATE INDEX IF NOT EXISTS idx_kline_data_stock_date_adjust ON kline_data(stock_code, trade_date, adjust_type);
+-- 周线
+CREATE TABLE IF NOT EXISTS kline_weekly (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  stock_code TEXT NOT NULL,
+  trade_date TEXT NOT NULL,
+  adjust_type TEXT NOT NULL DEFAULT '',
+  open REAL,
+  close REAL,
+  high REAL,
+  low REAL,
+  volume REAL,
+  amount REAL,
+  amplitude REAL,
+  change_percent REAL,
+  change_amount REAL,
+  turnover_rate REAL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(stock_code, trade_date, adjust_type)
+);
+
+-- 月线
+CREATE TABLE IF NOT EXISTS kline_monthly (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  stock_code TEXT NOT NULL,
+  trade_date TEXT NOT NULL,
+  adjust_type TEXT NOT NULL DEFAULT '',
+  open REAL,
+  close REAL,
+  high REAL,
+  low REAL,
+  volume REAL,
+  amount REAL,
+  amplitude REAL,
+  change_percent REAL,
+  change_amount REAL,
+  turnover_rate REAL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(stock_code, trade_date, adjust_type)
+);
+
+-- 创建索引优化查询性能（三表索引命名按周期区分）
+CREATE INDEX IF NOT EXISTS idx_kline_daily_code ON kline_daily(stock_code);
+CREATE INDEX IF NOT EXISTS idx_kline_daily_date ON kline_daily(trade_date);
+CREATE INDEX IF NOT EXISTS idx_kline_daily_code_date_adjust ON kline_daily(stock_code, trade_date, adjust_type);
+
+CREATE INDEX IF NOT EXISTS idx_kline_weekly_code ON kline_weekly(stock_code);
+CREATE INDEX IF NOT EXISTS idx_kline_weekly_date ON kline_weekly(trade_date);
+CREATE INDEX IF NOT EXISTS idx_kline_weekly_code_date_adjust ON kline_weekly(stock_code, trade_date, adjust_type);
+
+CREATE INDEX IF NOT EXISTS idx_kline_monthly_code ON kline_monthly(stock_code);
+CREATE INDEX IF NOT EXISTS idx_kline_monthly_date ON kline_monthly(trade_date);
+CREATE INDEX IF NOT EXISTS idx_kline_monthly_code_date_adjust ON kline_monthly(stock_code, trade_date, adjust_type);
 
 -- ============================================
 -- 6. 初始化默认配置

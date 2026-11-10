@@ -1,8 +1,10 @@
+# kline-hover-tooltip Specification
+
 ## Purpose
 
 在自选股 K 线图弹窗中提供 K 线数据悬停提示能力：鼠标悬停某根蜡烛（某一交易日）即展示该交易日完整行情（日期、开/收/高/低、涨跌额、涨跌幅）。覆盖涨跌着色、证券类型动态精度、tooltip 定位与弹出方向自适应、与交易/形态标注 tooltip 的优先级协同，以及悬停命中检测与绘制逻辑的一致性保障。
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: K线数据悬停提示
 当鼠标悬停在K线图Canvas上某一交易日的蜡烛上时，系统SHALL弹出该交易日的K线数据tooltip，展示日期、开盘价、收盘价、最高价、最低价、涨跌额与涨跌幅；鼠标离开Canvas时SHALL隐藏该tooltip。

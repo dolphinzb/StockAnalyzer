@@ -865,6 +865,9 @@ export function getCurrentPeriodStart(period: 'w' | 'm'): string {
  * @param period K线周期：d 日线 | w 周线 | m 月线（决定写入的数据表）
  * @param target 目标数据库实例（默认取全局库，测试可注入内存库）
  * @returns 保存的数据条数
+ * @remarks 本函数只写入数据库对象，**不负责落盘**。
+ *          持久化由知道批次边界的调用方显式调用 saveDatabase() 触发，
+ *          避免批量下载时每写一只股票就把整个库序列化落盘一次。
  */
 export function saveKlineData(
   stockCode: string,
@@ -938,12 +941,8 @@ export function saveKlineData(
       );
     }
 
-    // 提交事务
+    // 提交事务（仅提交到内存库，落盘由调用方决定）
     database.run('COMMIT');
-    // 注入外部数据库实例（测试）时不落全局库文件
-    if (!target) {
-      saveDatabase();
-    }
     log.info(`K线数据保存成功: ${stockCode}, 周期: ${period}, 复权类型: ${adjustType}, 共 ${klines.length} 条`);
     return klines.length;
   } catch (error) {

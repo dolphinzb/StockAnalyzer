@@ -594,17 +594,18 @@ export class FundService {
         const holdingCount = row[2] as number;
 
         // 从kline_daily获取指定日期或最近前一个交易日的收盘价（边界与持仓查询一致）
-        // 估值固定使用日线收盘价，不受K线图所选周期影响
+        // 估值固定使用日线收盘价与不复权口径：前复权价按最新价缩放，与当时实际持仓股数
+        // 相乘会把除权跳空计入市值，导致历史市值和区间盈亏虚增
         const klineResult = this.db.exec(`
           SELECT close FROM kline_daily
-          WHERE stock_code = ? AND trade_date ${dateOp} ?
+          WHERE stock_code = ? AND trade_date ${dateOp} ? AND adjust_type = ''
           ORDER BY trade_date DESC LIMIT 1
         `, [stockCode, date]);
 
         if (klineResult.length === 0 || klineResult[0].values.length === 0 || klineResult[0].values[0][0] === null) {
           // 无K线数据
           missingKlineStocks.push(stockCode);
-          log.warn(`股票 ${stockCode}(${stockName}) 无K线数据，日期: ${date}`);
+          log.warn(`股票 ${stockCode}(${stockName}) 无不复权K线数据，日期: ${date}`);
           continue;
         }
 
@@ -925,10 +926,10 @@ export class FundService {
           const stockName = row[1] as string;
           const holdingCount = row[2] as number;
 
-          // 获取该股票最新的收盘价（从kline_daily表；估值固定使用日线，不受图表周期影响）
+          // 获取该股票最新的收盘价（估值固定使用日线与不复权口径，不受图表周期影响）
           const klineResult = this.db.exec(`
             SELECT close FROM kline_daily
-            WHERE stock_code = ? AND close IS NOT NULL
+            WHERE stock_code = ? AND adjust_type = '' AND close IS NOT NULL
             ORDER BY trade_date DESC LIMIT 1
           `, [stockCode]);
 

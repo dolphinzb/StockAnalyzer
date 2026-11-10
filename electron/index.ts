@@ -17,6 +17,7 @@ import {
   getTradeRecords,
   getTradeRecordsByStockCode,
   getWatchlist,
+  reorderWatchlist,
   initDatabase,
   loadConfig,
   saveConfig,
@@ -275,6 +276,33 @@ ipcMain.handle('watchlist:delete', (_event, id: number) => {
     }
   } catch (error) {
     log.error('IPC watchlist:delete error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('watchlist:reorder', (_event, orderedIds: number[]) => {
+  log.info('IPC: watchlist:reorder', orderedIds);
+  try {
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+      throw new Error('INVALID_ORDER: 顺序列表不能为空');
+    }
+    if (orderedIds.some(id => !Number.isInteger(id) || id <= 0)) {
+      throw new Error('INVALID_ORDER: 顺序列表包含非法 id');
+    }
+    const orderedSet = new Set(orderedIds);
+    if (orderedSet.size !== orderedIds.length) {
+      throw new Error('INVALID_ORDER: 顺序列表存在重复 id');
+    }
+    // 集合必须与当前库中自选股完全一致，防止期间新增/删除导致顺序错位
+    const currentIds = getWatchlist().map(stock => stock.id);
+    const sameSet =
+      currentIds.length === orderedSet.size && currentIds.every(id => orderedSet.has(id));
+    if (!sameSet) {
+      throw new Error('WATCHLIST_CHANGED: 自选股列表已变化，请刷新后重试');
+    }
+    return reorderWatchlist(orderedIds);
+  } catch (error) {
+    log.error('IPC watchlist:reorder error:', error);
     throw error;
   }
 });

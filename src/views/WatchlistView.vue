@@ -80,6 +80,16 @@ function handleToggleMonitor(stockId: number, enabled: boolean) {
   store.updateStock(stockId, { monitorEnabled: enabled });
 }
 
+/** 保存拖拽后的自选股顺序，失败时提示（store 内部已回滚） */
+async function handleReorderStocks(orderedIds: number[]) {
+  try {
+    await store.reorderStocks(orderedIds);
+  } catch (error) {
+    console.error('Failed to save stock order:', error);
+    showToast('顺序保存失败，已恢复原顺序', 'error', 3000);
+  }
+}
+
 /** 处理下载K线按钮点击，打开下载对话框 */
 function handleDownloadKline(stockCode: string) {
   const stock = sortedStocks.value.find(s => s.stockCode === stockCode);
@@ -193,6 +203,8 @@ function handleCloseKlineChart() {
 
     <StockList
       :stocks="sortedStocks"
+      :reordering="store.isReordering"
+      @reorder="handleReorderStocks"
       @edit="handleEditStock"
       @delete="handleDeleteStock"
       @toggle-monitor="handleToggleMonitor"

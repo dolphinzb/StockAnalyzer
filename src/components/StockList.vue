@@ -1,9 +1,14 @@
 <script setup lang="ts">
+import Sortable from 'sortablejs';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { WatchlistStock } from '../types';
+import { moveArrayItem } from '../utils/stockOrder';
 import StockItem from './StockItem.vue';
 
-defineProps<{
+const props = defineProps<{
   stocks: WatchlistStock[];
+  /** 顺序保存中：禁用再次拖拽，避免交叉覆盖 */
+  reordering?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -12,7 +17,46 @@ const emit = defineEmits<{
   toggleMonitor: [stockId: number, enabled: boolean];
   'download-kline': [stockCode: string];
   'show-kline-chart': [stockCode: string, stockName: string];
+  reorder: [orderedIds: number[]];
 }>();
+
+const listBodyRef = ref<HTMLElement | null>(null);
+let sortable: Sortable | null = null;
+
+onMounted(() => {
+  if (!listBodyRef.value) {
+    return;
+  }
+  sortable = Sortable.create(listBodyRef.value, {
+    handle: '.drag-handle',
+    animation: 150,
+    ghostClass: 'drag-ghost',
+    chosenClass: 'drag-chosen',
+    onEnd: event => {
+      const { oldIndex, newIndex } = event;
+      if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) {
+        return;
+      }
+      // 同步重排数组，使 Vue 渲染结果与 Sortable 已移动的 DOM 一致，避免顺序回跳
+      const reordered = moveArrayItem(props.stocks, oldIndex, newIndex);
+      emit('reorder', reordered.map(stock => stock.id));
+    },
+  });
+  sortable.option('disabled', Boolean(props.reordering));
+});
+
+onBeforeUnmount(() => {
+  sortable?.destroy();
+  sortable = null;
+});
+
+// 顺序保存期间禁用拖拽
+watch(
+  () => props.reordering,
+  value => {
+    sortable?.option('disabled', Boolean(value));
+  }
+);
 
 function handleEdit(stockId: number) {
   emit('edit', stockId);
@@ -40,6 +84,7 @@ function handleShowKlineChart(stockCode: string, stockName: string) {
 <template>
   <div class="stock-list">
     <div class="stock-list-header">
+      <span class="col-drag"></span>
       <span class="col-code">股票代码</span>
       <span class="col-name">名称</span>
       <span class="col-price">开盘价</span>
@@ -53,7 +98,7 @@ function handleShowKlineChart(stockCode: string, stockName: string) {
       <span class="col-monitor">监控</span>
       <span class="col-actions">操作</span>
     </div>
-    <div class="stock-list-body">
+    <div ref="listBodyRef" class="stock-list-body">
       <StockItem
         v-for="stock in stocks"
         :key="stock.id"
@@ -69,6 +114,8 @@ function handleShowKlineChart(stockCode: string, stockName: string) {
 </template>
 
 <style scoped lang="scss">
+@use '../styles/stock-grid' as *;
+
 .stock-list {
   flex: 1;
   display: flex;
@@ -80,8 +127,8 @@ function handleShowKlineChart(stockCode: string, stockName: string) {
 
 .stock-list-header {
   display: grid;
-  grid-template-columns: 50px 50px 80px 80px 80px 80px 80px 90px 90px 90px 60px 180px;
-  gap: 0.5rem;
+  grid-template-columns: $stock-list-columns;
+  gap: 0.375rem;
   padding: 0.75rem 1rem;
   background-color: var(--bg-secondary);
   font-weight: 600;
@@ -96,5 +143,19 @@ function handleShowKlineChart(stockCode: string, stockName: string) {
 
 .stock-list-header span {
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* SortableJS 拖拽态（class 作用在 StockItem 根元素上） */
+:deep(.drag-ghost) {
+  opacity: 0.4;
+  background-color: var(--bg-secondary);
+}
+
+:deep(.drag-chosen) {
+  background-color: var(--bg-highlight);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 </style>

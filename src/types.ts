@@ -7,6 +7,8 @@ export interface WatchlistStock {
   monitorEnabled: boolean;
   createdAt: string;
   updatedAt: string;
+  /** 用户自定义排序值，升序展示 */
+  sortOrder: number;
 }
 
 export interface AddStockInput {

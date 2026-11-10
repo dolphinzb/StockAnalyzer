@@ -86,8 +86,9 @@ function getChangeColorClass(value: number | null): string {
 
 <template>
   <div class="stock-item" :class="{ 'monitor-enabled': stock.monitorEnabled }">
+    <span class="drag-handle" title="拖拽调整顺序">⋮⋮</span>
     <span class="col-code">{{ stock.stockCode }}</span>
-    <span class="col-name col-name-clickable" @click="handleShowKlineChart">{{ stock.stockName }}</span>
+    <span class="col-name col-name-clickable" :title="stock.stockName" @click="handleShowKlineChart">{{ stock.stockName }}</span>
     <span class="col-price">{{ formatPriceWithCode(openPrice) }}</span>
     <span class="col-price">{{ formatPriceWithCode(highPrice) }}</span>
     <span class="col-price">{{ formatPriceWithCode(lowPrice) }}</span>
@@ -123,10 +124,12 @@ function getChangeColorClass(value: number | null): string {
 </template>
 
 <style scoped lang="scss">
+@use '../styles/stock-grid' as *;
+
 .stock-item {
   display: grid;
-  grid-template-columns: 50px 50px 80px 80px 80px 80px 80px 90px 90px 90px 60px 180px;
-  gap: 0.5rem;
+  grid-template-columns: $stock-list-columns;
+  gap: 0.375rem;
   padding: 0.75rem 1rem;
   align-items: center;
   border-bottom: 1px solid var(--border-color);
@@ -144,6 +147,34 @@ function getChangeColorClass(value: number | null): string {
 .stock-item > span {
   text-align: center;
   font-family: monospace;
+}
+
+/* 固定列宽下超长代码/名称省略显示，避免文字溢到相邻列 */
+.stock-item > .col-code,
+.stock-item > .col-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 拖拽手柄：仅此区域可拖动，避免与行内点击/按钮冲突 */
+.stock-item > .drag-handle {
+  cursor: grab;
+  user-select: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  letter-spacing: -2px;
+  opacity: 0.5;
+  transition: opacity 0.2s, color 0.2s;
+
+  &:hover {
+    opacity: 1;
+    color: #3b82f6;
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
 }
 
 /* 股票名称可点击样式 */
@@ -230,7 +261,7 @@ function getChangeColorClass(value: number | null): string {
 
 .col-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.375rem;
   justify-content: center;
 }
 

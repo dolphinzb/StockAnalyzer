@@ -324,6 +324,8 @@ export interface StockWatcherAPI {
   addStock(stock: any): Promise<any>;
   updateStock(id: number, updates: any): Promise<any>;
   deleteStock(id: number): Promise<void>;
+  /** 按完整的有序 id 列表重写自选股顺序，返回重排后的列表 */
+  reorderWatchlist(orderedIds: number[]): Promise<any[]>;
   refreshPrices(): Promise<void>;
   getLastRefreshTime(): Promise<string | null>;
   onPriceUpdate(callback: (prices: any[]) => void): () => void;

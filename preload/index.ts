@@ -43,6 +43,7 @@ interface WatchlistStock {
   monitorEnabled: boolean;
   createdAt: string;
   updatedAt: string;
+  sortOrder: number;
 }
 
 interface AddStockInput {
@@ -82,6 +83,7 @@ interface StockWatcherAPI {
   addStock(stock: AddStockInput): Promise<WatchlistStock>;
   updateStock(id: number, updates: UpdateStockInput): Promise<WatchlistStock>;
   deleteStock(id: number): Promise<void>;
+  reorderWatchlist(orderedIds: number[]): Promise<WatchlistStock[]>;
   refreshPrices(): Promise<void>;
   getLastRefreshTime(): Promise<string | null>;
   onPriceUpdate(callback: (prices: PriceUpdate[]) => void): () => void;
@@ -143,6 +145,7 @@ const stockWatcherAPI: StockWatcherAPI = {
   addStock: (input: AddStockInput) => ipcRenderer.invoke('watchlist:add', input),
   updateStock: (id: number, updates: UpdateStockInput) => ipcRenderer.invoke('watchlist:update', id, updates),
   deleteStock: (id: number) => ipcRenderer.invoke('watchlist:delete', id),
+  reorderWatchlist: (orderedIds: number[]) => ipcRenderer.invoke('watchlist:reorder', orderedIds),
   refreshPrices: () => ipcRenderer.invoke('prices:refresh'),
   getLastRefreshTime: () => ipcRenderer.invoke('prices:last-time'),
   onPriceUpdate: (callback: (prices: PriceUpdate[]) => void) => {

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
+import { applyOrder } from '../utils/stockOrder';
 import type { AddStockInput, Alert, IndexData, IndexDataState, KlineBatchDownloadInput, KlineBatchDownloadSummary, KlineBatchProgressPayload, KlineBatchStockResult, KlineDownloadResult, KlinePeriod, PriceUpdate, UpdateStockInput, WatchlistStock } from '../types';
 
 /** 批量下载中单只股票状态 */
@@ -69,14 +70,14 @@ export const useWatchlistStore = defineStore('watchlist', () => {
   // 是否有批量下载任务在执行（按钮禁用/弹窗锁定用）
   const isBatchDownloading = computed(() => batchDownloadState.value.isRunning);
 
-  const sortedStocks = computed(() => {
-    return [...stocks.value].sort((a, b) => {
-      if (a.monitorEnabled !== b.monitorEnabled) {
-        return a.monitorEnabled ? -1 : 1;
-      }
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    });
-  });
+  // 顺序保存进行中（期间禁用拖拽，避免交叉覆盖）
+  const isReordering = ref(false);
+
+  /**
+   * 展示用自选股列表
+   * 顺序完全由后端 sort_order 决定，此处直接透传，不再做二次排序
+   */
+  const sortedStocks = computed(() => stocks.value);
 
   function getCurrentPrice(stockCode: string): number | null {
     return priceMap.value.get(stockCode)?.price ?? null;
@@ -116,6 +117,29 @@ export const useWatchlistStore = defineStore('watchlist', () => {
   async function deleteStock(id: number): Promise<void> {
     await window.stockWatcherAPI.deleteStock(id);
     stocks.value = stocks.value.filter(s => s.id !== id);
+  }
+
+  /**
+   * 保存自选股排序
+   * 先乐观更新本地顺序（界面即时生效），再提交主进程；失败时回滚并抛出，由调用方提示
+   * @param orderedIds 完整的有序自选股 id 列表
+   */
+  async function reorderStocks(orderedIds: number[]): Promise<void> {
+    const previous = stocks.value.slice();
+    stocks.value = applyOrder(stocks.value, orderedIds);
+    isReordering.value = true;
+    try {
+      stocks.value = await window.stockWatcherAPI.reorderWatchlist(orderedIds);
+    } catch (error) {
+      try {
+        await fetchStocks();
+      } catch {
+        stocks.value = previous;
+      }
+      throw error;
+    } finally {
+      isReordering.value = false;
+    }
   }
 
   async function refreshPrices(): Promise<void> {
@@ -414,6 +438,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     batchDownloadState,
     enabledStocks,
     isBatchDownloading,
+    isReordering,
     sortedStocks,
     klineChartDialog,
     getCurrentPrice,
@@ -422,6 +447,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     addStock,
     updateStock,
     deleteStock,
+    reorderStocks,
     refreshPrices,
     downloadKline,
     downloadKlineBatch,

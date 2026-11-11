@@ -7,9 +7,16 @@ interface LogReadResult {
   error: string | null;
 }
 
+interface LogOpenDirectoryResult {
+  success: boolean;
+  error?: string;
+}
+
 interface LogAPI {
-  readLog(): Promise<LogReadResult>;
+  readLog(date?: string): Promise<LogReadResult>;
+  listLogDates(): Promise<string[]>;
   getLogPath(): Promise<string>;
+  openLogDirectory(): Promise<LogOpenDirectoryResult>;
 }
 
 // 渲染进程本地类型（从 src/types 导入，但 preload 无法直接导入，需要重新定义）
@@ -222,8 +229,10 @@ interface HistoricalTradeAPI {
 
 // 日志 API
 const logAPI: LogAPI = {
-  readLog: () => ipcRenderer.invoke('log:read'),
+  readLog: (date?: string) => ipcRenderer.invoke('log:read', date),
+  listLogDates: () => ipcRenderer.invoke('log:list'),
   getLogPath: () => ipcRenderer.invoke('log:getPath'),
+  openLogDirectory: () => ipcRenderer.invoke('log:open-directory'),
 };
 
 // 备份 API

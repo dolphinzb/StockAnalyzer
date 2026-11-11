@@ -4,6 +4,8 @@ defineProps<{
   isLoading: boolean;
   error: string | null;
   lastRefresh: Date | null;
+  /** 无内容时的提示文案，用于区分「该日期没有日志」与「日志文件为空」 */
+  emptyText?: string;
 }>();
 </script>
 
@@ -21,7 +23,7 @@ defineProps<{
 
     <div v-else-if="!content" class="empty-state">
       <span class="empty-icon">📄</span>
-      <span>日志文件为空</span>
+      <span>{{ emptyText ?? '日志文件为空' }}</span>
     </div>
 
     <pre v-else class="log-content">{{ content }}</pre>
@@ -60,7 +62,7 @@ defineProps<{
 
 .error-icon {
   font-size: 1.5rem;
-  color: var(--color-error);
+  color: var(--error-color);
 }
 
 .empty-icon {
@@ -76,8 +78,8 @@ defineProps<{
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 0.8125rem;
   line-height: 1.5;
-  color: var(--text-primary);
-  background-color: var(--bg-primary);
+  color: var(--text-color);
+  background-color: var(--bg-color);
   white-space: pre-wrap;
   word-break: break-all;
   user-select: text;

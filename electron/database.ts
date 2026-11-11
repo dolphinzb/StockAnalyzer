@@ -18,6 +18,8 @@ export interface WatchlistStock {
   monitorEnabled: boolean;
   createdAt: string;
   updatedAt: string;
+  /** 用户自定义排序值，升序展示 */
+  sortOrder: number;
 }
 
 /**
@@ -172,6 +174,41 @@ function migrateKlineTables(database: Database): boolean {
   return changed;
 }
 
+/**
+ * 自选股顺序字段自动迁移（幂等）
+ * - 表不存在：跳过（新建库由 sql/init.sql 建表，已含该字段）
+ * - 字段已存在：跳过，保留用户已保存的顺序
+ * - 字段缺失：新增列，并按升级前的可见顺序（监控优先、更新时间倒序、id 兜底）回填，
+ *   保证升级后列表外观与升级前一致
+ * @param database 已加载的数据库实例
+ * @returns 是否发生了需要落盘的变更
+ */
+function migrateWatchlistSortOrder(database: Database): boolean {
+  if (!hasDbObject(database, 'table', 'watchlist_stocks')) {
+    log.warn('watchlist_stocks 表不存在，跳过自选股顺序字段迁移');
+    return false;
+  }
+
+  const tableInfo = database.exec('PRAGMA table_info(watchlist_stocks)');
+  const columns = tableInfo.length > 0 ? tableInfo[0].values.map(row => String(row[1])) : [];
+  if (columns.includes('sort_order')) {
+    return false;
+  }
+
+  database.run('ALTER TABLE watchlist_stocks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+
+  const result = database.exec(
+    'SELECT id FROM watchlist_stocks ORDER BY monitor_enabled DESC, updated_at DESC, id ASC'
+  );
+  const ids = result.length > 0 ? result[0].values.map(row => Number(row[0])) : [];
+  ids.forEach((id, index) => {
+    database.run('UPDATE watchlist_stocks SET sort_order = ? WHERE id = ?', [index, id]);
+  });
+
+  log.info(`自选股顺序字段迁移完成：回填 ${ids.length} 条记录`);
+  return true;
+}
+
 export async function initDatabase(): Promise<void> {
   const dbPath = getDatabasePath();
   log.info(`初始化数据库: ${dbPath}`);
@@ -189,9 +226,10 @@ export async function initDatabase(): Promise<void> {
       db = new SQL.Database(fileBuffer);
       log.info('数据库文件加载成功');
 
-      // 存量库自动迁移：kline_data → kline_daily，并补齐周线/月线表（幂等）
+      // 存量库自动迁移（均为幂等操作，全部在内存完成后统一落盘）
       const klineMigrated = migrateKlineTables(db);
-      if (klineMigrated) {
+      const watchlistMigrated = migrateWatchlistSortOrder(db);
+      if (klineMigrated || watchlistMigrated) {
         saveDatabase();
       }
     } else {
@@ -213,7 +251,7 @@ export function saveDatabase(): void {
   const data = db.export();
   const buffer = Buffer.from(data);
   writeFileSync(dbPath, buffer);
-  log.info('saveDatabase: 数据库已保存到', dbPath);
+  log.debug('saveDatabase: 数据库已保存到', dbPath);
 }
 
 export function loadConfig(): AppConfig {
@@ -273,6 +311,10 @@ export function getDb(): Database {
   return db;
 }
 
+/** 自选股查询列清单（sort_order 固定追加在末尾，避免既有下标错位） */
+const WATCHLIST_SELECT_COLUMNS =
+  'id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at, sort_order';
+
 function rowToWatchlistStock(row: any[]): WatchlistStock {
   return {
     id: row[0] as number,
@@ -283,13 +325,14 @@ function rowToWatchlistStock(row: any[]): WatchlistStock {
     monitorEnabled: row[5] === 1,
     createdAt: row[6] as string,
     updatedAt: row[7] as string,
+    sortOrder: row[8] as number,
   };
 }
 
 export function getWatchlist(): WatchlistStock[] {
   const database = getDb();
   const result = database.exec(
-    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at FROM watchlist_stocks ORDER BY monitor_enabled DESC, updated_at DESC'
+    `SELECT ${WATCHLIST_SELECT_COLUMNS} FROM watchlist_stocks ORDER BY sort_order ASC, id ASC`
   );
   if (result.length === 0) {
     return [];
@@ -300,7 +343,7 @@ export function getWatchlist(): WatchlistStock[] {
 export function getWatchlistById(id: number): WatchlistStock | null {
   const database = getDb();
   const result = database.exec(
-    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at FROM watchlist_stocks WHERE id = ?',
+    `SELECT ${WATCHLIST_SELECT_COLUMNS} FROM watchlist_stocks WHERE id = ?`,
     [id]
   );
   if (result.length === 0 || result[0].values.length === 0) {
@@ -312,7 +355,7 @@ export function getWatchlistById(id: number): WatchlistStock | null {
 export function getEnabledStocks(): WatchlistStock[] {
   const database = getDb();
   const result = database.exec(
-    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at FROM watchlist_stocks WHERE monitor_enabled = 1'
+    `SELECT ${WATCHLIST_SELECT_COLUMNS} FROM watchlist_stocks WHERE monitor_enabled = 1 ORDER BY sort_order ASC, id ASC`
   );
   if (result.length === 0) {
     return [];
@@ -323,7 +366,7 @@ export function getEnabledStocks(): WatchlistStock[] {
 export function getStockByCode(stockCode: string): WatchlistStock | null {
   const database = getDb();
   const result = database.exec(
-    'SELECT id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at FROM watchlist_stocks WHERE stock_code = ?',
+    `SELECT ${WATCHLIST_SELECT_COLUMNS} FROM watchlist_stocks WHERE stock_code = ?`,
     [stockCode]
   );
   if (result.length === 0 || result[0].values.length === 0) {
@@ -336,7 +379,8 @@ export function addStock(input: AddStockInput): WatchlistStock {
   const database = getDb();
   const now = new Date().toISOString();
   database.run(
-    'INSERT INTO watchlist_stocks (stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)',
+    `INSERT INTO watchlist_stocks (stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at, sort_order)
+     VALUES (?, ?, ?, ?, 0, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM watchlist_stocks))`,
     [input.stockCode, input.stockName, input.buyThreshold, input.sellThreshold, now, now]
   );
   saveDatabase();
@@ -386,6 +430,73 @@ export function deleteStock(id: number): boolean {
   database.run('DELETE FROM watchlist_stocks WHERE id = ?', [id]);
   saveDatabase();
   return true;
+}
+
+/**
+ * 按给定顺序值恢复自选股的排序（仅作用于内存库，不落盘）
+ * 用于落盘失败时回滚已提交的内存变更
+ * @param database 数据库实例
+ * @param orders 重排前的 id 与顺序值
+ */
+function restoreSortOrders(
+  database: Database,
+  orders: Array<{ id: number; sortOrder: number }>
+): void {
+  database.run('BEGIN');
+  try {
+    orders.forEach(order => {
+      database.run('UPDATE watchlist_stocks SET sort_order = ? WHERE id = ?', [
+        order.sortOrder,
+        order.id,
+      ]);
+    });
+    database.run('COMMIT');
+  } catch (error) {
+    database.run('ROLLBACK');
+    log.error('恢复自选股顺序失败:', error);
+  }
+}
+
+/**
+ * 按给定 id 顺序重写自选股排序值
+ * 说明：整表重写为连续的 0..N-1，同时压缩删除产生的空缺；重排不改写 updated_at
+ * 事务提交成功但落盘失败时，会按重排前的顺序值恢复内存库，保证界面与磁盘一致
+ * @param orderedIds 完整的有序自选股 id 列表
+ * @returns 重排后的完整自选股列表
+ */
+export function reorderWatchlist(orderedIds: number[]): WatchlistStock[] {
+  const database = getDb();
+  const beforeResult = database.exec('SELECT id, sort_order FROM watchlist_stocks');
+  const beforeOrders =
+    beforeResult.length > 0
+      ? beforeResult[0].values.map(row => ({
+          id: Number(row[0]),
+          sortOrder: Number(row[1]),
+        }))
+      : [];
+
+  database.run('BEGIN');
+  try {
+    orderedIds.forEach((id, index) => {
+      database.run('UPDATE watchlist_stocks SET sort_order = ? WHERE id = ?', [index, id]);
+    });
+    database.run('COMMIT');
+  } catch (error) {
+    database.run('ROLLBACK');
+    log.error('重排自选股顺序失败，已回滚:', error);
+    throw error;
+  }
+
+  try {
+    saveDatabase();
+  } catch (error) {
+    // 内存库已提交但磁盘未写入：恢复内存顺序，避免重启后顺序回退造成不一致
+    log.error('重排自选股顺序落盘失败，恢复内存顺序:', error);
+    restoreSortOrders(database, beforeOrders);
+    throw error;
+  }
+
+  return getWatchlist();
 }
 
 export interface Position {
@@ -506,7 +617,7 @@ export interface UpdateTradeInput {
 
 export function updateTradeRecord(input: UpdateTradeInput): TradeRecord {
   const database = getDb();
-  log.info('updateTradeRecord input:', JSON.stringify(input));
+  log.debug('updateTradeRecord input:', JSON.stringify(input));
   database.run(
     `UPDATE trade_record
      SET stock_code = ?, stock_name = ?, trade_date = ?, trade_type = ?, trade_price = ?, trade_count = ?, holding_count = ?, holding_price = ?
@@ -607,7 +718,7 @@ export function getTradeRecords(stockCode: string, page: number = 1, pageSize: n
 
   // 计算是否还有更多记录
   const hasMore = page * pageSize < total;
-  log.info(`getTradeRecords: stockCode=${stockCode}, page=${page}, pageSize=${pageSize}, total=${total}, hasMore=${hasMore}`);
+  log.debug(`getTradeRecords: stockCode=${stockCode}, page=${page}, pageSize=${pageSize}, total=${total}, hasMore=${hasMore}`);
   return { records, total, hasMore };
 }
 
@@ -754,6 +865,9 @@ export function getCurrentPeriodStart(period: 'w' | 'm'): string {
  * @param period K线周期：d 日线 | w 周线 | m 月线（决定写入的数据表）
  * @param target 目标数据库实例（默认取全局库，测试可注入内存库）
  * @returns 保存的数据条数
+ * @remarks 本函数只写入数据库对象，**不负责落盘**。
+ *          持久化由知道批次边界的调用方显式调用 saveDatabase() 触发，
+ *          避免批量下载时每写一只股票就把整个库序列化落盘一次。
  */
 export function saveKlineData(
   stockCode: string,
@@ -827,13 +941,9 @@ export function saveKlineData(
       );
     }
 
-    // 提交事务
+    // 提交事务（仅提交到内存库，落盘由调用方决定）
     database.run('COMMIT');
-    // 注入外部数据库实例（测试）时不落全局库文件
-    if (!target) {
-      saveDatabase();
-    }
-    log.info(`K线数据保存成功: ${stockCode}, 周期: ${period}, 复权类型: ${adjustType}, 共 ${klines.length} 条`);
+    log.debug(`K线数据保存成功: ${stockCode}, 周期: ${period}, 复权类型: ${adjustType}, 共 ${klines.length} 条`);
     return klines.length;
   } catch (error) {
     // 事务回滚

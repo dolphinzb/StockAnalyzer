@@ -24,6 +24,7 @@
   "dependencies": {
     "electron-log": "^5.1.1",
     "pinia": "^3.0.4",
+    "sortablejs": "^1.15.7",
     "sql.js": "^1.14.1",
     "stock-sdk": "^1.9.0",
     "vue": "^3.4.21"
@@ -33,6 +34,7 @@
     "@commitlint/config-conventional": "^19.1.0",
     "@electron/rebuild": "^4.0.3",
     "@types/node": "^20.11.28",
+    "@types/sortablejs": "^1.15.9",
     "@types/sql.js": "^1.4.11",
     "@vitejs/plugin-vue": "^5.0.4",
     "@vue/eslint-config-typescript": "^12.0.0",

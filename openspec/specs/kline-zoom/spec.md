@@ -1,8 +1,10 @@
+# kline-zoom Specification
+
 ## Purpose
 
 提供K线图的鼠标滚轮缩放功能，允许用户通过滚轮快速调整K线显示密度和时间范围，提升图表交互体验和数据查看效率。
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: 鼠标滚轮缩放K线图
 系统SHALL支持通过鼠标滚轮对K线图进行缩放操作,允许用户快速调整显示的K线数量和时间范围。

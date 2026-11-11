@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS watchlist_stocks (
   sell_threshold REAL NOT NULL,
   monitor_enabled INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0
 );
 
 -- 创建索引优化查询性能

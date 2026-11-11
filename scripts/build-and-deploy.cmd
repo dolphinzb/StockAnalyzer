@@ -1,18 +1,12 @@
 @echo off
-rem StockAnalyzer ä¸€é”®æ„å»ºå¹¶éƒ¨ç½²ï¼ˆåŒå‡»æœ¬æ–‡ä»¶å³å¯ï¼‰
-rem è‡ªåŠ¨ç”³è¯·ç®¡ç†å‘˜æƒé™åæ‰§è¡Œ scripts\build-and-deploy.ps1
+rem StockAnalyzer Ò»¼ü¹¹½¨²¢²¿Êğ£¨Ë«»÷±¾ÎÄ¼ş¼´¿É£©
+rem Ä¬ÈÏ°²×°µ½ %LOCALAPPDATA%\Programs\StockAnalyzer£¬ÆÕÍ¨È¨ÏŞ¼´¿ÉĞ´Èë£¬²»ÔÙÉêÇë¹ÜÀíÔ±È¨ÏŞ
+rem ÈçĞè²¿Êğµ½ C:\Program Files µÈÏµÍ³Ä¿Â¼£¬ÇëÒÔ¹ÜÀíÔ±Éí·İ´ò¿ª PowerShell ºóÔËĞĞ ps1
 
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-    echo æ­£åœ¨ç”³è¯·ç®¡ç†å‘˜æƒé™...
-    powershell -NoProfile -Command "Start-Process -FilePath cmd.exe -ArgumentList '/c','%~f0' -Verb RunAs"
-    exit /b
-)
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build-and-deploy.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build-and-deploy.ps1" %*
 if %errorlevel% neq 0 (
     echo.
-    echo æ„å»ºæˆ–éƒ¨ç½²å¤±è´¥ï¼Œé”™è¯¯ç ï¼š%errorlevel%
+    echo ¹¹½¨»ò²¿ÊğÊ§°Ü£¬´íÎóÂë£º%errorlevel%
     pause
     exit /b %errorlevel%
 )

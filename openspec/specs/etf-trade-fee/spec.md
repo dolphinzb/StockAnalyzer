@@ -1,8 +1,10 @@
+# etf-trade-fee Specification
+
 ## Purpose
 
 统一 ETF（场内基金）的交易费用与持仓成本计算规则，并规范 ETF 的代码识别来源。明确 ETF 买卖仅计佣金（免最低 5 元）、免过户费与印花税，持仓加权均价不含这两项费用，同时保持差别化红利税规则不变；ETF 识别逻辑集中于 `shared/utils/securities.ts` 的 `isFund`，供交易费用、价格精度、K 线下载复用。
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: ETF 买入费用计算
 系统对 ETF（场内基金）买入交易，SHALL 仅按佣金率（`TRADE_FEE_RATE`）计算佣金，且 SHALL 不设置最低 5 元下限（按实际金额计收），SHALL 免收过户费。

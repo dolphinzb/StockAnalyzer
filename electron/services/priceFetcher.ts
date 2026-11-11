@@ -111,7 +111,7 @@ export async function fetchStockPrice(stockCode: string): Promise<PriceResult> {
     const arrayBuffer = await response.arrayBuffer();
     const decoder = new TextDecoder('gbk');
     const text = decoder.decode(arrayBuffer);
-    log.info(`API原始响应 [${stockCode}]: ${text}`);
+    log.debug(`API原始响应 [${stockCode}]: ${text}`);
     const stockData = parseStockData(text);
 
     if (stockData === null) {
@@ -154,7 +154,7 @@ export async function fetchStockName(stockCode: string): Promise<StockInfo> {
     const arrayBuffer = await response.arrayBuffer();
     const decoder = new TextDecoder('gbk');
     const text = decoder.decode(arrayBuffer);
-    log.info(`API原始响应 [${stockCode}]: ${text}`);
+    log.debug(`API原始响应 [${stockCode}]: ${text}`);
     const stockName = parseStockName(text, stockCode);
 
     if (!stockName) {
@@ -288,7 +288,7 @@ export async function refreshAllEnabledStocks(stocks: WatchlistStock[], config: 
 
   lastRefreshTime = now;
   sendRefreshTimeUpdate(now);
-  log.info(`Price refresh completed at ${now}`);
+  log.debug(`Price refresh completed at ${now}`);
 }
 
 export async function fetchStockPrices(stockCodes: string[], config: AppConfig): Promise<PriceResult[]> {
@@ -317,7 +317,7 @@ export async function fetchStockPrices(stockCodes: string[], config: AppConfig):
     const arrayBuffer = await response.arrayBuffer();
     const decoder = new TextDecoder('gbk');
     const text = decoder.decode(arrayBuffer);
-    log.info(`API批量响应: ${text}`);
+    log.debug(`API批量响应: ${text}`);
 
     return parseStockPricesResponse(text, stockCodes);
   } catch (error) {

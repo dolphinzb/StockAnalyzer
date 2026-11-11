@@ -1,8 +1,10 @@
+# index-status-bar Specification
+
 ## Purpose
 
 在自选股页面底部状态栏实时展示核心市场指数行情，让用户无需切换页面即可一屏掌握市场整体表现。本次变更在既有上证指数、深成指数基础上新增科创50指数，并规范多指数同屏的布局与降级行为。
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: 状态栏多指数数据订阅
 系统SHALL通过既有的 `index:update` IPC 事件订阅指数行情数据，并按代码从指数数组中匹配渲染上证指数(`sh000001`)、科创50指数(`sh000688`)、深成指数(`sz399001`)三项指数。

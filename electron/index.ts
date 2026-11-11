@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
 import log from 'electron-log';
 import fs from 'fs';
 import { join } from 'path';
@@ -17,6 +17,7 @@ import {
   getTradeRecords,
   getTradeRecordsByStockCode,
   getWatchlist,
+  reorderWatchlist,
   initDatabase,
   loadConfig,
   saveConfig,
@@ -56,11 +57,98 @@ import {
   startScheduler,
   stopScheduler
 } from './services/priceFetcher';
+import {
+  cleanupExpiredLogs,
+  formatLogDate,
+  getLogDir,
+  getLogFilePath,
+  isValidLogDate,
+  listLogDates,
+  migrateLegacyLogs
+} from './services/logService';
+
+// ==================== 日志：按自然日分文件 ====================
+
+/** 日志目录（<userData>/logs） */
+const LOG_DIR = getLogDir();
+
+// 存量日志迁移必须早于 electron-log 的首次写入：否则默认的 main.log
+// 会被重新创建，迁移结果被破坏。迁移函数本身不写日志，结果在配置完成后输出。
+const legacyMigration = migrateLegacyLogs(LOG_DIR);
 
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
+// 关闭按大小轮转：改由按自然日分文件管理，不再产生 main.old.log
+log.transports.file.maxSize = 0;
+
+/** 缓存当天日期与路径，避免每条日志都重复计算日期 */
+let cachedLogDate = '';
+let cachedLogPath = '';
+
+log.transports.file.resolvePathFn = (_variables, message) => {
+  // 日期优先取自消息自身时间：跨零点写入时仍归入消息产生的那一天
+  const date = message?.date instanceof Date ? message.date : new Date();
+  const dateStr = formatLogDate(date);
+  if (dateStr !== cachedLogDate) {
+    cachedLogDate = dateStr;
+    cachedLogPath = getLogFilePath(LOG_DIR, dateStr);
+  }
+  return cachedLogPath;
+};
 
 log.info('Application starting...');
+
+for (const item of legacyMigration.renamed) {
+  log.info(`存量日志已迁移: ${item.from} -> ${item.to}`);
+}
+for (const item of legacyMigration.skipped) {
+  log.warn(`存量日志未迁移（目标已存在）: ${item.from} -> ${item.to}`);
+}
+
+/** 上次执行清理的日期，避免每分钟重复扫描目录 */
+let lastCleanupDate = '';
+let logCleanupTimer: NodeJS.Timeout | null = null;
+
+/**
+ * 日期变化时清理超期日志
+ * 启动时执行一次，之后由定时器在跨天时触发，覆盖长时间运行不重启的场景
+ */
+function cleanupLogsIfNeeded(): void {
+  const today = new Date();
+  const todayStr = formatLogDate(today);
+  if (todayStr === lastCleanupDate) {
+    return;
+  }
+
+  lastCleanupDate = todayStr;
+  const deleted = cleanupExpiredLogs(LOG_DIR, today);
+  if (deleted.length > 0) {
+    log.info(`清理超期日志 ${deleted.length} 个: ${deleted.join(', ')}`);
+  }
+}
+
+/**
+ * 启动日志清理定时器
+ */
+function startLogCleanupTimer(): void {
+  if (logCleanupTimer) {
+    return;
+  }
+  cleanupLogsIfNeeded();
+  logCleanupTimer = setInterval(cleanupLogsIfNeeded, 60 * 1000);
+}
+
+/**
+ * 停止日志清理定时器
+ */
+function stopLogCleanupTimer(): void {
+  if (logCleanupTimer) {
+    clearInterval(logCleanupTimer);
+    logCleanupTimer = null;
+  }
+}
+
+startLogCleanupTimer();
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -279,6 +367,33 @@ ipcMain.handle('watchlist:delete', (_event, id: number) => {
   }
 });
 
+ipcMain.handle('watchlist:reorder', (_event, orderedIds: number[]) => {
+  log.info('IPC: watchlist:reorder', orderedIds);
+  try {
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+      throw new Error('INVALID_ORDER: 顺序列表不能为空');
+    }
+    if (orderedIds.some(id => !Number.isInteger(id) || id <= 0)) {
+      throw new Error('INVALID_ORDER: 顺序列表包含非法 id');
+    }
+    const orderedSet = new Set(orderedIds);
+    if (orderedSet.size !== orderedIds.length) {
+      throw new Error('INVALID_ORDER: 顺序列表存在重复 id');
+    }
+    // 集合必须与当前库中自选股完全一致，防止期间新增/删除导致顺序错位
+    const currentIds = getWatchlist().map(stock => stock.id);
+    const sameSet =
+      currentIds.length === orderedSet.size && currentIds.every(id => orderedSet.has(id));
+    if (!sameSet) {
+      throw new Error('WATCHLIST_CHANGED: 自选股列表已变化，请刷新后重试');
+    }
+    return reorderWatchlist(orderedIds);
+  } catch (error) {
+    log.error('IPC watchlist:reorder error:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('prices:refresh', async () => {
   log.info('IPC: prices:refresh');
   try {
@@ -439,9 +554,16 @@ ipcMain.handle('stock:get-name', async (_event, stockCode: string) => {
   }
 });
 
-ipcMain.handle('log:read', async () => {
-  log.debug('IPC: log:read');
-  const logPath = join(app.getPath('userData'), 'logs', 'main.log');
+ipcMain.handle('log:read', async (_event, date?: string) => {
+  log.debug('IPC: log:read', date);
+  // 不传日期时读取当天
+  const targetDate = date ?? formatLogDate(new Date());
+  // 先校验再拼路径，避免入参被当作路径片段使用
+  if (!isValidLogDate(targetDate)) {
+    return { content: '', error: 'INVALID_LOG_DATE' };
+  }
+
+  const logPath = getLogFilePath(LOG_DIR, targetDate);
   try {
     const content = await fs.promises.readFile(logPath, 'utf-8');
     return { content, error: null };
@@ -458,9 +580,40 @@ ipcMain.handle('log:read', async () => {
   }
 });
 
+ipcMain.handle('log:list', () => {
+  log.debug('IPC: log:list');
+  try {
+    return listLogDates(LOG_DIR);
+  } catch (error) {
+    // 目录不可读时返回空列表，不影响日志页渲染
+    log.error('IPC log:list error:', error instanceof Error ? error.message : String(error));
+    return [];
+  }
+});
+
 ipcMain.handle('log:getPath', () => {
   log.debug('IPC: log:getPath');
-  return join(app.getPath('userData'), 'logs', 'main.log');
+  return getLogFilePath(LOG_DIR, formatLogDate(new Date()));
+});
+
+ipcMain.handle('log:open-directory', async () => {
+  log.debug('IPC: log:open-directory');
+  try {
+    // 当天还没有日志时目录也可能不存在，先确保存在再打开
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('IPC log:open-directory mkdir error:', message);
+    return { success: false, error: message };
+  }
+
+  const openError = await shell.openPath(LOG_DIR);
+  if (openError) {
+    log.error('IPC log:open-directory error:', openError);
+    return { success: false, error: openError };
+  }
+
+  return { success: true };
 });
 
 // ==================== 资金管理 IPC Handlers ====================
@@ -903,5 +1056,6 @@ app.on('before-quit', () => {
   stopScheduler();
   stopBackupScheduler(); // 停止数据库备份调度器
   stopKlineDownloadScheduler(); // 停止K线数据自动下载调度器
+  stopLogCleanupTimer(); // 停止日志清理定时器
   closeDatabase();
 });

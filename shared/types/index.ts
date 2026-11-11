@@ -305,8 +305,19 @@ export interface PositionAPI {
  * 日志API类型 - 通过 preload contextBridge 暴露给渲染进程
  */
 export interface LogAPI {
-  readLog(): Promise<{ content: string; error: string | null }>;
+  /**
+   * 读取日志内容
+   * @param date 本地日期字符串（YYYY-MM-DD），省略时读取当天
+   *             文件不存在时 error 为 'LOG_FILE_NOT_FOUND'，
+   *             日期非法时 error 为 'INVALID_LOG_DATE'
+   */
+  readLog(date?: string): Promise<{ content: string; error: string | null }>;
+  /** 获取保留窗口内存在的日志日期，按日期倒序 */
+  listLogDates(): Promise<string[]>;
+  /** 获取当天日志文件的绝对路径 */
   getLogPath(): Promise<string>;
+  /** 在系统文件资源管理器中打开日志目录 */
+  openLogDirectory(): Promise<{ success: boolean; error?: string }>;
 }
 
 /**
@@ -324,6 +335,8 @@ export interface StockWatcherAPI {
   addStock(stock: any): Promise<any>;
   updateStock(id: number, updates: any): Promise<any>;
   deleteStock(id: number): Promise<void>;
+  /** 按完整的有序 id 列表重写自选股顺序，返回重排后的列表 */
+  reorderWatchlist(orderedIds: number[]): Promise<any[]>;
   refreshPrices(): Promise<void>;
   getLastRefreshTime(): Promise<string | null>;
   onPriceUpdate(callback: (prices: any[]) => void): () => void;

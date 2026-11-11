@@ -251,7 +251,7 @@ export function saveDatabase(): void {
   const data = db.export();
   const buffer = Buffer.from(data);
   writeFileSync(dbPath, buffer);
-  log.info('saveDatabase: 数据库已保存到', dbPath);
+  log.debug('saveDatabase: 数据库已保存到', dbPath);
 }
 
 export function loadConfig(): AppConfig {
@@ -617,7 +617,7 @@ export interface UpdateTradeInput {
 
 export function updateTradeRecord(input: UpdateTradeInput): TradeRecord {
   const database = getDb();
-  log.info('updateTradeRecord input:', JSON.stringify(input));
+  log.debug('updateTradeRecord input:', JSON.stringify(input));
   database.run(
     `UPDATE trade_record
      SET stock_code = ?, stock_name = ?, trade_date = ?, trade_type = ?, trade_price = ?, trade_count = ?, holding_count = ?, holding_price = ?
@@ -718,7 +718,7 @@ export function getTradeRecords(stockCode: string, page: number = 1, pageSize: n
 
   // 计算是否还有更多记录
   const hasMore = page * pageSize < total;
-  log.info(`getTradeRecords: stockCode=${stockCode}, page=${page}, pageSize=${pageSize}, total=${total}, hasMore=${hasMore}`);
+  log.debug(`getTradeRecords: stockCode=${stockCode}, page=${page}, pageSize=${pageSize}, total=${total}, hasMore=${hasMore}`);
   return { records, total, hasMore };
 }
 
@@ -943,7 +943,7 @@ export function saveKlineData(
 
     // 提交事务（仅提交到内存库，落盘由调用方决定）
     database.run('COMMIT');
-    log.info(`K线数据保存成功: ${stockCode}, 周期: ${period}, 复权类型: ${adjustType}, 共 ${klines.length} 条`);
+    log.debug(`K线数据保存成功: ${stockCode}, 周期: ${period}, 复权类型: ${adjustType}, 共 ${klines.length} 条`);
     return klines.length;
   } catch (error) {
     // 事务回滚

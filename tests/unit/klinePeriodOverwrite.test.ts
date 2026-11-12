@@ -21,7 +21,8 @@ vi.mock('electron-log', () => ({
   },
 }));
 
-import { KLINE_TABLE_DDL, saveKlineData } from '../../electron/database';
+import { runMigrations } from '../../electron/migrations';
+import { saveKlineData } from '../../electron/database';
 
 let database: Database;
 
@@ -80,7 +81,8 @@ function tradeDates(table: string): string[] {
 beforeEach(async () => {
   const SQL = await initSqlJs();
   database = new SQL.Database();
-  database.run(KLINE_TABLE_DDL);
+  // 用 V1 迁移建表，保证测试结构与线上一致（不再依赖内联 DDL）
+  runMigrations(database, { isNewDatabase: true });
 });
 
 afterEach(() => {

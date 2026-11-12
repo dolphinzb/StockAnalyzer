@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
 import log from 'electron-log';
 import fs from 'fs';
 import { join } from 'path';
@@ -18,6 +18,7 @@ import {
   getTradeRecordsByStockCode,
   getWatchlist,
   reorderWatchlist,
+  getDatabasePath,
   initDatabase,
   loadConfig,
   saveConfig,
@@ -1022,10 +1023,45 @@ ipcMain.handle('kline:get-trade-records', async (_event, stockCode: string) => {
   }
 });
 
+/**
+ * 展示启动失败提示并退出应用
+ * 初始化失败后若继续运行，用户只会看到每个页面报错，且进程无窗口驻留
+ * @param stage 失败阶段描述
+ * @param error 原始错误
+ */
+function handleStartupFailure(stage: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  log.error(`${stage}失败，应用退出:`, error);
+
+  let dbPath = '';
+  try {
+    dbPath = getDatabasePath();
+  } catch (pathError) {
+    log.warn('获取数据库路径失败:', pathError);
+  }
+
+  dialog.showErrorBox(
+    'StockAnalyzer 启动失败',
+    [
+      `${stage}失败：${message}`,
+      ...(dbPath ? [`数据库文件：${dbPath}`, '可用同目录下的 stockanalyzer.db.bak-<时间戳> 备份覆盖后重试。'] : []),
+    ].join('\n')
+  );
+  app.quit();
+}
+
 app.whenReady().then(async () => {
   log.info('App ready');
   app.applicationMenu = null;
-  await initDatabase();
+
+  try {
+    await initDatabase();
+  } catch (error) {
+    // 数据库不可用时不进入后续初始化，避免创建出无法工作的窗口
+    handleStartupFailure('数据库初始化', error);
+    return;
+  }
+
   fundService = new FundService(getDb());
   currentConfig = loadConfig();
   log.info('Config loaded on startup');
@@ -1041,6 +1077,8 @@ app.whenReady().then(async () => {
       createWindow();
     }
   });
+}).catch(error => {
+  handleStartupFailure('应用启动', error);
 });
 
 app.on('window-all-closed', () => {

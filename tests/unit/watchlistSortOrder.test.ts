@@ -29,41 +29,30 @@ vi.mock('electron-log', () => ({
   },
 }));
 
-/** 旧版自选股表结构（无 sort_order 列） */
-const LEGACY_WATCHLIST_DDL = `
-CREATE TABLE watchlist_stocks (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  stock_code TEXT UNIQUE NOT NULL,
-  stock_name TEXT NOT NULL,
-  buy_threshold REAL NOT NULL,
-  sell_threshold REAL NOT NULL,
-  monitor_enabled INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);`;
+import { runMigrations } from '../../electron/migrations';
 
 let tempHome = '';
 
 /**
- * 在临时 home 下构造旧版数据库文件
- * 数据顺序（旧规则 monitor_enabled DESC, updated_at DESC）：监控中 → 未监控较新 → 未监控较早
+ * 在临时 home 下构造 V1 结构的数据库文件
+ * 数据顺序（sort_order 升序）：监控中 → 未监控较新 → 未监控较早
  */
-async function createLegacyDatabase(): Promise<void> {
+async function createDatabase(): Promise<void> {
   const SQL = await initSqlJs();
-  const legacy = new SQL.Database();
-  legacy.run(LEGACY_WATCHLIST_DDL);
+  const database = new SQL.Database();
+  runMigrations(database, { isNewDatabase: true });
 
   const insert = `INSERT INTO watchlist_stocks
-    (stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at)
-    VALUES (?, ?, 10, 20, ?, '2026-01-01T00:00:00.000Z', ?)`;
-  legacy.run(insert, ['000001', '未监控较早', 0, '2026-01-02T00:00:00.000Z']);
-  legacy.run(insert, ['600519', '监控中', 1, '2026-01-01T00:00:00.000Z']);
-  legacy.run(insert, ['000858', '未监控较新', 0, '2026-01-03T00:00:00.000Z']);
+    (stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at, sort_order)
+    VALUES (?, ?, 10, 20, ?, '2026-01-01T00:00:00.000Z', ?, ?)`;
+  database.run(insert, ['600519', '监控中', 1, '2026-01-01T00:00:00.000Z', 0]);
+  database.run(insert, ['000858', '未监控较新', 0, '2026-01-03T00:00:00.000Z', 1]);
+  database.run(insert, ['000001', '未监控较早', 0, '2026-01-02T00:00:00.000Z', 2]);
 
   const dbDir = join(tempHome, '.stockanalyzer');
   mkdirSync(dbDir, { recursive: true });
-  writeFileSync(join(dbDir, 'stockanalyzer.db'), Buffer.from(legacy.export()));
-  legacy.close();
+  writeFileSync(join(dbDir, 'stockanalyzer.db'), Buffer.from(database.export()));
+  database.close();
 }
 
 beforeEach(() => {
@@ -76,9 +65,9 @@ afterEach(() => {
   rmSync(tempHome, { recursive: true, force: true });
 });
 
-describe('自选股顺序字段迁移与持久化', () => {
-  it('旧库首次启动按升级前可见顺序回填', async () => {
-    await createLegacyDatabase();
+describe('自选股顺序字段与持久化', () => {
+  it('按 sort_order 升序返回', async () => {
+    await createDatabase();
     vi.resetModules();
     const { getWatchlist, initDatabase } = await import('../../electron/database');
 
@@ -89,8 +78,8 @@ describe('自选股顺序字段迁移与持久化', () => {
     expect(stocks.map(stock => stock.sortOrder)).toEqual([0, 1, 2]);
   });
 
-  it('已迁移库再次启动保留自定义顺序（迁移幂等）', async () => {
-    await createLegacyDatabase();
+  it('重排后重启仍保留自定义顺序', async () => {
+    await createDatabase();
     vi.resetModules();
     const first = await import('../../electron/database');
     await first.initDatabase();
@@ -111,7 +100,7 @@ describe('自选股顺序字段迁移与持久化', () => {
   });
 
   it('重排后按 sort_order 升序返回，且不改写 updated_at', async () => {
-    await createLegacyDatabase();
+    await createDatabase();
     vi.resetModules();
     const { getWatchlist, initDatabase, reorderWatchlist } = await import(
       '../../electron/database'
@@ -136,7 +125,7 @@ describe('自选股顺序字段迁移与持久化', () => {
   });
 
   it('新增股票追加到末尾', async () => {
-    await createLegacyDatabase();
+    await createDatabase();
     vi.resetModules();
     const { addStock, getWatchlist, initDatabase } = await import('../../electron/database');
     await initDatabase();
@@ -150,7 +139,7 @@ describe('自选股顺序字段迁移与持久化', () => {
   });
 
   it('删除中间股票后其余相对顺序不变', async () => {
-    await createLegacyDatabase();
+    await createDatabase();
     vi.resetModules();
     const { deleteStock, getWatchlist, initDatabase } = await import('../../electron/database');
     await initDatabase();

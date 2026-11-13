@@ -42,4 +42,4 @@
 - [x] 7.1 `npm run typecheck` 通过
 - [x] 7.2 `npm run test` 通过
 - [x] 7.3 `npm run build` 后确认 `dist-electron/sql/migrations/001_init.sql` 存在
-- [ ] 7.4 用真实库启动一次，确认日志显示基线标记、`user_version` 为 1，且自选股/持仓/K 线页面数据正常
+- [x] 7.4 用真实库启动一次，确认日志显示基线标记、`user_version` 为 1，且自选股/持仓/K 线页面数据正常

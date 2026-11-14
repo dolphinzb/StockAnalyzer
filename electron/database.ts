@@ -1,9 +1,20 @@
 import { app } from 'electron';
 import log from 'electron-log';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'fs';
+import { basename, join } from 'path';
 import initSqlJs, { Database } from 'sql.js';
 import type { AddTradeResult, AppConfig, KlinePeriod } from '../shared/types';
+import { getUserVersion, getPendingMigrations, runMigrations } from './migrations';
 import { calcHoldingPrice, type CalcResult } from './services/tradeService';
 
 /**
@@ -63,150 +74,65 @@ export function getDatabasePath(): string {
   return join(app.getPath('home'), '.stockanalyzer', 'stockanalyzer.db');
 }
 
-/**
- * K线三张表的建表语句（与 sql/init.sql 保持一致）
- * 运行时无法可靠读取 sql/init.sql（打包后不在 files 白名单内），故内联；
- * 修改K线表字段时必须同步 sql/init.sql 与本处 DDL
- */
-export const KLINE_TABLE_DDL = ['kline_daily', 'kline_weekly', 'kline_monthly']
-  .map(
-    table => `
-CREATE TABLE IF NOT EXISTS ${table} (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  stock_code TEXT NOT NULL,
-  trade_date TEXT NOT NULL,
-  adjust_type TEXT NOT NULL DEFAULT '',
-  open REAL,
-  close REAL,
-  high REAL,
-  low REAL,
-  volume REAL,
-  amount REAL,
-  amplitude REAL,
-  change_percent REAL,
-  change_amount REAL,
-  turnover_rate REAL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  UNIQUE(stock_code, trade_date, adjust_type)
-);
-CREATE INDEX IF NOT EXISTS idx_${table}_code ON ${table}(stock_code);
-CREATE INDEX IF NOT EXISTS idx_${table}_date ON ${table}(trade_date);
-CREATE INDEX IF NOT EXISTS idx_${table}_code_date_adjust ON ${table}(stock_code, trade_date, adjust_type);`
-  )
-  .join('\n');
+/** 迁移备份保留份数 */
+const MIGRATION_BACKUP_LIMIT = 5;
 
 /**
- * 判断数据库对象（表/索引）是否存在
+ * 生成迁移备份文件名中的时间戳（本地时间 YYYYMMDD-HHmmss）
+ * 手工拼串，避免 toISOString 的 UTC 时区偏移
+ * @param date 时间点，默认当前时间
+ * @returns 时间戳字符串
  */
-function hasDbObject(database: Database, type: 'table' | 'index', name: string): boolean {
-  const result = database.exec(
-    `SELECT name FROM sqlite_master WHERE type = '${type}' AND name = '${name}'`
+function formatBackupTimestamp(date = new Date()): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return (
+    `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}` +
+    `-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
   );
-  return result.length > 0 && result[0].values.length > 0;
 }
 
 /**
- * 统计表行数
+ * 清理过期的迁移备份，仅保留最近 MIGRATION_BACKUP_LIMIT 份
+ * @param dbPath 数据库文件路径
  */
-function countTableRows(database: Database, table: string): number {
-  const result = database.exec(`SELECT COUNT(*) FROM ${table}`);
-  if (result.length === 0 || result[0].values.length === 0) {
-    return 0;
-  }
-  return Number(result[0].values[0][0]);
-}
+function cleanupMigrationBackups(dbPath: string): void {
+  const dir = join(dbPath, '..');
+  const prefix = `${basename(dbPath)}.bak-`;
 
-/**
- * K线表拆分自动迁移（幂等）
- * - kline_data 存在且 kline_daily 不存在：改名（不搬行数据）并清理旧索引
- * - 三表/索引缺失：按新结构补齐（IF NOT EXISTS）
- * - kline_data 与 kline_daily 同时存在：跳过自动迁移，保留现状并告警
- * @param database 已加载的数据库实例
- * @returns 是否发生了需要落盘的变更
- */
-function migrateKlineTables(database: Database): boolean {
-  const hasLegacy = hasDbObject(database, 'table', 'kline_data');
-  const hasDaily = hasDbObject(database, 'table', 'kline_daily');
-
-  if (hasLegacy && hasDaily) {
-    log.warn('检测到 kline_data 与 kline_daily 同时存在，跳过K线表自动迁移（需人工确认数据归属）');
-    return false;
+  let entries: Array<{ file: string; mtime: number }>;
+  try {
+    entries = readdirSync(dir)
+      .filter(name => name.startsWith(prefix))
+      .map(name => ({ file: name, mtime: statSync(join(dir, name)).mtimeMs }))
+      .sort((left, right) => right.mtime - left.mtime);
+  } catch (error) {
+    log.warn('清理迁移备份失败:', error);
+    return;
   }
 
-  let changed = false;
-
-  if (hasLegacy && !hasDaily) {
-    const beforeCount = countTableRows(database, 'kline_data');
-    database.run('ALTER TABLE kline_data RENAME TO kline_daily');
-    for (const index of [
-      'idx_kline_data_stock_code',
-      'idx_kline_data_trade_date',
-      'idx_kline_data_stock_date_adjust',
-    ]) {
-      database.run(`DROP INDEX IF EXISTS ${index}`);
+  for (const entry of entries.slice(MIGRATION_BACKUP_LIMIT)) {
+    try {
+      unlinkSync(join(dir, entry.file));
+      log.info(`已清理过期迁移备份: ${entry.file}`);
+    } catch (error) {
+      log.warn(`删除迁移备份失败 ${entry.file}:`, error);
     }
-
-    database.run(KLINE_TABLE_DDL);
-
-    const afterCount = countTableRows(database, 'kline_daily');
-    if (afterCount !== beforeCount) {
-      throw new Error(`K线表迁移失败：日线记录数不一致（${beforeCount} → ${afterCount}）`);
-    }
-
-    log.info(`K线表迁移完成：kline_data → kline_daily，日线 ${afterCount} 条，已创建周线/月线表`);
-    changed = true;
   }
-
-  // 补齐缺失的表与索引（新库、已迁移库、旧库改名后都会走到这里）
-  const needEnsure =
-    !hasDaily ||
-    !hasDbObject(database, 'table', 'kline_weekly') ||
-    !hasDbObject(database, 'table', 'kline_monthly') ||
-    !hasDbObject(database, 'index', 'idx_kline_daily_code_date_adjust');
-
-  if (needEnsure) {
-    database.run(KLINE_TABLE_DDL);
-    log.info('K线三表与索引已就绪（kline_daily / kline_weekly / kline_monthly）');
-    changed = true;
-  }
-
-  return changed;
 }
 
 /**
- * 自选股顺序字段自动迁移（幂等）
- * - 表不存在：跳过（新建库由 sql/init.sql 建表，已含该字段）
- * - 字段已存在：跳过，保留用户已保存的顺序
- * - 字段缺失：新增列，并按升级前的可见顺序（监控优先、更新时间倒序、id 兜底）回填，
- *   保证升级后列表外观与升级前一致
- * @param database 已加载的数据库实例
- * @returns 是否发生了需要落盘的变更
+ * 迁移前备份数据库文件
+ * 命名刻意避开 backupService 的清理规则（stockanalyzer_YYYYMMDD.db），
+ * 避免迁移备份被「保留最近 3 天」的每日备份清理逻辑删除
+ * @param dbPath 数据库文件路径
+ * @returns 备份文件路径
  */
-function migrateWatchlistSortOrder(database: Database): boolean {
-  if (!hasDbObject(database, 'table', 'watchlist_stocks')) {
-    log.warn('watchlist_stocks 表不存在，跳过自选股顺序字段迁移');
-    return false;
-  }
-
-  const tableInfo = database.exec('PRAGMA table_info(watchlist_stocks)');
-  const columns = tableInfo.length > 0 ? tableInfo[0].values.map(row => String(row[1])) : [];
-  if (columns.includes('sort_order')) {
-    return false;
-  }
-
-  database.run('ALTER TABLE watchlist_stocks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
-
-  const result = database.exec(
-    'SELECT id FROM watchlist_stocks ORDER BY monitor_enabled DESC, updated_at DESC, id ASC'
-  );
-  const ids = result.length > 0 ? result[0].values.map(row => Number(row[0])) : [];
-  ids.forEach((id, index) => {
-    database.run('UPDATE watchlist_stocks SET sort_order = ? WHERE id = ?', [index, id]);
-  });
-
-  log.info(`自选股顺序字段迁移完成：回填 ${ids.length} 条记录`);
-  return true;
+function backupBeforeMigration(dbPath: string): string {
+  const backupPath = `${dbPath}.bak-${formatBackupTimestamp()}`;
+  copyFileSync(dbPath, backupPath);
+  cleanupMigrationBackups(dbPath);
+  log.info(`迁移前已备份数据库: ${backupPath}`);
+  return backupPath;
 }
 
 export async function initDatabase(): Promise<void> {
@@ -220,38 +146,69 @@ export async function initDatabase(): Promise<void> {
     mkdirSync(configDir, { recursive: true });
   }
 
+  const fileExisted = existsSync(dbPath);
+
   try {
-    if (existsSync(dbPath)) {
+    if (fileExisted) {
       const fileBuffer = readFileSync(dbPath);
       db = new SQL.Database(fileBuffer);
       log.info('数据库文件加载成功');
-
-      // 存量库自动迁移（均为幂等操作，全部在内存完成后统一落盘）
-      const klineMigrated = migrateKlineTables(db);
-      const watchlistMigrated = migrateWatchlistSortOrder(db);
-      if (klineMigrated || watchlistMigrated) {
-        saveDatabase();
-      }
     } else {
-      log.warn('数据库文件不存在:', dbPath);
-      throw new Error('数据库文件不存在，请先通过迁移脚本初始化数据库');
+      db = new SQL.Database();
+      log.warn('数据库文件不存在，按 V1 结构新建:', dbPath);
     }
+
+    const pending = getPendingMigrations(db, { isNewDatabase: !fileExisted });
+    // 有待执行迁移，或需要给存量库补写版本记录时，先留一份迁移前快照
+    const needsBackup = fileExisted && (pending.length > 0 || getUserVersion(db) === 0);
+    if (needsBackup) {
+      backupBeforeMigration(dbPath);
+    }
+
+    const result = runMigrations(db, { isNewDatabase: !fileExisted });
+
+    // 内存库有变更才落盘：新库、执行过迁移、补写过基线版本
+    const changed = !fileExisted || result.applied.length > 0 || result.baselineApplied;
+    if (changed) {
+      saveDatabase();
+    }
+
+    log.info(`数据库初始化完成: 版本 v${result.toVersion}`);
   } catch (error) {
     log.error('数据库初始化失败:', error);
     throw error;
   }
 }
 
+/**
+ * 保存数据库到磁盘（原子写：先写临时文件，再重命名覆盖目标文件）
+ * 写入失败时清理临时文件并抛出，原数据库文件保持上一个完整版本
+ * @throws 序列化或写入磁盘失败时抛出
+ */
 export function saveDatabase(): void {
   if (!db) {
     log.warn('saveDatabase: db is null');
     return;
   }
   const dbPath = getDatabasePath();
-  const data = db.export();
-  const buffer = Buffer.from(data);
-  writeFileSync(dbPath, buffer);
-  log.debug('saveDatabase: 数据库已保存到', dbPath);
+  const tmpPath = `${dbPath}.tmp`;
+  const buffer = Buffer.from(db.export());
+
+  try {
+    writeFileSync(tmpPath, buffer);
+    renameSync(tmpPath, dbPath);
+    log.debug('saveDatabase: 数据库已保存到', dbPath);
+  } catch (error) {
+    if (existsSync(tmpPath)) {
+      try {
+        unlinkSync(tmpPath);
+      } catch {
+        // 临时文件清理失败不影响主流程
+      }
+    }
+    log.error('saveDatabase: 数据库保存失败:', error);
+    throw error;
+  }
 }
 
 export function loadConfig(): AppConfig {
@@ -297,11 +254,17 @@ export function saveConfig(config: AppConfig): boolean {
 }
 
 export function closeDatabase(): void {
-  if (db) {
-    saveDatabase();
-    db.close();
-    db = null;
+  if (!db) {
+    return;
   }
+  try {
+    saveDatabase();
+  } catch (error) {
+    // 退出前保存失败不应阻断关闭流程，磁盘上仍是上一个完整版本
+    log.error('关闭数据库前保存失败:', error);
+  }
+  db.close();
+  db = null;
 }
 
 export function getDb(): Database {

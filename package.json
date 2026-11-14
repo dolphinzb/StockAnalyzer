@@ -10,16 +10,14 @@
     "dev:vite": "vite",
     "dev:electron": "npm run build:electron && electron .",
     "build": "npm run build:electron && vite build",
-    "build:electron": "tsc -p tsconfig.node.json",
+    "build:electron": "node scripts/copy-migrations.mjs && tsc -p tsconfig.node.json",
     "deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-and-deploy.ps1",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
     "lint:fix": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
-    "typecheck": "vue-tsc --noEmit",
-    "init-db": "npm run build:electron && node dist-electron/scripts/init-database.js",
-    "migrate-kline-tables": "npm run build:electron && node dist-electron/scripts/migrate-split-kline-tables.js"
+    "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
     "electron-log": "^5.1.1",

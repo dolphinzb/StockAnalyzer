@@ -1,5 +1,9 @@
--- StockAnalyzer 数据库初始化脚本
--- 包含所有表结构定义和初始数据
+-- ============================================================
+-- V1：初始结构（基线）
+-- 内容等于引入迁移框架时的线上库结构，作为版本起点。
+-- 已被基线标记的存量库不会重复执行本文件。
+-- 约束：迁移文件内不得出现 BEGIN / COMMIT（执行器统一包事务）。
+-- ============================================================
 
 -- ============================================
 -- 1. 配置表
@@ -56,7 +60,7 @@ CREATE TABLE IF NOT EXISTS transfer_records (
   amount REAL NOT NULL CHECK(amount > 0),
   type TEXT NOT NULL CHECK(type IN ('IN', 'OUT', 'DIVIDEND', 'DIVIDEND_TAX', 'STOCK_BUY', 'STOCK_SELL', 'INTEREST')),
   account_balance REAL NOT NULL DEFAULT 0,
-  trade_record_id INTEGER,  -- 新增:关联的交易记录ID,可为NULL
+  trade_record_id INTEGER,  -- 关联的交易记录ID,可为NULL
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')),
   updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
 );
@@ -148,7 +152,7 @@ CREATE INDEX IF NOT EXISTS idx_kline_monthly_date ON kline_monthly(trade_date);
 CREATE INDEX IF NOT EXISTS idx_kline_monthly_code_date_adjust ON kline_monthly(stock_code, trade_date, adjust_type);
 
 -- ============================================
--- 6. 初始化默认配置
+-- 6. 初始化默认配置（新库首次启动即有默认配置）
 -- ============================================
-INSERT OR IGNORE INTO config (key, value, updated_at) 
+INSERT OR IGNORE INTO config (key, value, updated_at)
 VALUES ('app_config', '{"trading":{"morningStart":"09:30","morningEnd":"11:30","afternoonStart":"13:00","afternoonEnd":"15:00"},"polling":{"interval":1},"api":{"provider":"sina","url":"https://hq.sinajs.cn/list="}}', strftime('%s', 'now') * 1000);

@@ -15,7 +15,13 @@ import { basename, join } from 'path';
 import initSqlJs, { Database } from 'sql.js';
 import type { AddTradeResult, AppConfig, KlinePeriod } from '../shared/types';
 import { getUserVersion, getPendingMigrations, runMigrations } from './migrations';
-import { calcHoldingPrice, type CalcResult } from './services/tradeService';
+import { recalculateBalancesFrom } from './services/fundService';
+import {
+  calcHoldingPrice,
+  calcStockBuyAmount,
+  calcStockSellAmount,
+  type CalcResult,
+} from './services/tradeService';
 
 /**
  * 自选股实体类型
@@ -68,7 +74,50 @@ export const DEFAULT_CONFIG: AppConfig = {
   },
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * 把库内读出的配置与默认值逐字段合并。
+ * 坏值（缺字段、类型错误、非法枚举）一律回落到默认值，避免后续流程拿到畸形对象。
+ */
+export function mergeWithDefaultConfig(raw: unknown): AppConfig {
+  const source = isRecord(raw) ? raw : {};
+  const trading = isRecord(source.trading) ? source.trading : {};
+  const polling = isRecord(source.polling) ? source.polling : {};
+  const api = isRecord(source.api) ? source.api : {};
+  const providers: AppConfig['api']['provider'][] = ['sina', 'eastmoney', 'tencent'];
+
+  const timeOr = (value: unknown, fallback: string): string =>
+    typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : fallback;
+
+  return {
+    trading: {
+      morningStart: timeOr(trading.morningStart, DEFAULT_CONFIG.trading.morningStart),
+      morningEnd: timeOr(trading.morningEnd, DEFAULT_CONFIG.trading.morningEnd),
+      afternoonStart: timeOr(trading.afternoonStart, DEFAULT_CONFIG.trading.afternoonStart),
+      afternoonEnd: timeOr(trading.afternoonEnd, DEFAULT_CONFIG.trading.afternoonEnd),
+    },
+    polling: {
+      interval: typeof polling.interval === 'number' && Number.isFinite(polling.interval) && polling.interval > 0
+        ? polling.interval
+        : DEFAULT_CONFIG.polling.interval,
+    },
+    api: {
+      provider: providers.includes(api.provider as AppConfig['api']['provider'])
+        ? api.provider as AppConfig['api']['provider']
+        : DEFAULT_CONFIG.api.provider,
+      url: typeof api.url === 'string' && api.url.trim().length > 0
+        ? api.url
+        : DEFAULT_CONFIG.api.url,
+    },
+  };
+}
+
 let db: Database | null = null;
+/** 事务进行中标记：事务内禁止落盘，避免把未提交的中间态写进磁盘 */
+let inTransaction = false;
 
 export function getDatabasePath(): string {
   return join(app.getPath('home'), '.stockanalyzer', 'stockanalyzer.db');
@@ -186,6 +235,9 @@ export async function initDatabase(): Promise<void> {
  * @throws 序列化或写入磁盘失败时抛出
  */
 export function saveDatabase(): void {
+  if (inTransaction) {
+    throw new Error('SAVE_INSIDE_TRANSACTION: 事务内禁止落盘，请在提交后统一保存');
+  }
   if (!db) {
     log.warn('saveDatabase: db is null');
     return;
@@ -211,6 +263,42 @@ export function saveDatabase(): void {
   }
 }
 
+/** 写操作选项：批次内跳过落盘，测试可注入内存库 */
+export interface WriteOptions {
+  skipSave?: boolean;
+  target?: Database;
+}
+
+/**
+ * 在单个事务内执行一批写操作；任一步失败回滚全部写入。
+ * 事务内禁止调用 saveDatabase()，落盘由调用方在提交后统一执行。
+ */
+export async function runInTransaction<T>(
+  fn: () => T | Promise<T>,
+  target?: Database
+): Promise<T> {
+  const database = target ?? getDb();
+  if (inTransaction) {
+    throw new Error('NESTED_TRANSACTION: 不支持嵌套事务');
+  }
+  database.run('BEGIN TRANSACTION');
+  inTransaction = true;
+  try {
+    const result = await fn();
+    database.run('COMMIT');
+    return result;
+  } catch (error) {
+    try {
+      database.run('ROLLBACK');
+    } catch (rollbackError) {
+      log.error('runInTransaction: 回滚失败', rollbackError);
+    }
+    throw error;
+  } finally {
+    inTransaction = false;
+  }
+}
+
 export function loadConfig(): AppConfig {
   if (!db) {
     log.warn('数据库未初始化，使用默认配置');
@@ -221,9 +309,9 @@ export function loadConfig(): AppConfig {
     const result = db.exec("SELECT value FROM config WHERE key = 'app_config'");
     if (result.length > 0 && result[0].values.length > 0) {
       const configJson = result[0].values[0][0] as string;
-      const config = JSON.parse(configJson) as AppConfig;
+      const config = JSON.parse(configJson) as unknown;
       log.info('从数据库加载配置成功');
-      return config;
+      return mergeWithDefaultConfig(config);
     }
   } catch (error) {
     log.error('从数据库加载配置失败:', error);
@@ -536,8 +624,8 @@ export function getPositions(): Position[] {
   }));
 }
 
-export function getLastZeroTrade(stockCode: string): TradeRecord | null {
-  const database = getDb();
+export function getLastZeroTrade(stockCode: string, target?: Database): TradeRecord | null {
+  const database = target ?? getDb();
   const result = database.exec(
     `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
      FROM trade_record
@@ -551,8 +639,8 @@ export function getLastZeroTrade(stockCode: string): TradeRecord | null {
   return rowToTradeRecord(result[0].values[0]);
 }
 
-function getFirstOpenAfterZero(stockCode: string, zeroDate: string): TradeRecord | null {
-  const database = getDb();
+function getFirstOpenAfterZero(stockCode: string, zeroDate: string, target?: Database): TradeRecord | null {
+  const database = target ?? getDb();
   const result = database.exec(
     `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
      FROM trade_record
@@ -574,20 +662,112 @@ export interface UpdateTradeInput {
   tradeDate: string;
   tradePrice: number;
   tradeCount: number;
-  holdingCount: number;
-  holdingPrice: number;
 }
 
-export function updateTradeRecord(input: UpdateTradeInput): TradeRecord {
-  const database = getDb();
+/**
+ * 按交易日期 + id 顺序，以零持仓为起点重放该股票的持仓快照链。
+ * 编辑/删除任意历史交易后调用，快照字段只由服务端计算。
+ */
+export function rebuildHoldingChain(stockCode: string, target?: Database): void {
+  const database = target ?? getDb();
+  const result = database.exec(
+    `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
+     FROM trade_record WHERE stock_code = ?
+     ORDER BY trade_date ASC, id ASC`,
+    [stockCode]
+  );
+  if (result.length === 0) {
+    return;
+  }
+
+  let previous: TradeRecord | null = null;
+  for (const row of result[0].values) {
+    const record = rowToTradeRecord(row);
+    const calc: CalcResult = calcHoldingPrice(
+      previous,
+      record.tradeType,
+      record.tradePrice,
+      record.tradeCount,
+      record.stockCode
+    );
+    database.run(
+      `UPDATE trade_record SET holding_count = ?, holding_price = ? WHERE id = ?`,
+      [calc.holdingCount, calc.holdingPrice, record.id]
+    );
+    previous = { ...record, holdingCount: calc.holdingCount, holdingPrice: calc.holdingPrice };
+  }
+}
+
+/** 编辑价格/数量/类型后，同步关联 STOCK_BUY / STOCK_SELL 明细的金额与日期；不新建明细 */
+function syncLinkedTransferAmounts(database: Database, tradeId: number, trade: UpdateTradeInput): void {
+  const linked = database.exec(`SELECT id, type FROM transfer_records WHERE trade_record_id = ?`, [tradeId]);
+  if (linked.length === 0) {
+    return;
+  }
+  for (const row of linked[0].values) {
+    const transferId = row[0] as number;
+    const type = row[1] as string;
+    let amount: number | null = null;
+    if (trade.tradeType === 'BUY' && type === 'STOCK_BUY') {
+      amount = calcStockBuyAmount(trade.tradePrice, trade.tradeCount, trade.stockCode);
+    } else if (trade.tradeType === 'SELL' && type === 'STOCK_SELL') {
+      amount = calcStockSellAmount(trade.tradePrice, trade.tradeCount, trade.stockCode);
+    }
+    if (amount === null || amount <= 0) {
+      continue;
+    }
+    database.run(
+      `UPDATE transfer_records SET amount = ?, transfer_date = ?, updated_at = ? WHERE id = ?`,
+      [amount, trade.tradeDate, new Date().toISOString(), transferId]
+    );
+  }
+}
+
+/** 关联资金明细中最早的日期，作为余额链重算起点 */
+function earliestLinkedDate(database: Database, tradeId: number): string | null {
+  const result = database.exec(
+    `SELECT MIN(transfer_date) AS earliest FROM transfer_records WHERE trade_record_id = ?`,
+    [tradeId]
+  );
+  if (result.length === 0) {
+    return null;
+  }
+  const value = result[0].values[0][0];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+export function updateTradeRecord(input: UpdateTradeInput, options: WriteOptions = {}): TradeRecord {
+  const database = options.target ?? getDb();
   log.debug('updateTradeRecord input:', JSON.stringify(input));
+  const original = database.exec(`SELECT stock_code FROM trade_record WHERE id = ?`, [input.id]);
+  if (original.length === 0 || original[0].values.length === 0) {
+    throw new Error('交易记录不存在');
+  }
+  const previousStockCode = original[0].values[0][0] as string;
+  const earliestDate = earliestLinkedDate(database, input.id);
+
   database.run(
     `UPDATE trade_record
-     SET stock_code = ?, stock_name = ?, trade_date = ?, trade_type = ?, trade_price = ?, trade_count = ?, holding_count = ?, holding_price = ?
+     SET stock_code = ?, stock_name = ?, trade_date = ?, trade_type = ?, trade_price = ?, trade_count = ?
      WHERE id = ?`,
-    [input.stockCode, input.stockName, input.tradeDate, input.tradeType, input.tradePrice, input.tradeCount, input.holdingCount, input.holdingPrice, input.id]
+    [input.stockCode, input.stockName, input.tradeDate, input.tradeType, input.tradePrice, input.tradeCount, input.id]
   );
-  saveDatabase();
+
+  rebuildHoldingChain(input.stockCode, database);
+  if (previousStockCode !== input.stockCode) {
+    rebuildHoldingChain(previousStockCode, database);
+  }
+
+  syncLinkedTransferAmounts(database, input.id, input);
+  if (earliestDate) {
+    // 交易日期可能被改到更早，重算起点必须覆盖新旧两个位置
+    const recalcFrom = earliestDate < input.tradeDate ? earliestDate : input.tradeDate;
+    recalculateBalancesFrom(database, recalcFrom);
+  }
+  if (!options.skipSave) {
+    saveDatabase();
+  }
+
   const result = database.exec(
     `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
      FROM trade_record WHERE id = ?`,
@@ -599,16 +779,26 @@ export function updateTradeRecord(input: UpdateTradeInput): TradeRecord {
   return rowToTradeRecord(result[0].values[0]);
 }
 
-export function deleteTradeRecord(id: number): void {
-  const database = getDb();
-  
-  // 先删除关联的资金明细记录
+export function deleteTradeRecord(id: number, options: WriteOptions = {}): void {
+  const database = options.target ?? getDb();
+  const original = database.exec(`SELECT stock_code FROM trade_record WHERE id = ?`, [id]);
+  if (original.length === 0 || original[0].values.length === 0) {
+    throw new Error('交易记录不存在');
+  }
+  const stockCode = original[0].values[0][0] as string;
+  const earliestDate = earliestLinkedDate(database, id);
+
+  // 先删除关联的资金明细，再删除交易记录
   database.run(`DELETE FROM transfer_records WHERE trade_record_id = ?`, [id]);
-  
-  // 再删除交易记录
   database.run(`DELETE FROM trade_record WHERE id = ?`, [id]);
-  
-  saveDatabase();
+
+  rebuildHoldingChain(stockCode, database);
+  if (earliestDate) {
+    recalculateBalancesFrom(database, earliestDate);
+  }
+  if (!options.skipSave) {
+    saveDatabase();
+  }
 }
 
 /**
@@ -627,9 +817,17 @@ export interface PaginatedTradeRecords {
  * @param pageSize 每页条数，默认20
  * @returns 分页结果，包含记录列表、总数和是否还有更多记录
  */
-export function getTradeRecords(stockCode: string, page: number = 1, pageSize: number = 20): PaginatedTradeRecords {
-  const database = getDb();
-  const lastZero = getLastZeroTrade(stockCode);
+export function getTradeRecords(
+  stockCode: string,
+  page: number = 1,
+  pageSize: number = 20,
+  target?: Database
+): PaginatedTradeRecords {
+  const database = target ?? getDb();
+  // 数据层二次防护：非法值回落到默认分页，超大值限制到 100，且分页值只用占位符传入
+  const safePage = Number.isInteger(page) && page >= 1 ? page : 1;
+  const safeSize = Number.isInteger(pageSize) && pageSize >= 1 ? Math.min(pageSize, 100) : 20;
+  const lastZero = getLastZeroTrade(stockCode, database);
 
   // 构建查询条件：如果有上次清仓记录，只查询该清仓之后的交易记录（不包括清仓记录）
   let countQuery: string;
@@ -639,7 +837,7 @@ export function getTradeRecords(stockCode: string, page: number = 1, pageSize: n
 
   if (lastZero) {
     // 找到清仓后的第一笔买入记录
-    const firstOpenAfterZero = getFirstOpenAfterZero(stockCode, lastZero.tradeDate);
+    const firstOpenAfterZero = getFirstOpenAfterZero(stockCode, lastZero.tradeDate, database);
 
     if (firstOpenAfterZero) {
       // 如果有新的开仓记录，从该记录开始查询
@@ -649,8 +847,8 @@ export function getTradeRecords(stockCode: string, page: number = 1, pageSize: n
                    FROM trade_record
                    WHERE stock_code = ? AND trade_date >= ?
                    ORDER BY trade_date DESC, id DESC
-                   LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`;
-      dataParams = [stockCode, firstOpenAfterZero.tradeDate];
+                   LIMIT ? OFFSET ?`;
+      dataParams = [stockCode, firstOpenAfterZero.tradeDate, safeSize, (safePage - 1) * safeSize];
     } else {
       // 如果清仓后没有新的交易，返回空结果
       return { records: [], total: 0, hasMore: false };
@@ -663,8 +861,8 @@ export function getTradeRecords(stockCode: string, page: number = 1, pageSize: n
                  FROM trade_record
                  WHERE stock_code = ?
                  ORDER BY trade_date DESC, id DESC
-                 LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`;
-    dataParams = [stockCode];
+                 LIMIT ? OFFSET ?`;
+    dataParams = [stockCode, safeSize, (safePage - 1) * safeSize];
   }
 
   // 查询总数
@@ -680,15 +878,15 @@ export function getTradeRecords(stockCode: string, page: number = 1, pageSize: n
     : [];
 
   // 计算是否还有更多记录
-  const hasMore = page * pageSize < total;
-  log.debug(`getTradeRecords: stockCode=${stockCode}, page=${page}, pageSize=${pageSize}, total=${total}, hasMore=${hasMore}`);
+  const hasMore = safePage * safeSize < total;
+  log.debug(`getTradeRecords: stockCode=${stockCode}, page=${safePage}, pageSize=${safeSize}, total=${total}, hasMore=${hasMore}`);
   return { records, total, hasMore };
 }
 
-export function addTradeRecord(input: AddTradeInput): AddTradeResult {
-  const database = getDb();
+export function addTradeRecord(input: AddTradeInput, options: WriteOptions = {}): AddTradeResult {
+  const database = options.target ?? getDb();
   // 获取最新交易记录用于计算持仓，只需第一页第一条
-  const paginatedResult = getTradeRecords(input.stockCode, 1, 1);
+  const paginatedResult = getTradeRecords(input.stockCode, 1, 1, database);
   let preRecord: TradeRecord | null = null;
   if (paginatedResult.records.length > 0) {
     preRecord = paginatedResult.records[0];
@@ -705,17 +903,19 @@ export function addTradeRecord(input: AddTradeInput): AddTradeResult {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [input.stockCode, input.stockName, input.tradeDate, input.tradeType, input.tradePrice, input.tradeCount, calcResult.holdingCount, calcResult.holdingPrice]
   );
-  saveDatabase();
+  if (!options.skipSave) {
+    saveDatabase();
+  }
   const result = database.exec(
     `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
-     FROM trade_record WHERE stock_code = ? ORDER BY trade_date DESC LIMIT 1`,
+     FROM trade_record WHERE stock_code = ? ORDER BY trade_date DESC, id DESC LIMIT 1`,
     [input.stockCode]
   );
   if (result.length === 0 || result[0].values.length === 0) {
     throw new Error('添加交易记录失败');
   }
   const record = rowToTradeRecord(result[0].values[0]);
-  return { record, fundSyncSuccess: true };
+  return { record };
 }
 
 /**

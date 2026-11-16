@@ -7,14 +7,25 @@
  * - 自动清理过期备份文件
  */
 
-import { copyFileSync, existsSync, readdirSync, statSync, unlinkSync, renameSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, readdirSync, statSync, unlinkSync, renameSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import log from 'electron-log';
-import { getDatabasePath } from '../database';
+import type { BackupResult } from '../../shared/types';
+import { getDatabasePath, saveDatabase } from '../database';
 
 // 模块级状态变量
 let isBackupRunning = false;
 let backupTimeout: NodeJS.Timeout | null = null;
+let failureNotifier: ((reason: string) => void) | null = null;
+
+/** 注册自动备份失败的用户可见通知回调（由主进程注入系统通知） */
+export function setBackupFailureNotifier(notifier: (reason: string) => void): void {
+  failureNotifier = notifier;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 /**
  * 生成备份文件路径
@@ -40,58 +51,70 @@ function generateBackupPath(dbPath: string): string {
 
 /**
  * 执行数据库备份
+ * 所有失败路径都映射为 success:false，不再吞掉异常让调用方误以为成功
  */
-export async function performBackup(): Promise<void> {
-  // 并发控制：如果已在运行，跳过
+export async function performBackup(): Promise<BackupResult> {
+  // 并发控制：如果已在运行，明确返回失败
   if (isBackupRunning) {
     log.warn('备份已在运行中，跳过本次备份');
-    return;
+    return { success: false, error: '已有备份在执行，请稍后再试' };
   }
 
   isBackupRunning = true;
-  
+
   try {
-    const dbPath = getDatabasePath();
-    
-    // 验证数据库文件存在
-    if (!existsSync(dbPath)) {
-      log.error(`数据库文件不存在: ${dbPath}`);
-      return;
+    // sql.js 是内存库：复制磁盘文件前先落盘，保证备份包含全部已提交写入
+    try {
+      saveDatabase();
+    } catch (error) {
+      const reason = `备份前落盘失败：${errorText(error)}`;
+      log.error(`❌ ${reason}`);
+      return { success: false, error: reason };
     }
-    
+
+    const dbPath = getDatabasePath();
+    if (!existsSync(dbPath)) {
+      const reason = `数据库文件不存在：${dbPath}`;
+      log.error(`❌ ${reason}`);
+      return { success: false, error: reason };
+    }
+
     const backupPath = generateBackupPath(dbPath);
-    const tempPath = backupPath + '.tmp'; // 临时文件
+    const tempPath = backupPath + '.tmp';
     const startTime = Date.now();
-    
+
     try {
       // 原子写入：先写入临时文件，然后重命名
       copyFileSync(dbPath, tempPath);
-      renameSync(tempPath, backupPath); // 原子重命名
-      
-      const duration = Date.now() - startTime;
-      const fileSize = statSync(backupPath).size;
-      
-      log.info(`✅ 备份成功: ${backupPath}`);
-      log.info(`   文件大小: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
-      log.info(`   耗时: ${duration}ms`);
-      
-      // 备份完成后执行清理
-      await cleanupOldBackups(dbPath);
-      
-    } catch (copyError) {
-      // 如果临时文件存在，删除它
+      renameSync(tempPath, backupPath);
+    } catch (error) {
       if (existsSync(tempPath)) {
         try {
           unlinkSync(tempPath);
-        } catch (e) {
-          // 忽略删除临时文件的错误
+        } catch {
+          // 忽略临时文件清理失败，主错误仍需返回
         }
       }
-      throw copyError;
+      const reason = `备份文件写入失败：${errorText(error)}`;
+      log.error(`❌ ${reason}`);
+      return { success: false, error: reason };
     }
-    
-  } catch (error) {
-    log.error(`❌ 备份失败: ${error instanceof Error ? error.message : String(error)}`);
+
+    const duration = Date.now() - startTime;
+    const fileSize = statSync(backupPath).size;
+    log.info(`✅ 备份成功: ${backupPath}`);
+    log.info(`   文件大小: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
+    log.info(`   耗时: ${duration}ms`);
+
+    try {
+      await cleanupOldBackups(dbPath);
+    } catch (error) {
+      const reason = `备份文件已生成，但清理旧备份失败：${errorText(error)}`;
+      log.error(`❌ ${reason}`);
+      return { success: false, error: reason, backupPath };
+    }
+
+    return { success: true, backupPath };
   } finally {
     isBackupRunning = false;
   }
@@ -104,47 +127,36 @@ export async function performBackup(): Promise<void> {
  * @returns 删除的文件数量
  */
 async function cleanupOldBackups(dbPath: string, retentionDays: number = 3): Promise<number> {
-  try {
-    const dir = dirname(dbPath);
-    const baseName = basename(dbPath, '.db');
-    const files = readdirSync(dir);
-    
-    const now = Date.now();
-    const retentionMs = retentionDays * 24 * 60 * 60 * 1000;
-    let deletedCount = 0;
-    
-    files.forEach(file => {
-      // 匹配备份文件模式：{name}_YYYYMMDD.db 或 {name}_YYYYMMDD_001.db
-      const pattern = new RegExp(`^${baseName}_\\d{8}(?:_\\d{3})?\\.db$`);
-      
-      if (pattern.test(file)) {
-        const filePath = join(dir, file);
-        
-        try {
-          const stats = statSync(filePath);
-          const age = now - stats.mtimeMs;
-          
-          if (age > retentionMs) {
-            unlinkSync(filePath);
-            log.info(`🗑️  已删除过期备份: ${file}`);
-            deletedCount++;
-          }
-        } catch (error) {
-          log.error(`删除备份文件失败 ${file}: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-    });
-    
-    if (deletedCount > 0) {
-      log.info(`清理完成: 删除了 ${deletedCount} 个过期备份文件`);
+  // 清理失败向上抛出，由 performBackup 映射为备份失败结果
+  const dir = dirname(dbPath);
+  const baseName = basename(dbPath, '.db');
+  const files = readdirSync(dir);
+  const now = Date.now();
+  const retentionMs = retentionDays * 24 * 60 * 60 * 1000;
+  const pattern = new RegExp(`^${baseName}_\\d{8}(?:_\\d{3})?\\.db$`);
+  let deletedCount = 0;
+
+  for (const file of files) {
+    if (!pattern.test(file)) {
+      continue;
     }
-    
-    return deletedCount;
-    
-  } catch (error) {
-    log.error(`清理备份文件失败: ${error instanceof Error ? error.message : String(error)}`);
-    return 0;
+    const filePath = join(dir, file);
+    try {
+      const stats = statSync(filePath);
+      if (now - stats.mtimeMs > retentionMs) {
+        unlinkSync(filePath);
+        log.info(`🗑️  已删除过期备份: ${file}`);
+        deletedCount++;
+      }
+    } catch (error) {
+      throw new Error(`处理备份文件 ${file} 失败：${errorText(error)}`);
+    }
   }
+
+  if (deletedCount > 0) {
+    log.info(`清理完成: 删除了 ${deletedCount} 个过期备份文件`);
+  }
+  return deletedCount;
 }
 
 /**
@@ -167,9 +179,22 @@ function scheduleNextBackup(): void {
   log.info(`⏰ 下次备份调度于: ${target.toLocaleString()} (延迟 ${Math.round(delay / 1000 / 60)} 分钟)`);
   
   backupTimeout = setTimeout(() => {
-    performBackup();
+    void runScheduledBackup();
     scheduleNextBackup(); // 递归调度下一次
   }, delay);
+}
+
+/** 执行一次定时备份，失败时给出用户可见提示；导出以便契约测试直接调用 */
+export async function runScheduledBackup(): Promise<BackupResult> {
+  const result = await performBackup();
+  if (!result.success && failureNotifier) {
+    try {
+      failureNotifier(result.error ?? '未知原因');
+    } catch (error) {
+      log.error('备份失败通知发送失败:', errorText(error));
+    }
+  }
+  return result;
 }
 
 /**

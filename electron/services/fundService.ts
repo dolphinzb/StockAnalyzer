@@ -2,6 +2,75 @@ import log from 'electron-log';
 import { Database } from 'sql.js';
 import type { FundOverview, HoldingMarketDetail } from '../../shared/types';
 
+/** 按资金类型递推账户余额（以分为单位计算，避免浮点误差） */
+export function computeBalance(previousBalance: number, amount: number, type: string): number {
+  const previousCents = Math.round(previousBalance * 100);
+  const amountCents = Math.round(amount * 100);
+
+  let resultCents: number;
+  // IN、DIVIDEND、STOCK_SELL、INTEREST 增加余额；OUT、DIVIDEND_TAX、STOCK_BUY 减少余额
+  if (type === 'IN' || type === 'DIVIDEND' || type === 'STOCK_SELL' || type === 'INTEREST') {
+    resultCents = previousCents + amountCents;
+  } else if (type === 'OUT' || type === 'DIVIDEND_TAX' || type === 'STOCK_BUY') {
+    resultCents = previousCents - amountCents;
+  } else {
+    resultCents = previousCents;
+  }
+
+  const result = resultCents / 100;
+  return result === 0 ? 0 : Number(result.toFixed(2));
+}
+
+/**
+ * 从指定日期起重算资金明细的 account_balance 余额链。
+ * 纯函数式实现：FundService 与交易侧编辑/删除共用同一套逻辑，避免两处口径漂移。
+ */
+export function recalculateBalancesFrom(db: Database, afterDate: string, startBalance?: number): void {
+  try {
+    // 提供 startBalance 时该日期当天已手工定过余额，只重算之后；否则从当天起全部重算
+    const dateCondition = startBalance !== undefined ? 'transfer_date > ?' : 'transfer_date >= ?';
+    const result = db.exec(`
+      SELECT id, amount, type
+      FROM transfer_records
+      WHERE ${dateCondition}
+      ORDER BY transfer_date ASC, id ASC
+    `, [afterDate]);
+
+    if (result.length === 0 || result[0].values.length === 0) {
+      log.info('没有记录需要重算');
+      return;
+    }
+
+    let currentBalance = 0;
+    if (startBalance !== undefined) {
+      currentBalance = startBalance;
+    } else {
+      const prev = db.exec(`
+        SELECT account_balance FROM transfer_records
+        WHERE transfer_date < ?
+        ORDER BY transfer_date DESC, id DESC
+        LIMIT 1
+      `, [afterDate]);
+      if (prev.length > 0 && prev[0].values.length > 0) {
+        currentBalance = prev[0].values[0][0] as number;
+      }
+    }
+
+    for (const row of result[0].values) {
+      const id = row[0] as number;
+      const amount = row[1] as number;
+      const type = row[2] as string;
+      currentBalance = computeBalance(currentBalance, amount, type);
+      const normalizedBalance = currentBalance === 0 ? 0 : currentBalance;
+      db.run(`UPDATE transfer_records SET account_balance = ? WHERE id = ?`, [normalizedBalance, id]);
+    }
+    log.info(`成功重算 ${result[0].values.length} 条记录的账户余额，最终余额: ${currentBalance}`);
+  } catch (error) {
+    log.error('recalculateBalancesFrom error:', error);
+    throw error;
+  }
+}
+
 /**
  * 资金管理服务
  * 提供转账记录的CRUD操作和盈利统计功能
@@ -353,28 +422,7 @@ export class FundService {
    * @returns 计算后的余额
    */
   private calculateBalance(previousBalance: number, amount: number, type: string): number {
-    // 将金额转换为分（整数）进行计算，避免浮点数精度问题
-    const previousCents = Math.round(previousBalance * 100);
-    const amountCents = Math.round(amount * 100);
-
-    let resultCents: number;
-
-    // IN、DIVIDEND、STOCK_SELL、INTEREST 增加余额
-    if (type === 'IN' || type === 'DIVIDEND' || type === 'STOCK_SELL' || type === 'INTEREST') {
-      resultCents = previousCents + amountCents;
-    }
-    // OUT、DIVIDEND_TAX、STOCK_BUY 减少余额
-    else if (type === 'OUT' || type === 'DIVIDEND_TAX' || type === 'STOCK_BUY') {
-      resultCents = previousCents - amountCents;
-    } else {
-      resultCents = previousCents;
-    }
-
-    // 转换回元，并保留2位小数
-    const result = resultCents / 100;
-
-    // 消除 -0
-    return result === 0 ? 0 : Number(result.toFixed(2));
+    return computeBalance(previousBalance, amount, type);
   }
 
   /**
@@ -383,69 +431,7 @@ export class FundService {
    * @param startBalance 可选的起始余额，如果提供则使用该值作为起始余额，否则查询数据库
    */
   private recalculateBalancesAfterDate(afterDate: string, startBalance?: number): void {
-    try {
-      // 获取需要重算的记录（按日期升序）
-      // 如果提供了startBalance，说明afterDate当天的记录已经手动设置过余额，只重算之后的记录
-      // 否则重算afterDate当天及之后的所有记录
-      const dateCondition = startBalance !== undefined ? 'transfer_date > ?' : 'transfer_date >= ?';
-      
-      const result = this.db.exec(`
-        SELECT id, amount, type 
-        FROM transfer_records 
-        WHERE ${dateCondition}
-        ORDER BY transfer_date ASC, id ASC
-      `, [afterDate]);
-
-      if (result.length === 0 || result[0].values.length === 0) {
-        log.info('没有记录需要重算');
-        return;
-      }
-
-      // 获取重算起始点之前的余额（作为初始余额）
-      let currentBalance: number;
-      if (startBalance !== undefined) {
-        // 如果提供了起始余额，直接使用
-        currentBalance = startBalance;
-        log.info(`使用提供的起始余额: ${currentBalance}`);
-      } else {
-        // 否则从数据库中获取
-        const prevBalanceResult = this.db.exec(`
-          SELECT account_balance FROM transfer_records 
-          WHERE transfer_date < ? 
-          ORDER BY transfer_date DESC, id DESC 
-          LIMIT 1
-        `, [afterDate]);
-
-        currentBalance = 0;
-        if (prevBalanceResult.length > 0 && prevBalanceResult[0].values.length > 0) {
-          currentBalance = prevBalanceResult[0].values[0][0] as number;
-        }
-      }
-
-      log.info(`开始重算 ${result[0].values.length} 条记录，起始余额: ${currentBalance}`);
-
-      // 逐条更新余额
-      for (const row of result[0].values) {
-        const id = row[0] as number;
-        const amount = row[1] as number;
-        const type = row[2] as string;
-
-        currentBalance = this.calculateBalance(currentBalance, amount, type);
-
-        // 确保保存前消除 -0
-        const normalizedBalance = currentBalance === 0 ? 0 : currentBalance;
-
-        this.db.run(
-          `UPDATE transfer_records SET account_balance = ? WHERE id = ?`,
-          [normalizedBalance, id]
-        );
-      }
-
-      log.info(`成功重算 ${result[0].values.length} 条记录的账户余额，最终余额: ${currentBalance}`);
-    } catch (error) {
-      log.error('recalculateBalancesAfterDate error:', error);
-      throw error;
-    }
+    recalculateBalancesFrom(this.db, afterDate, startBalance);
   }
 
   /**

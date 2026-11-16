@@ -16,8 +16,6 @@ interface TradeRecord {
   tradeDate: string;
   tradePrice: number;
   tradeCount: number;
-  holdingCount: number;
-  holdingPrice: number;
 }
 
 const props = defineProps<{
@@ -35,8 +33,6 @@ const tradeType = ref<'BUY' | 'SELL' | 'DIVIDEND'>('BUY');
 const tradeDate = ref(new Date().toISOString().split('T')[0]);
 const tradePrice = ref<number | string>('');
 const tradeCount = ref<number | string>('');
-const holdingCount = ref<number | string>('');
-const holdingPrice = ref<number | string>('');
 const errorMessage = ref('');
 const isLoadingStockName = ref(false);
 
@@ -48,8 +44,6 @@ watch(() => props.record, (record) => {
     tradeDate.value = record.tradeDate.split('T')[0];
     tradePrice.value = record.tradePrice;
     tradeCount.value = record.tradeCount;
-    holdingCount.value = record.holdingCount;
-    holdingPrice.value = record.holdingPrice;
   }
 }, { immediate: true });
 
@@ -106,8 +100,6 @@ function validatePriceInput(event: Event) {
   // 更新对应的响应式变量
   if (input.id === 'tradePrice') {
     tradePrice.value = value;
-  } else if (input.id === 'holdingPrice') {
-    holdingPrice.value = value;
   }
 }
 
@@ -159,8 +151,6 @@ async function handleSubmit() {
       tradeDate: tradeDate.value,
       tradePrice: Number(tradePrice.value),
       tradeCount: Number(tradeCount.value),
-      holdingCount: Number(holdingCount.value),
-      holdingPrice: Number(holdingPrice.value),
     });
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '保存失败';
@@ -247,29 +237,6 @@ function handleClose() {
             placeholder="如: 100"
           />
           <span v-if="tradeType === 'DIVIDEND'" class="helper-text">股息类型数量请输入0</span>
-        </div>
-
-        <div v-if="record" class="form-group">
-          <label for="holdingCount">持仓数量</label>
-          <input
-            id="holdingCount"
-            v-model="holdingCount"
-            type="number"
-            step="1"
-            placeholder="持仓数量"
-          />
-        </div>
-
-        <div v-if="record" class="form-group">
-          <label for="holdingPrice">持仓均价</label>
-          <input
-            id="holdingPrice"
-            v-model="holdingPrice"
-            type="text"
-            inputmode="decimal"
-            placeholder="持仓均价"
-            @input="validatePriceInput"
-          />
         </div>
 
         <div v-if="errorMessage" class="error-message">

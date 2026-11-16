@@ -70,7 +70,7 @@ const handleBackup = async () => {
     if (result.success) {
       showToast('备份成功', 'success');
     } else {
-      showToast(`备份失败: ${result.error}`, 'error');
+      showToast(`备份失败: ${result.error || '未知原因'}`, 'error');
     }
   } catch (error) {
     showToast('备份失败', 'error');

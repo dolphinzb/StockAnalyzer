@@ -54,7 +54,8 @@ export interface AppConfig {
  */
 export interface ConfigAPI {
   getConfig: () => Promise<AppConfig>;
-  setConfig: (config: AppConfig) => Promise<boolean>;
+  /** 成功返回 true；参数校验失败返回统一错误结构 */
+  setConfig: (config: AppConfig) => Promise<boolean | IpcValidationErrorResult>;
   onConfigLoaded: (callback: (config: AppConfig) => void) => void;
 }
 
@@ -268,15 +269,11 @@ export interface HistoricalTradeAPI {
 
 /**
  * 新增交易记录的返回结果
- * 包含交易记录和资金明细同步状态
+ * 交易记录与资金明细在同一批次提交，失败时整个批次回滚并向上抛出异常
  */
 export interface AddTradeResult {
   /** 交易记录 */
   record: any;
-  /** 资金明细同步是否成功 */
-  fundSyncSuccess: boolean;
-  /** 同步失败原因（如果失败） */
-  fundSyncError?: string;
 }
 
 /**
@@ -321,10 +318,31 @@ export interface LogAPI {
 }
 
 /**
+ * 备份执行结果
+ * success 为 false 时 error MUST 包含可展示的失败原因
+ */
+export interface BackupResult {
+  success: boolean;
+  /** 成功时生成的备份文件路径 */
+  backupPath?: string;
+  /** 失败原因 */
+  error?: string | null;
+}
+
+/** IPC 入参校验失败时各通道统一返回的错误结构 */
+export interface IpcValidationErrorResult {
+  success: false;
+  code: 'INVALID_INPUT';
+  channel: string;
+  field: string;
+  message: string;
+}
+
+/**
  * 备份 API 类型 - 通过 preload contextBridge 暴露给渲染进程
  */
 export interface BackupAPI {
-  manualBackup(): Promise<{ success: boolean; error?: string | null }>;
+  manualBackup(): Promise<BackupResult>;
 }
 
 /**

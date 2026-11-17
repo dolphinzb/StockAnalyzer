@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, shell, Tray } from 'electron';
 import log from 'electron-log';
 import fs from 'fs';
 import { join } from 'path';
@@ -21,6 +21,7 @@ import {
   getDatabasePath,
   initDatabase,
   loadConfig,
+  runInTransaction,
   saveConfig,
   saveDatabase,
   updateStock,
@@ -31,6 +32,7 @@ import {
   type UpdateTradeInput
 } from './database';
 import {
+  setBackupFailureNotifier,
   startBackupScheduler,
   stopBackupScheduler
 } from './services/backupService';
@@ -67,6 +69,32 @@ import {
   listLogDates,
   migrateLegacyLogs
 } from './services/logService';
+import {
+  SCHEMAS,
+  validatedHandle,
+  type IpcHandler,
+  type IpcLogger,
+  type IpcRegister,
+  type Validator,
+} from './ipcValidation';
+
+/** 把 ipcMain.handle 适配成可注入的注册函数，使校验模块保持不依赖 electron */
+const registerIpc: IpcRegister = (channel, listener) => {
+  ipcMain.handle(channel, listener as Parameters<typeof ipcMain.handle>[1]);
+};
+
+const ipcLogger: IpcLogger = {
+  warn: (message, meta) => log.warn(message, meta),
+};
+
+/** 带运行时入参校验的 handler 注册入口 */
+function handleValidated(
+  channel: string,
+  schema: readonly Validator[],
+  handler: IpcHandler
+): void {
+  validatedHandle(registerIpc, channel, schema, handler, ipcLogger);
+}
 
 // ==================== 日志：按自然日分文件 ====================
 
@@ -302,7 +330,7 @@ ipcMain.handle('config:get', () => {
   return currentConfig;
 });
 
-ipcMain.handle('config:set', (_event, config: AppConfig) => {
+handleValidated('config:set', SCHEMAS.configSet, (_event, config: AppConfig) => {
   log.info('IPC: config:set', JSON.stringify(config));
   const success = saveConfig(config);
   log.info('Save config result:', success);
@@ -323,7 +351,7 @@ ipcMain.handle('watchlist:get', () => {
   }
 });
 
-ipcMain.handle('watchlist:add', (_event, input: AddStockInput) => {
+handleValidated('watchlist:add', SCHEMAS.watchlistAdd, (_event, input: AddStockInput) => {
   log.info('IPC: watchlist:add', JSON.stringify(input));
   try {
     if (input.sellThreshold <= input.buyThreshold) {
@@ -421,7 +449,7 @@ ipcMain.handle('position:get-list', () => {
   }
 });
 
-ipcMain.handle('position:get-records', (_event, stockCode: string, page?: number, pageSize?: number) => {
+handleValidated('position:get-records', SCHEMAS.positionGetRecords, (_event, stockCode: string, page?: number, pageSize?: number) => {
   log.debug('IPC: position:get-records', stockCode, page, pageSize);
   try {
     return getTradeRecords(stockCode, page, pageSize);
@@ -431,102 +459,93 @@ ipcMain.handle('position:get-records', (_event, stockCode: string, page?: number
   }
 });
 
-ipcMain.handle('position:add-record', async (_event, input: AddTradeInput) => {
+handleValidated('position:add-record', SCHEMAS.positionAddRecord, async (_event, input: AddTradeInput) => {
   log.info('IPC: position:add-record', JSON.stringify(input));
   try {
-    const result = dbAddTradeRecord(input);
-
-    // 交易记录保存成功后，自动同步到资金明细
-    try {
+    // 交易记录 + 资金明细 + 余额重算在同一事务内完成，事务内不落盘
+    const result = await runInTransaction(async () => {
+      const added = dbAddTradeRecord(input, { skipSave: true });
       if (!fundService) {
         throw new Error('fundService未初始化');
       }
 
-      // 获取新创建的 trade_record 的 ID
-      const tradeRecordId = result.record.id;
+      const tradeRecordId = added.record.id;
 
       if (input.tradeType === 'BUY') {
-        // 买入：创建STOCK_BUY记录，金额=买入金额+手续费
         const { calcStockBuyAmount } = await import('./services/tradeService');
         const buyAmount = calcStockBuyAmount(input.tradePrice, input.tradeCount, input.stockCode);
         await fundService.addTransferRecord({
           transferDate: input.tradeDate,
           amount: buyAmount,
           type: 'STOCK_BUY',
-          tradeRecordId: tradeRecordId,  // 传入关联ID
+          tradeRecordId,
         });
       } else if (input.tradeType === 'SELL') {
-        // 卖出：创建STOCK_SELL记录，金额=卖出金额-手续费-印花税
         const { calcStockSellAmount, calcDividendTax, getNextDay } = await import('./services/tradeService');
         const sellAmount = calcStockSellAmount(input.tradePrice, input.tradeCount, input.stockCode);
         await fundService.addTransferRecord({
           transferDate: input.tradeDate,
           amount: sellAmount,
           type: 'STOCK_SELL',
-          tradeRecordId: tradeRecordId,  // 传入关联ID
+          tradeRecordId,
         });
 
         // 计算FIFO股息税，如果金额>0则创建DIVIDEND_TAX记录
         const { getTradeRecordsByStockCode } = await import('./database');
         let allTrades = getTradeRecordsByStockCode(input.stockCode);
-        // 排除刚刚添加的这条卖出记录，避免影响FIFO计算
         allTrades = allTrades.filter(trade => trade.id !== tradeRecordId);
-        log.info(`[股息税计算] 股票=${input.stockCode}, 卖出日期=${input.tradeDate}, 卖出数量=${input.tradeCount}`);
-        log.info(`[股息税计算] 交易记录数=${allTrades.length}（已排除当前记录）`);
         const dividendTax = calcDividendTax(input.stockCode, input.tradeDate, input.tradeCount, allTrades);
-        log.info(`[股息税计算] 计算结果=${dividendTax}`);
         if (dividendTax > 0) {
-          log.info(`[股息税记录] 准备插入: 日期=${getNextDay(input.tradeDate)}, 金额=${dividendTax}, 类型=DIVIDEND_TAX`);
           await fundService.addTransferRecord({
             transferDate: getNextDay(input.tradeDate),
             amount: dividendTax,
             type: 'DIVIDEND_TAX',
-            tradeRecordId: tradeRecordId,  // 传入关联ID
+            tradeRecordId,
           });
-          log.info(`[股息税记录] 插入成功`);
-        } else {
-          log.info(`[股息税计算] 税额为0，不插入记录`);
         }
       } else if (input.tradeType === 'DIVIDEND') {
-        // 股息：创建DIVIDEND记录，金额=每股股息×持股数量
-        const dividendAmount = input.tradePrice * result.record.holdingCount;
+        const dividendAmount = input.tradePrice * added.record.holdingCount;
         if (dividendAmount > 0) {
           await fundService.addTransferRecord({
             transferDate: input.tradeDate,
             amount: dividendAmount,
             type: 'DIVIDEND',
-            tradeRecordId: tradeRecordId,  // 传入关联ID
+            tradeRecordId,
           });
         }
       }
-    } catch (syncError) {
-      // 同步失败不阻止交易记录保存，但记录错误信息
-      log.error('同步资金明细失败:', syncError);
-      result.fundSyncSuccess = false;
-      result.fundSyncError = syncError instanceof Error ? syncError.message : '未知错误';
-    }
-
+      return added;
+    });
+    // 批次提交后统一落盘一次，保证磁盘上交易记录与资金明细同时存在
+    saveDatabase();
     return result;
   } catch (error) {
     log.error('IPC position:add-record error:', error);
-    throw error;
+    const reason = error instanceof Error ? error.message : '未知错误';
+    throw new Error(`保存失败，未产生任何变更，请重试：${reason}`);
   }
 });
 
-ipcMain.handle('position:update-record', (_event, input: UpdateTradeInput) => {
+handleValidated('position:update-record', SCHEMAS.positionUpdateRecord, async (_event, input: UpdateTradeInput) => {
   log.info('IPC: position:update-record', JSON.stringify(input));
   try {
-    return updateTradeRecord(input);
+    // 编辑会重放持仓快照链、同步关联明细金额并重算余额链，全部在同一事务内
+    const result = await runInTransaction(() => updateTradeRecord(input, { skipSave: true }));
+    saveDatabase();
+    return result;
   } catch (error) {
     log.error('IPC position:update-record error:', error);
     throw error;
   }
 });
 
-ipcMain.handle('position:delete-record', (_event, id: number) => {
+handleValidated('position:delete-record', SCHEMAS.positionDeleteRecord, async (_event, id: number) => {
   log.info('IPC: position:delete-record', id);
   try {
-    deleteTradeRecord(id);
+    await runInTransaction(() => {
+      deleteTradeRecord(id, { skipSave: true });
+    });
+    saveDatabase();
     return true;
   } catch (error) {
     log.error('IPC position:delete-record error:', error);
@@ -622,7 +641,7 @@ ipcMain.handle('log:open-directory', async () => {
 /**
  * 获取分页的转账记录列表
  */
-ipcMain.handle('get-transfer-records', async (_event, limit: number, offset: number, types?: string[]) => {
+handleValidated('get-transfer-records', SCHEMAS.getTransferRecords, async (_event, limit: number, offset: number, types?: string[]) => {
   log.debug('IPC: get-transfer-records', { limit, offset, types });
   try {
     if (!fundService) {
@@ -638,7 +657,7 @@ ipcMain.handle('get-transfer-records', async (_event, limit: number, offset: num
 /**
  * 新增转账记录
  */
-ipcMain.handle('add-transfer-record', async (_event, record: { transferDate: string; amount: number; type: string }) => {
+handleValidated('add-transfer-record', SCHEMAS.addTransferRecord, async (_event, record: { transferDate: string; amount: number; type: string; tradeRecordId?: number | null }) => {
   log.debug('IPC: add-transfer-record', record);
   try {
     if (!fundService) {
@@ -656,7 +675,7 @@ ipcMain.handle('add-transfer-record', async (_event, record: { transferDate: str
 /**
  * 更新转账记录
  */
-ipcMain.handle('update-transfer-record', async (_event, id: number, data: { transferDate?: string; amount?: number; type?: string; accountBalance?: number }) => {
+handleValidated('update-transfer-record', SCHEMAS.updateTransferRecord, async (_event, id: number, data: { transferDate?: string; amount?: number; type?: string; accountBalance?: number | string | null }) => {
   log.debug('IPC: update-transfer-record', { id, data });
   try {
     if (!fundService) {
@@ -674,7 +693,7 @@ ipcMain.handle('update-transfer-record', async (_event, id: number, data: { tran
 /**
  * 删除转账记录
  */
-ipcMain.handle('delete-transfer-record', async (_event, id: number) => {
+handleValidated('delete-transfer-record', SCHEMAS.deleteTransferRecord, async (_event, id: number) => {
   log.debug('IPC: delete-transfer-record', { id });
   try {
     if (!fundService) {
@@ -862,8 +881,8 @@ ipcMain.handle('backup:manual', async () => {
   log.debug('IPC: backup:manual');
   try {
     const { performBackup } = await import('./services/backupService');
-    await performBackup();
-    return { success: true, error: null };
+    // 原样透传备份结果，不再无条件假定成功
+    return await performBackup();
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error('IPC backup:manual error:', errorMessage);
@@ -926,25 +945,25 @@ ipcMain.handle('kline:download', async (_event, input: {
 /**
  * 批量下载多只股票的K线数据（主进程串行执行，逐只推送进度）
  */
-ipcMain.handle('kline:download-batch', async (_event, input: KlineBatchDownloadInput) => {
+handleValidated('kline:download-batch', SCHEMAS.klineDownloadBatch, async (_event, input: KlineBatchDownloadInput) => {
   log.info('IPC: kline:download-batch', JSON.stringify({
-    stockCodes: input?.stockCodes,
-    startDate: input?.startDate,
-    endDate: input?.endDate,
-    adjustTypes: input?.adjustTypes,
-    period: input?.period,
+    stockCodes: input.stockCodes,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    adjustTypes: input.adjustTypes,
+    period: input.period,
   }));
 
   try {
     // 批量下载的股票均来自自选股，从数据库补齐名称用于进度展示
     const nameMap = new Map(getWatchlist().map(stock => [stock.stockCode, stock.stockName]));
-    const stocks = (input?.stockCodes ?? []).map(stockCode => ({
+    const stocks = input.stockCodes.map(stockCode => ({
       stockCode,
       stockName: nameMap.get(stockCode) ?? '',
     }));
 
-    // 周期为单值，缺省按日线
-    const period = assertKlinePeriod(input?.period);
+    // 周期为单值，缺省按日线；保留既有白名单校验
+    const period = assertKlinePeriod(input.period);
 
     return await downloadBatch(
       stocks,
@@ -1013,7 +1032,7 @@ ipcMain.handle('kline:get-chart-data', async (_event, stockCode: string, adjustT
  * 获取交易记录数据（K线图标注用，查询全部历史记录）
  * 复用 getTradeRecordsByStockCode 函数，返回全部交易记录（非分页）
  */
-ipcMain.handle('kline:get-trade-records', async (_event, stockCode: string) => {
+handleValidated('kline:get-trade-records', SCHEMAS.klineGetTradeRecords, async (_event, stockCode: string) => {
   log.debug('IPC: kline:get-trade-records', stockCode);
   try {
     return getTradeRecordsByStockCode(stockCode);
@@ -1069,6 +1088,14 @@ app.whenReady().then(async () => {
   createTray();
   isQuitting = false;
   startScheduler(getEnabledStocks);
+  // 自动备份失败时给出用户可见提示，不再只写日志
+  setBackupFailureNotifier((reason) => {
+    try {
+      new Notification({ title: '数据库备份失败', body: reason }).show();
+    } catch (notifyError) {
+      log.error('备份失败通知发送失败:', notifyError);
+    }
+  });
   startBackupScheduler(); // 启动数据库备份调度器
   startKlineDownloadScheduler(); // 启动K线数据自动下载调度器
 

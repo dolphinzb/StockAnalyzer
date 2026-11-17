@@ -4,7 +4,7 @@
  * 提供手动触发数据库备份的功能
  */
 
-import type { BackupAPI } from '../../shared/types';
+import type { BackupAPI, BackupResult } from '../../shared/types';
 
 // 声明全局类型（从 preload 暴露的 API）
 declare global {
@@ -12,8 +12,6 @@ declare global {
     backupApi: BackupAPI;
   }
 }
-
-export type BackupResult = Awaited<ReturnType<BackupAPI['manualBackup']>>;
 
 export function useBackup() {
   /**

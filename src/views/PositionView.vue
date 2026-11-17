@@ -90,18 +90,18 @@ async function handleSaveTrade(data: any) {
     if (data.id) {
       await window.positionApi.updateTradeRecord(data);
     } else {
-      const result = await window.positionApi.addTradeRecord(data);
-      // 检查资金明细同步是否失败，显示Toast通知
-      if (!result.fundSyncSuccess) {
-        showToast(`资金明细同步失败：${result.fundSyncError || '未知错误'}，请手动补录`, 'warning');
-      }
+      // 交易与资金明细在同一批次提交，失败时整个批次回滚并抛出异常
+      await window.positionApi.addTradeRecord(data);
     }
     handleCloseEditor();
     await loadPositions();
     refreshKey.value++;
   } catch (error) {
     console.error('Failed to save trade:', error);
-    throw error;
+    showToast(
+      `保存失败，未产生任何变更，请重试：${error instanceof Error ? error.message : '未知错误'}`,
+      'error'
+    );
   }
 }
 

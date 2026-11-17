@@ -46,13 +46,17 @@ export function useConfig() {
     saveSuccess.value = false;
     try {
       const plainConfig = JSON.parse(JSON.stringify(newConfig));
-      const success = await window.configAPI.setConfig(plainConfig);
-      console.log('[useConfig] setConfig result:', success);
+      const result = await window.configAPI.setConfig(plainConfig);
+      // 只有布尔 true 才算成功；IPC 参数校验失败会返回结构化错误对象
+      const success = result === true;
+      console.log('[useConfig] setConfig result:', result);
       if (success) {
         config.value = newConfig;
         saveSuccess.value = true;
       } else {
-        error.value = '保存配置失败';
+        error.value = typeof result === 'object' && result !== null
+          ? `保存配置失败：${result.message}`
+          : '保存配置失败';
       }
       return success;
     } catch (e) {

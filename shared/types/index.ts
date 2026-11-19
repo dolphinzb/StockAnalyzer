@@ -849,6 +849,19 @@ export interface KlineBatchDownloadInput {
 }
 
 /**
+ * 批量下载入参中的单只股票
+ * 自动增量下载会为每只股票填入各自的起始日；手动批量下载不填，行为与原有「整批共用 startDate」一致
+ */
+export interface DownloadStockInput {
+  /** 股票代码（纯数字） */
+  stockCode: string;
+  /** 股票名称 */
+  stockName: string;
+  /** 该股本次的下载起始日（YYYYMMDD）；缺省则使用整批 startDate */
+  startDate?: string;
+}
+
+/**
  * 批量下载中单只股票的下载结果
  */
 export interface KlineBatchStockResult {
@@ -907,6 +920,8 @@ export interface KlineBatchProgressPayload {
   stockName?: string;
   /** 本次批量任务的K线周期 */
   period?: KlinePeriod;
+  /** 该股本次实际的下载起始日（YYYYMMDD，自动增量下载时可能与整批 startDate 不同） */
+  startDate?: string;
   /** 单只结果（phase === 'completed' 时提供） */
   result?: KlineBatchStockResult;
 }

@@ -13,6 +13,7 @@ import { BrowserWindow } from 'electron';
 import log from 'electron-log';
 import { StockSDK } from 'stock-sdk';
 import type {
+  DownloadStockInput,
   KlineBatchDownloadSummary,
   KlineBatchProgressPayload,
   KlineBatchStockResult,
@@ -21,10 +22,34 @@ import type {
   KlinePeriod
 } from '../../shared/types';
 import { isFund } from '../../shared/utils/securities';
-import { getWatchlist, saveKlineData, saveDatabase, getChartData as dbGetChartData } from '../database';
+import {
+  getLatestTradeDates,
+  getWatchlist,
+  saveKlineData,
+  saveDatabase,
+  getChartData as dbGetChartData,
+  type LatestTradeDateEntry
+} from '../database';
 
 // StockSDK 模块级单例
 const sdk = new StockSDK();
+
+/**
+ * 自动增量下载的「从头」起点
+ * 早于 A 股首个交易日（1990-12-19），仅用于库内完全无数据时表示「拉取全部历史」。
+ * 实际返回条数由数据源按上市日期截断。
+ */
+export const EARLIEST_START_DATE = '19900101';
+
+/**
+ * 调度最小提前量：距目标时刻不足该值时视为「已过」，顺延到下一个调度日
+ * 用于消除「定时器提前触发 → 递归调度又排当天一次」的重复执行
+ */
+export const MIN_LEAD_MS = 2 * 60 * 1000;
+
+/** 每日自动下载的计划时刻（时:分） */
+const SCHEDULE_HOUR = 15;
+const SCHEDULE_MINUTE = 10;
 
 /**
  * 内部周期标识 → stock-sdk 周期参数 的显式映射
@@ -316,6 +341,52 @@ export async function downloadKline(
 }
 
 /**
+ * 按本地时区拼 YYYYMMDD
+ * 禁止使用 toISOString()：凌晨 0–8 点它给出的是前一天（UTC），会导致终点算错
+ * @param date 目标日期（默认当前时间）
+ * @returns YYYYMMDD
+ */
+export function localDateYmd(date: Date = new Date()): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`;
+}
+
+/** 交易日历日期（YYYY-MM-DD）转 YYYYMMDD */
+function toYmd(date: string): string {
+  return date.replace(/-/g, '');
+}
+
+/**
+ * 读取交易日历（应用层同日复用缓存，SDK 层另有 12h TTL）
+ * 异常向上抛出，由调用方决定回退规则
+ * @returns 已排序的交易日日期字符串数组（YYYY-MM-DD）
+ */
+async function getTradingCalendarCached(): Promise<string[]> {
+  const cacheKey = new Date().toISOString().slice(0, 10);
+  if (calendarCacheDate === cacheKey && tradingCalendarCache !== null) {
+    return tradingCalendarCache;
+  }
+
+  const calendar = await sdk.getTradingCalendar();
+  tradingCalendarCache = calendar;
+  calendarCacheDate = cacheKey;
+  return calendar;
+}
+
+/**
+ * 回退规则：排除周六周日，取不晚于今天的最近一日（本地时区）
+ * @param today 基准日期（默认当前时间）
+ * @returns YYYYMMDD
+ */
+export function lastWeekdayYmd(today: Date = new Date()): string {
+  const date = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  while (date.getDay() === 0 || date.getDay() === 6) {
+    date.setDate(date.getDate() - 1);
+  }
+  return localDateYmd(date);
+}
+
+/**
  * 判断今天是否为交易日
  * 优先使用 stock-sdk 交易日历，API不可用时回退到周末排除规则
  * @returns 是否为交易日
@@ -323,19 +394,9 @@ export async function downloadKline(
 export async function isTradingDay(): Promise<boolean> {
   const today = new Date().toISOString().slice(0, 10);
 
-  // 检查缓存是否有效（同一天内复用）
-  if (calendarCacheDate === today && tradingCalendarCache !== null) {
-    return tradingCalendarCache.includes(today);
-  }
-
   try {
     // 调用 stock-sdk 获取交易日历（返回交易日日期字符串数组）
-    const calendar = await sdk.getTradingCalendar();
-
-    // 更新缓存
-    tradingCalendarCache = calendar;
-    calendarCacheDate = today;
-
+    const calendar = await getTradingCalendarCached();
     const isOpen = calendar.includes(today);
 
     log.debug(`交易日历查询: ${today}, isOpen=${isOpen}`);
@@ -345,6 +406,47 @@ export async function isTradingDay(): Promise<boolean> {
     log.warn(`交易日历API不可用，使用周末排除规则: ${error instanceof Error ? error.message : String(error)}`);
     const day = new Date().getDay();
     return day !== 0 && day !== 6;
+  }
+}
+
+/**
+ * 获取最近交易日：交易日历中不晚于「今天」的最后一天（本地时区口径）
+ * 回退（任一情况都记 warn，且不得把过期日历的末条当作终点）：
+ * - 日历为空
+ * - 接口抛错
+ * - 日历最后一条早于今天（年度文件未更新）
+ * @param today 基准日期（默认当前时间，测试可注入）
+ * @returns YYYYMMDD
+ */
+export async function getLastTradingDay(today: Date = new Date()): Promise<string> {
+  const todayYmd = localDateYmd(today);
+
+  try {
+    const calendar = await getTradingCalendarCached();
+    if (calendar.length === 0) {
+      log.warn('交易日历为空，回退为排除周末规则计算最近交易日');
+      return lastWeekdayYmd(today);
+    }
+
+    const lastYmd = toYmd(calendar[calendar.length - 1]);
+    if (lastYmd < todayYmd) {
+      log.warn(`交易日历最后一条 ${lastYmd} 早于今天 ${todayYmd}（日历未更新），回退为排除周末规则`);
+      return lastWeekdayYmd(today);
+    }
+
+    // 日历含全年未来交易日，从后往前取最后一个 <= 今天
+    for (let i = calendar.length - 1; i >= 0; i--) {
+      const ymd = toYmd(calendar[i]);
+      if (ymd <= todayYmd) {
+        return ymd;
+      }
+    }
+
+    log.warn(`交易日历中未找到不晚于 ${todayYmd} 的交易日，回退为排除周末规则`);
+    return lastWeekdayYmd(today);
+  } catch (error) {
+    log.warn(`交易日历查询失败，回退为排除周末规则: ${error instanceof Error ? error.message : String(error)}`);
+    return lastWeekdayYmd(today);
   }
 }
 
@@ -521,21 +623,171 @@ function emitProgress(
 }
 
 /**
+ * 计算单只股票某周期的增量下载起点
+ * 规则：
+ * - 取「不复权最新日」与「前复权最新日」中更早的一天，包含该日（不 +1）
+ * - 两者皆无数据 → 回退 EARLIEST_START_DATE（拉取全部历史）
+ * - 起点晚于终点（库内脏数据）→ 钳制为终点
+ * @param latest 该股在该周期表的两种复权最新日
+ * @param endDate 本次下载终点（最近交易日，YYYYMMDD）
+ * @returns 起点 YYYYMMDD
+ */
+export function computeIncrementalStartDate(
+  latest: LatestTradeDateEntry | undefined,
+  endDate: string
+): string {
+  const candidates = [latest?.unadjusted, latest?.adjusted].filter(
+    (value): value is string => typeof value === 'string' && value !== ''
+  );
+
+  if (candidates.length === 0) {
+    return EARLIEST_START_DATE;
+  }
+
+  // 取值异常（不是 YYYYMMDD）按「无法判定」处理：保守降级为只下载最近交易日，避免误拉全量历史
+  if (candidates.some(value => !/^\d{8}$/.test(value))) {
+    log.warn(`库内最新交易日格式异常（${candidates.join('/')}），本次起点降级为终点 ${endDate}`);
+    return endDate;
+  }
+
+  const earliest = candidates.reduce((min, current) => (current < min ? current : min));
+  return earliest > endDate ? endDate : earliest;
+}
+
+/**
+ * 解析批量下载中单只股票的实际起点
+ * - 未提供 → 整批 startDate（手动下载路径行为不变）
+ * - 格式非法 → warn 并回退整批 startDate，不影响整批
+ * - 晚于 endDate → 钳制为 endDate，避免脏数据让整批被日期校验拒绝
+ * @param stock 股票项
+ * @param batchStartDate 整批起始日
+ * @param endDate 结束日
+ * @returns 该股本次的起始日 YYYYMMDD
+ */
+export function resolveStockStartDate(
+  stock: DownloadStockInput,
+  batchStartDate: string,
+  endDate: string
+): string {
+  const candidate = stock.startDate;
+  if (!candidate) {
+    return batchStartDate;
+  }
+
+  if (!/^\d{8}$/.test(candidate)) {
+    log.warn(`股票 ${stock.stockCode} 的下载起始日非法（${candidate}），回退整批起始日 ${batchStartDate}`);
+    return batchStartDate;
+  }
+
+  if (candidate > endDate) {
+    log.warn(`股票 ${stock.stockCode} 的下载起始日 ${candidate} 晚于结束日 ${endDate}，已钳制为 ${endDate}`);
+    return endDate;
+  }
+
+  return candidate;
+}
+
+/**
+ * 汇总一批股票的实际下载起点（日志用，避免逐只刷屏）
+ * @param stocks 已填入逐只起点的股票列表
+ * @param batchStartDate 整批起始日（用作缺省值）
+ * @param endDate 结束日
+ * @returns 形如「20261113 ~ 20261117; 19900101 ~ 20261117」
+ */
+export function summarizeStartDates(
+  stocks: DownloadStockInput[],
+  batchStartDate: string,
+  endDate: string
+): string {
+  const froms = Array.from(new Set(stocks.map(stock => stock.startDate ?? batchStartDate))).sort();
+  return froms.map(from => `${from} ~ ${endDate}`).join('; ');
+}
+
+/**
+ * 判断某只股票在某周期是否已补齐到 endDate
+ * 判据：不复权与前复权的最新交易日都不早于 endDate（任一缺失或落后都算未完成）
+ * @param latest 该股在该周期表的两种复权最新日
+ * @param endDate 最近交易日 YYYYMMDD
+ * @returns 是否已完整
+ */
+export function isPeriodComplete(latest: LatestTradeDateEntry | undefined, endDate: string): boolean {
+  if (!latest) {
+    return false;
+  }
+  const { unadjusted, adjusted } = latest;
+  return !!unadjusted && !!adjusted && unadjusted >= endDate && adjusted >= endDate;
+}
+
+/** 单周期的待补清单 */
+export interface PendingStockGroup {
+  /** 需要补下载的股票（已填入逐只 startDate） */
+  pending: DownloadStockInput[];
+  /** 判定为已完整、无需下载的股票数 */
+  completedCount: number;
+}
+
+/**
+ * 收集某周期需要补下载的股票（启动补跑与定时任务共用）
+ * 降级策略：查询异常时整批按「待补」处理且只下载最近交易日（无法区分「无数据」与「查询失败」，不冒拉全量的风险）；
+ * 单只起点计算异常同样降级为 endDate。任何异常都不中断整批。
+ * @param stocks 股票列表（无需提供 startDate）
+ * @param period K线周期
+ * @param endDate 最近交易日 YYYYMMDD
+ * @returns 待补股票与已完整只数
+ */
+export function collectPendingStocks(
+  stocks: DownloadStockInput[],
+  period: KlinePeriod,
+  endDate: string
+): PendingStockGroup {
+  let latestMap: Map<string, LatestTradeDateEntry>;
+  try {
+    latestMap = getLatestTradeDates(stocks.map(stock => stock.stockCode), period);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.warn(
+      `查询${PERIOD_LABELS[period]}库内最新交易日失败，本次按全部待补处理（仅下载最近交易日 ${endDate}）: ${message}`
+    );
+    return { pending: stocks.map(stock => ({ ...stock, startDate: endDate })), completedCount: 0 };
+  }
+
+  const pending: DownloadStockInput[] = [];
+  let completedCount = 0;
+
+  for (const stock of stocks) {
+    const latest = latestMap.get(stock.stockCode);
+    try {
+      if (isPeriodComplete(latest, endDate)) {
+        completedCount++;
+        continue;
+      }
+      pending.push({ ...stock, startDate: computeIncrementalStartDate(latest, endDate) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn(`计算 ${stock.stockCode} ${PERIOD_LABELS[period]}下载起点失败，降级为 ${endDate}: ${message}`);
+      pending.push({ ...stock, startDate: endDate });
+    }
+  }
+
+  return { pending, completedCount };
+}
+
+/**
  * 批量下载多只股票的K线数据
  * - 整批预校验（日期、复权类型、证券代码），任一非法则整批不启动
  * - 按入参顺序串行下载（避免并发触发数据源限流）
  * - 每只开始/完成时通过 onProgress 推送进度
  * - 与定时自动下载共享互斥标志，同一时刻只允许一个批量任务
  * - 逐只下载不落盘（skipSave=true），整批只在结束时落盘一次
- * @param stocks 待下载的股票列表（代码 + 名称）
- * @param startDate 开始日期 (YYYYMMDD)
+ * @param stocks 待下载的股票列表（代码 + 名称，可选逐只 startDate；缺省用整批 startDate）
+ * @param startDate 整批默认开始日期 (YYYYMMDD)
  * @param endDate 结束日期 (YYYYMMDD)
  * @param adjustTypes 复权类型数组
  * @param options 可选配置（重试、进度回调）
  * @returns 批量下载汇总结果
  */
 export async function downloadBatch(
-  stocks: { stockCode: string; stockName: string }[],
+  stocks: DownloadStockInput[],
   startDate: string,
   endDate: string,
   adjustTypes: ('' | 'qfq')[],
@@ -549,7 +801,7 @@ export async function downloadBatch(
 
   const typesToDownload = adjustTypes.length > 0 ? adjustTypes : (['', 'qfq'] as ('' | 'qfq')[]);
 
-  // 整批预校验：任一非法则整批不启动
+  // 整批预校验：任一非法则整批不启动（逐只起点在循环内单独校验与钳制）
   validateBatchDownloadInput(stocks.map(stock => stock.stockCode), startDate, endDate, typesToDownload);
 
   batchDownloading = true;
@@ -557,12 +809,16 @@ export async function downloadBatch(
   const results: KlineBatchStockResult[] = [];
   const periodLabel = PERIOD_LABELS[period] ?? '日线';
 
-  log.info(`开始批量下载${periodLabel}K线数据: 共 ${total} 只, ${startDate} ~ ${endDate}, 复权类型: ${typesToDownload.map(type => (type === '' ? '不复权' : '前复权')).join(', ')}`);
+  log.info(
+    `开始批量下载${periodLabel}K线数据: 共 ${total} 只, 区间 ${summarizeStartDates(stocks, startDate, endDate)}, 复权类型: ${typesToDownload.map(type => (type === '' ? '不复权' : '前复权')).join(', ')}`
+  );
 
   try {
     for (let i = 0; i < stocks.length; i++) {
       const stock = stocks[i];
       const index = i + 1;
+      // 逐只起点：自动增量下载为每只股票填入各自起点；手动批量下载缺省用整批 startDate
+      const from = resolveStockStartDate(stock, startDate, endDate);
 
       emitProgress(options.onProgress, {
         phase: 'started',
@@ -571,14 +827,16 @@ export async function downloadBatch(
         stockCode: stock.stockCode,
         stockName: stock.stockName,
         period,
+        startDate: from,
       });
 
       let downloadResult: KlineDownloadResult;
       try {
+        log.debug(`${periodLabel}下载区间: ${stock.stockCode}, ${from} ~ ${endDate}`);
         // skipSave=true：整批只在 finally 落盘一次，避免每只股票都把整库序列化写入
         downloadResult = options.retry
-          ? await downloadWithRetry(stock.stockCode, startDate, endDate, typesToDownload, period, true)
-          : await downloadKline(stock.stockCode, startDate, endDate, typesToDownload, period, true);
+          ? await downloadWithRetry(stock.stockCode, from, endDate, typesToDownload, period, true)
+          : await downloadKline(stock.stockCode, from, endDate, typesToDownload, period, true);
       } catch (error) {
         downloadResult = {
           success: false,
@@ -596,6 +854,7 @@ export async function downloadBatch(
         stockCode: stock.stockCode,
         stockName: stock.stockName,
         period,
+        startDate: from,
         result,
       });
     }
@@ -617,46 +876,22 @@ export async function downloadBatch(
   return summary;
 }
 
-/**
- * 覆盖重下近端周线与月线
- * 目的：修正当周/当月尚未形成的最后一根K线（周五月末无需额外调度）
- * 失败只记录日志，不影响日线下载结果
- * @param stocks 自选股列表
- */
-async function refreshRecentPeriodKline(
-  stocks: { stockCode: string; stockName: string }[]
-): Promise<void> {
-  if (stocks.length === 0) return;
-
-  const formatDate = (date: Date): string => date.toISOString().slice(0, 10).replace(/-/g, '');
-  const today = formatDate(new Date());
-  const dayMs = 24 * 60 * 60 * 1000;
-  const weeklyStart = formatDate(new Date(Date.now() - 30 * dayMs));
-  const monthlyStart = formatDate(new Date(Date.now() - 90 * dayMs));
-
-  const tasks: { period: KlinePeriod; startDate: string }[] = [
-    { period: 'w', startDate: weeklyStart },
-    { period: 'm', startDate: monthlyStart },
-  ];
-
-  for (const task of tasks) {
-    try {
-      const summary = await downloadBatch(stocks, task.startDate, today, ['', 'qfq'], task.period, { retry: true });
-      log.info(`近端${PERIOD_LABELS[task.period]}刷新完成: 成功 ${summary.successCount} 只, 失败 ${summary.failedCount} 只`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      log.warn(`近端${PERIOD_LABELS[task.period]}刷新失败（不影响日线结果）: ${message}`);
-    }
-  }
-}
+/** 自动下载的周期顺序：日线优先，其次周线、月线 */
+const AUTO_DOWNLOAD_PERIODS: KlinePeriod[] = ['d', 'w', 'm'];
 
 /**
- * 执行自动下载所有自选股当日K线数据
- * 复用 downloadBatch：串行逐只下载两种复权类型，失败重试1次，结果记录到日志
- * 日线完成后追加近端周线/月线覆盖刷新（失败不影响日线判定）
+ * 执行自动下载（增量 + 完整性判定）
+ * - 终点：交易日历中不晚于今天（本地时区）的最近交易日
+ * - 逐周期、逐股票判断是否已补齐（不复权与前复权的最新日均不早于终点才算完成）
+ * - 只对未完成的股票发起下载，起点取库内最新日（库内无数据回退 EARLIEST_START_DATE）
+ * - 三周期全部完成时不做任何请求，仅记录「当日 K 线已完整」
+ * - 单周期失败不阻断后续周期；与其它批量任务互斥时直接退出
+ * @remarks 增量模式只保证「从库内最新数据往后接续」：
+ *          库内已有中间缺口、以及除权除息导致的前复权基准不一致，均不在自动流程中修复，
+ *          需由用户通过手动指定区间重下（见 openspec kline-download 规格「增量下载的正确性边界」）。
  */
 export async function performAutoDownload(): Promise<void> {
-  log.info('开始执行K线数据自动下载（双复权类型）...');
+  log.info('开始执行K线数据自动下载（增量，双复权类型）...');
 
   // 判断是否为交易日
   const isTradeDay = await isTradingDay();
@@ -672,69 +907,95 @@ export async function performAutoDownload(): Promise<void> {
     return;
   }
 
-  // 获取今天的日期 (YYYYMMDD)
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  // 终点：不晚于今天（本地时区）的最近交易日；getLastTradingDay 内部已按规则兜底，不会抛错
+  const endDate = await getLastTradingDay();
+  const baseStocks: DownloadStockInput[] = watchlist.map(stock => ({
+    stockCode: stock.stockCode,
+    stockName: stock.stockName,
+  }));
 
-  let summary: KlineBatchDownloadSummary;
-  try {
-    summary = await downloadBatch(
-      watchlist.map(stock => ({ stockCode: stock.stockCode, stockName: stock.stockName })),
-      today,
-      today,
-      ['', 'qfq'],
-      'd',
-      { retry: true }
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.startsWith('BATCH_DOWNLOAD_IN_PROGRESS')) {
-      log.info('已有批量下载任务正在进行中，跳过本次自动下载');
-      return;
+  let pendingTotal = 0;
+
+  for (const period of AUTO_DOWNLOAD_PERIODS) {
+    const { pending, completedCount } = collectPendingStocks(baseStocks, period, endDate);
+
+    if (pending.length === 0) {
+      log.info(`${PERIOD_LABELS[period]}已完整，跳过下载: 共 ${completedCount} 只`);
+      continue;
     }
-    log.error(`K线数据自动下载失败: ${message}`);
-    return;
+
+    pendingTotal += pending.length;
+    log.info(
+      `${PERIOD_LABELS[period]}待补 ${pending.length} 只（已完成跳过 ${completedCount} 只）, 区间 ${summarizeStartDates(pending, endDate, endDate)}`
+    );
+
+    let summary: KlineBatchDownloadSummary;
+    try {
+      // 整批缺省起点用 endDate：逐只起点已填好，缺省值只用于单只起点异常时的回退
+      summary = await downloadBatch(pending, endDate, endDate, ['', 'qfq'], period, { retry: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.startsWith('BATCH_DOWNLOAD_IN_PROGRESS')) {
+        log.info('已有批量下载任务正在进行中，跳过本次自动下载');
+        return;
+      }
+      // 单周期失败不阻断后续周期（与「周/月线失败不影响日线判定」一致）
+      log.error(`${PERIOD_LABELS[period]}自动下载失败: ${message}`);
+      continue;
+    }
+
+    log.info(
+      `${PERIOD_LABELS[period]}自动下载完成: 共 ${summary.total} 只, 成功 ${summary.successCount} 只, 失败 ${summary.failedCount} 只`
+    );
   }
 
-  // 按复权类型统计（口径与批量下载一致：条数 > 0 计成功）
-  const unadjustedFailedStocks = summary.results.filter(result => (result.unadjustedCount ?? 0) <= 0);
-  const adjustedFailedStocks = summary.results.filter(result => (result.adjustedCount ?? 0) <= 0);
-  const unadjustedSuccessCount = summary.total - unadjustedFailedStocks.length;
-  const adjustedSuccessCount = summary.total - adjustedFailedStocks.length;
-
-  // 汇总单行输出：成功只数 / 总数，失败明细随后按 warn 展开
-  log.info(
-    `日线自动下载完成: 共 ${summary.total} 只, 不复权 ${unadjustedSuccessCount}/${summary.total}, 前复权 ${adjustedSuccessCount}/${summary.total}`
-  );
-
-  // 记录不复权失败的股票
-  for (const failed of unadjustedFailedStocks) {
-    log.warn(`  不复权失败: ${failed.stockCode} ${failed.stockName} - ${failed.unadjustedError || failed.error || '未知错误'}`);
+  if (pendingTotal === 0) {
+    log.info('当日K线已完整（日线/周线/月线），跳过自动下载');
   }
-
-  // 记录前复权失败的股票
-  for (const failed of adjustedFailedStocks) {
-    log.warn(`  前复权失败: ${failed.stockCode} ${failed.stockName} - ${failed.adjustedError || failed.error || '未知错误'}`);
-  }
-
-  // 日线完成后刷新近端周线/月线（失败仅记日志，不影响日线结果）
-  await refreshRecentPeriodKline(
-    watchlist.map(stock => ({ stockCode: stock.stockCode, stockName: stock.stockName }))
-  );
 }
 
 /**
- * 调度下一次自动下载
- * 计算到下一个15:10的延迟，触发后执行下载并递归调度
+ * 判断当前是否已过每日自动下载的计划时刻（本地时区，含等于）
+ * @param now 当前时间（测试可注入）
+ * @returns 是否已到/已过 15:10
  */
-function scheduleNextDownload(): void {
-  const now = new Date();
-  const target = new Date();
+export function isPastDailyScheduleTime(now: Date = new Date()): boolean {
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), SCHEDULE_HOUR, SCHEDULE_MINUTE, 0, 0);
+  return now.getTime() >= target.getTime();
+}
 
-  // 设置目标时间为今天15:10
-  target.setHours(15, 10, 0, 0);
+/**
+ * 启动补跑：应用在计划时刻（15:10）之后启动时，检查当日 K 线是否完整，未完成则补齐
+ * 已在计划时刻之前启动的实例不触发，交由当天的定时任务处理
+ * @returns 无返回；异常只记录日志，不影响应用启动
+ */
+export async function runStartupCatchUp(): Promise<void> {
+  if (!isPastDailyScheduleTime()) {
+    log.info(`未到每日自动下载时刻（${SCHEDULE_HOUR}:${String(SCHEDULE_MINUTE).padStart(2, '0')}），启动补跑不触发`);
+    return;
+  }
 
-  // 如果今天15:10已过，则调度明天
-  if (now >= target) {
+  log.info('已过每日自动下载时刻，检查当日K线完整性...');
+  try {
+    await performAutoDownload();
+  } catch (error) {
+    log.error(`启动补跑失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * 计算下一次自动下载的目标时刻
+ * - 目标为当天 15:10
+ * - 距目标不足 MIN_LEAD_MS（含已过）视为已过，顺延到次日，避免「提前触发后又排当天一次」
+ * - 顺延后继续跳过周六、周日
+ * @param now 当前时间（测试可注入）
+ * @returns 下一次目标时刻
+ */
+export function computeNextScheduleTarget(now: Date = new Date()): Date {
+  const target = new Date(now.getTime());
+  target.setHours(SCHEDULE_HOUR, SCHEDULE_MINUTE, 0, 0);
+
+  if (now.getTime() + MIN_LEAD_MS >= target.getTime()) {
     target.setDate(target.getDate() + 1);
   }
 
@@ -745,6 +1006,16 @@ function scheduleNextDownload(): void {
     dayOfWeek = target.getDay();
   }
 
+  return target;
+}
+
+/**
+ * 调度下一次自动下载
+ * 计算到下一个15:10的延迟，触发后执行下载并递归调度
+ */
+function scheduleNextDownload(): void {
+  const now = new Date();
+  const target = computeNextScheduleTarget(now);
   const delay = target.getTime() - now.getTime();
 
   log.info(`⏰ 下次K线自动下载调度于: ${target.toLocaleString()} (延迟 ${Math.round(delay / 1000 / 60)} 分钟)`);

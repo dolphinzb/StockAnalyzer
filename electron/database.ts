@@ -982,6 +982,75 @@ export function tableOf(period: KlinePeriod): string {
 }
 
 /**
+ * 单只股票在某周期表中的最新交易日（按复权类型区分）
+ */
+export interface LatestTradeDateEntry {
+  /** 不复权最新交易日（YYYYMMDD），无数据时为 null */
+  unadjusted: string | null;
+  /** 前复权最新交易日（YYYYMMDD），无数据时为 null */
+  adjusted: string | null;
+}
+
+/**
+ * 批量查询多只股票在某周期表中的最新交易日
+ * 用途：自动增量下载据此计算每只股票的下载起点
+ * @param stockCodes 股票代码列表（纯数字）
+ * @param period K线周期 d|w|m
+ * @param target 目标数据库实例（默认取全局库，测试可注入内存库）
+ * @returns 股票代码 → 两种复权各自的最新交易日（无数据的股票为 null）
+ * @remarks 表名必须经 tableOf() 白名单取得，代码逐个绑定占位符，不接受外部拼接。
+ *          查询异常直接向上抛出，由调用方按股票/周期降级处理。
+ */
+export function getLatestTradeDates(
+  stockCodes: string[],
+  period: KlinePeriod,
+  target?: Database
+): Map<string, LatestTradeDateEntry> {
+  const latest = new Map<string, LatestTradeDateEntry>();
+  if (!Array.isArray(stockCodes) || stockCodes.length === 0) {
+    return latest;
+  }
+
+  const table = tableOf(period);
+  const database = target ?? getDb();
+
+  // 先为所有请求的代码建立空条目，保证「无数据」与「未请求」在调用方可区分
+  for (const stockCode of stockCodes) {
+    latest.set(stockCode, { unadjusted: null, adjusted: null });
+  }
+
+  const placeholders = stockCodes.map(() => '?').join(', ');
+  const result = database.exec(
+    `SELECT stock_code, adjust_type, MAX(trade_date) AS latest
+     FROM ${table}
+     WHERE stock_code IN (${placeholders})
+     GROUP BY stock_code, adjust_type`,
+    stockCodes
+  );
+
+  if (result.length === 0) {
+    return latest;
+  }
+
+  for (const row of result[0].values) {
+    const stockCode = String(row[0] ?? '');
+    const adjustType = String(row[1] ?? '');
+    const tradeDate = row[2] === null || row[2] === undefined ? '' : String(row[2]);
+    const entry = latest.get(stockCode);
+    // 库内 trade_date 为 YYYY-MM-DD，对外统一转 YYYYMMDD
+    if (!entry || tradeDate === '') continue;
+    const ymd = tradeDate.replace(/-/g, '');
+    if (adjustType === 'qfq') {
+      entry.adjusted = ymd;
+    } else if (adjustType === '') {
+      entry.unadjusted = ymd;
+    }
+  }
+
+  return latest;
+}
+
+/**
  * stock-sdk 返回的K线数据项类型
  */
 interface HistoryKlineItem {

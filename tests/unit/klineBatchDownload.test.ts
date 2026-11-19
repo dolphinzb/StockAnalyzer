@@ -33,11 +33,14 @@ vi.mock('../../electron/database', () => ({
   saveKlineData: () => 0,
   saveDatabase: () => undefined,
   getChartData: () => [],
+  getLatestTradeDates: () => new Map(),
 }));
 
 import {
   buildBatchStockResult,
   buildBatchSummary,
+  resolveStockStartDate,
+  summarizeStartDates,
   validateBatchDownloadInput
 } from '../../electron/services/klineDownloadService';
 import type { KlineBatchStockResult, KlineDownloadResult } from '../../shared/types';
@@ -199,6 +202,43 @@ describe('buildBatchSummary', () => {
     expect(summary.successCount).toBe(0);
     expect(summary.failedCount).toBe(0);
     expect(summary.results).toEqual([]);
+  });
+});
+
+describe('逐只起点扩展（DownloadStockInput.startDate）', () => {
+  it('未提供逐只起点时回退整批 startDate（手动路径行为不变）', () => {
+    expect(resolveStockStartDate({ stockCode: '000001', stockName: '平安银行' }, '20240101', '20240131'))
+      .toBe('20240101');
+  });
+
+  it('提供合法逐只起点时优先使用该起点', () => {
+    expect(
+      resolveStockStartDate({ stockCode: '000001', stockName: '平安银行', startDate: '20240110' }, '20240101', '20240131')
+    ).toBe('20240110');
+  });
+
+  it('逐只起点晚于结束日时钳制为结束日', () => {
+    expect(
+      resolveStockStartDate({ stockCode: '000001', stockName: '平安银行', startDate: '20270105' }, '20240101', '20240131')
+    ).toBe('20240131');
+  });
+
+  it('逐只起点格式非法时回退整批 startDate', () => {
+    expect(
+      resolveStockStartDate({ stockCode: '000001', stockName: '平安银行', startDate: '2024-01-10' }, '20240101', '20240131')
+    ).toBe('20240101');
+  });
+
+  it('区间汇总去重并按起点排序', () => {
+    const stocks = [
+      { stockCode: '000001', stockName: '平安银行', startDate: '20261113' },
+      { stockCode: '600519', stockName: '贵州茅台' },
+      { stockCode: '510050', stockName: '上证50ETF', startDate: '19900101' },
+    ];
+
+    expect(summarizeStartDates(stocks, '20261117', '20261117')).toBe(
+      '19900101 ~ 20261117; 20261113 ~ 20261117; 20261117 ~ 20261117'
+    );
   });
 });
 

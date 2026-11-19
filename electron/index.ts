@@ -48,6 +48,7 @@ import {
 import {
   downloadBatch,
   downloadKline,
+  runStartupCatchUp,
   startKlineDownloadScheduler,
   stopKlineDownloadScheduler,
   validateDownloadInput
@@ -1098,6 +1099,8 @@ app.whenReady().then(async () => {
   });
   startBackupScheduler(); // 启动数据库备份调度器
   startKlineDownloadScheduler(); // 启动K线数据自动下载调度器
+  // 已过每日计划时刻（15:10）时补跑当日未完成的 K 线；不阻塞窗口显示
+  void runStartupCatchUp();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -336,7 +336,8 @@ handleValidated('config:set', SCHEMAS.configSet, (_event, config: AppConfig) => 
   log.info('Save config result:', success);
   console.log('[Electron Main] config:set success:', success);
   if (success) {
-    currentConfig = config;
+    // 重新读取以拿到归一化后的配置（api.url 由 provider 派生），避免 config:get 返回旧地址
+    currentConfig = loadConfig();
   }
   return success;
 });

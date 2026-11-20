@@ -227,7 +227,8 @@ const appConfigValidator = v.object('config', {
   }),
   api: v.object('config.api', {
     provider: v.enumOf('config.api.provider', API_PROVIDERS),
-    url: v.string('config.api.url', { minLength: 1 }),
+    // 该值由主进程按 provider 派生、不参与落盘，故允许空串（仅结构兼容）
+    url: v.string('config.api.url', { allowEmpty: true }),
   }),
 });
 

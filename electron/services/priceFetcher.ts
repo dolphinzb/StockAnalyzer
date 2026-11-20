@@ -1,9 +1,12 @@
 import { BrowserWindow } from 'electron';
 import log from 'electron-log';
-import type { AppConfig, IndexData, IndexDirection } from '../../shared/types';
+import type { AppConfig, IndexData, IndexDirection, QuoteSnapshot } from '../../shared/types';
 import type { WatchlistStock } from '../database';
 import { loadConfig } from '../database';
 import { checkAndTriggerAlert, type PriceUpdate } from './alertService';
+import { getProvider, QuoteProviderError } from './quoteProviders';
+import type { QuoteProvider } from './quoteProviders';
+import { toPrefixedCode } from './quoteProviders/code';
 
 // 指数代码常量（带前缀）
 const INDEX_CODES = ['sh000001', 'sh000688', 'sz399001'];
@@ -30,21 +33,7 @@ export interface PriceResult {
 let lastRefreshTime: string | null = null;
 let schedulerInterval: NodeJS.Timeout | null = null;
 
-function getStockCodeWithPrefix(stockCode: string): string {
-  if (stockCode.startsWith('sh') || stockCode.startsWith('sz') || stockCode.startsWith('bj')) {
-    return stockCode;
-  }
-  if (stockCode.startsWith('6') || stockCode.startsWith('5')) {
-    return `sh${stockCode}`;
-  }
-  if (stockCode.startsWith('0') || stockCode.startsWith('1') || stockCode.startsWith('3')) {
-    return `sz${stockCode}`;
-  }
-  if (stockCode.startsWith('8') || stockCode.startsWith('4')) {
-    return `bj${stockCode}`;
-  }
-  return `sz${stockCode}`;
-}
+
 
 function isWithinTradingHours(config: AppConfig): boolean {
   const now = new Date();
@@ -90,42 +79,6 @@ function sendRefreshTimeUpdate(time: string): void {
   }
 }
 
-export async function fetchStockPrice(stockCode: string): Promise<PriceResult> {
-  try {
-    const config = loadConfig();
-    if (!config.api?.url) {
-      return { stockCode, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: 'API URL not configured' };
-    }
-
-    const stockCodeWithPrefix = getStockCodeWithPrefix(stockCode);
-    const url = `${config.api.url}${stockCodeWithPrefix}`;
-    const response = await fetch(url, {
-      headers: {
-        Referer: 'http://finance.sina.com.cn',
-      },
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const decoder = new TextDecoder('gbk');
-    const text = decoder.decode(arrayBuffer);
-    log.debug(`API原始响应 [${stockCode}]: ${text}`);
-    const stockData = parseStockData(text);
-
-    if (stockData === null) {
-      return { stockCode, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: 'Failed to parse price' };
-    }
-
-    return { stockCode, ...stockData, success: true };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log.error(`Failed to fetch price for ${stockCode}:`, errorMessage);
-    return { stockCode, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: errorMessage };
-  }
-}
-
 export interface StockInfo {
   stockCode: string;
   stockName: string;
@@ -133,90 +86,36 @@ export interface StockInfo {
   error?: string;
 }
 
+/** 按 provider 构造并执行一次请求，返回与 codes 等长的快照数组 */
+async function requestSnapshots(provider: QuoteProvider, codes: string[]): Promise<QuoteSnapshot[]> {
+  const request = provider.buildRequest(codes);
+  const response = await fetch(request.url, { headers: request.headers });
+  if (!response.ok) {
+    throw new QuoteProviderError(provider.id, `HTTP ${response.status}`);
+  }
+  return provider.parse(provider.decode(await response.arrayBuffer()), codes);
+}
+
+/**
+ * 按代码查询证券名称（录入自选股/交易记录时自动带名）。
+ * 与批量行情共用同一 provider 适配器，切换数据源后依然可用。
+ */
 export async function fetchStockName(stockCode: string): Promise<StockInfo> {
+  const provider = getProvider(loadConfig().api?.provider ?? 'sina');
+  const codeWithPrefix = toPrefixedCode(stockCode);
+
   try {
-    const config = loadConfig();
-    if (!config.api?.url) {
-      return { stockCode, stockName: '', success: false, error: 'API URL not configured' };
+    const snapshot = (await requestSnapshots(provider, [codeWithPrefix]))[0];
+    // 只以名称是否存在判定：停牌标的现价可能无效，但名称仍可用（如东财 f2=0、f14 有值）
+    if (!snapshot || !snapshot.name) {
+      return { stockCode, stockName: '', success: false, error: snapshot?.error ?? '未获取到证券名称' };
     }
-
-    const stockCodeWithPrefix = getStockCodeWithPrefix(stockCode);
-    const url = `${config.api.url}${stockCodeWithPrefix}`;
-    const response = await fetch(url, {
-      headers: {
-        Referer: 'http://finance.sina.com.cn',
-      },
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const decoder = new TextDecoder('gbk');
-    const text = decoder.decode(arrayBuffer);
-    log.debug(`API原始响应 [${stockCode}]: ${text}`);
-    const stockName = parseStockName(text, stockCode);
-
-    if (!stockName) {
-      return { stockCode, stockName: '', success: false, error: 'Failed to parse stock name' };
-    }
-
-    return { stockCode, stockName, success: true };
+    return { stockCode, stockName: snapshot.name, success: true };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error(`Failed to fetch stock name for ${stockCode}:`, errorMessage);
     return { stockCode, stockName: '', success: false, error: errorMessage };
   }
-}
-
-function parseStockName(responseText: string, _stockCode: string): string | null {
-  try {
-    const match = responseText.match(/hq_str_\w+="([^"]+)"/);
-    if (match && match[1]) {
-      const parts = match[1].split(',');
-      if (parts.length >= 1) {
-        return parts[0];
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-interface ParsedStockData {
-  price: number;
-  openPrice: number;
-  prevClosePrice: number;
-  highPrice: number;
-  lowPrice: number;
-}
-
-function parseStockData(responseText: string): ParsedStockData | null {
-  try {
-    const match = responseText.match(/="([^"]+)"/);
-    if (match && match[1]) {
-      const parts = match[1].split(',');
-      // 新浪API字段: 0=名称, 1=今开, 2=昨收, 3=当前价, 4=最高, 5=最低
-      if (parts.length >= 6) {
-        return {
-          openPrice: parseFloat(parts[1]),
-          prevClosePrice: parseFloat(parts[2]),
-          price: parseFloat(parts[3]),
-          highPrice: parseFloat(parts[4]),
-          lowPrice: parseFloat(parts[5]),
-        };
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function parseStockPrice(responseText: string): number | null {
-  const data = parseStockData(responseText);
-  return data ? data.price : null;
 }
 
 export async function refreshAllEnabledStocks(stocks: WatchlistStock[], config: AppConfig): Promise<void> {
@@ -296,79 +195,52 @@ export async function fetchStockPrices(stockCodes: string[], config: AppConfig):
     return [];
   }
 
-  if (!config.api?.url) {
-    return stockCodes.map(code => ({ stockCode: code, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: 'API URL not configured' }));
-  }
-
-  const stockCodesWithPrefix = stockCodes.map(code => getStockCodeWithPrefix(code));
-  const url = `${config.api.url}${stockCodesWithPrefix.join(',')}`;
+  const codesWithPrefix = stockCodes.map(code => toPrefixedCode(code));
+  const provider = getProvider(config.api?.provider ?? 'sina');
 
   try {
-    const response = await fetch(url, {
-      headers: {
-        Referer: 'http://finance.sina.com.cn',
-      },
-    });
+    const snapshots = await requestSnapshots(provider, codesWithPrefix);
+    const snapshotByCode = new Map(snapshots.map(snapshot => [snapshot.code, snapshot]));
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const decoder = new TextDecoder('gbk');
-    const text = decoder.decode(arrayBuffer);
-    log.debug(`API批量响应: ${text}`);
-
-    return parseStockPricesResponse(text, stockCodes);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    log.error(`Batch fetch error:`, errorMessage);
-    return stockCodes.map(code => ({ stockCode: code, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: errorMessage }));
-  }
-}
-
-function parseStockPricesResponse(responseText: string, stockCodes: string[]): PriceResult[] {
-  const results: PriceResult[] = [];
-  const entries = responseText.split(';');
-
-  for (const entry of entries) {
-    const trimmed = entry.trim();
-    if (!trimmed) continue;
-
-    const match = trimmed.match(/hq_str_(\w+)="([^"]+)"/);
-    if (match && match[1] && match[2]) {
-      // 保留完整代码（带前缀），避免 sh000001 和 sz000001 混淆
-      const stockCode = match[1];
-      const parts = match[2].split(',');
-      // 新浪API字段: 0=名称, 1=今开, 2=昨收, 3=当前价, 4=最高, 5=最低
-      const price = parts.length >= 4 ? parseFloat(parts[3]) : null;
-
-      if (price !== null && !isNaN(price) && parts.length >= 6) {
-        results.push({
-          stockCode,
-          price,
-          openPrice: parseFloat(parts[1]),
-          prevClosePrice: parseFloat(parts[2]),
-          highPrice: parseFloat(parts[4]),
-          lowPrice: parseFloat(parts[5]),
-          success: true,
-        });
-      } else if (price !== null && !isNaN(price)) {
-        results.push({ stockCode, price, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: true });
-      } else {
-        results.push({ stockCode, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: 'Invalid price data' });
+    return codesWithPrefix.map((code) => {
+      const snapshot = snapshotByCode.get(code);
+      if (!snapshot || !snapshot.success) {
+        return {
+          stockCode: code,
+          price: 0,
+          openPrice: 0,
+          highPrice: 0,
+          lowPrice: 0,
+          prevClosePrice: 0,
+          success: false,
+          error: snapshot?.error ?? '数据源未返回该代码',
+        };
       }
-    }
+      return {
+        stockCode: code,
+        price: snapshot.price,
+        openPrice: snapshot.openPrice,
+        highPrice: snapshot.highPrice,
+        lowPrice: snapshot.lowPrice,
+        prevClosePrice: snapshot.prevClosePrice,
+        success: true,
+      };
+    });
+  } catch (error) {
+    // 失败不降级：本轮全部标记失败并记录日志，不切换到其他数据源重试
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    log.error(`[${provider.id}] 批量行情获取失败:`, errorMessage);
+    return codesWithPrefix.map(code => ({
+      stockCode: code,
+      price: 0,
+      openPrice: 0,
+      highPrice: 0,
+      lowPrice: 0,
+      prevClosePrice: 0,
+      success: false,
+      error: errorMessage,
+    }));
   }
-
-  // 匹配时直接使用传入的 stockCodes（已带前缀）
-  for (const code of stockCodes) {
-    if (!results.some(r => r.stockCode === code)) {
-      results.push({ stockCode: code, price: 0, openPrice: 0, highPrice: 0, lowPrice: 0, prevClosePrice: 0, success: false, error: 'Stock not found in response' });
-    }
-  }
-
-  return results;
 }
 
 /**

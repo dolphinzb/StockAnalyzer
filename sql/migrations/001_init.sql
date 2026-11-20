@@ -153,6 +153,8 @@ CREATE INDEX IF NOT EXISTS idx_kline_monthly_code_date_adjust ON kline_monthly(s
 
 -- ============================================
 -- 6. 初始化默认配置（新库首次启动即有默认配置）
+-- 注意：api.url 是 shared/types 中 sina 端点的已接受重复（SQL 无法 import TS 常量），
+--       修改任一端点时必须同步此处，单测会断言两者一致。
 -- ============================================
 INSERT OR IGNORE INTO config (key, value, updated_at)
 VALUES ('app_config', '{"trading":{"morningStart":"09:30","morningEnd":"11:30","afternoonStart":"13:00","afternoonEnd":"15:00"},"polling":{"interval":1},"api":{"provider":"sina","url":"https://hq.sinajs.cn/list="}}', strftime('%s', 'now') * 1000);

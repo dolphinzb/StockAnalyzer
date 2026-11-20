@@ -1,3 +1,4 @@
+import { readFileSync } from 'fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
   SCHEMAS,
@@ -140,6 +141,18 @@ describe('关键通道 schema', () => {
     expect(() => validateArgs('config:set', SCHEMAS.configSet, [{ ...valid, polling: { interval: 'fast' } }])).toThrow(/config.polling.interval/);
   });
 
+  it('config:set 允许空地址（由服务端派生），但仍拒绝非法 provider', () => {
+    const valid = {
+      trading: { morningStart: '09:30', morningEnd: '11:30', afternoonStart: '13:00', afternoonEnd: '15:00' },
+      polling: { interval: 1 },
+      api: { provider: 'sina', url: '' },
+    };
+    expect(() => validateArgs('config:set', SCHEMAS.configSet, [valid])).not.toThrow();
+    expect(() => validateArgs('config:set', SCHEMAS.configSet, [
+      { ...valid, api: { provider: 'binance', url: '' } },
+    ])).toThrow(/config.api.provider/);
+  });
+
   it('position:get-records 拒绝负数 pageSize 并给缺省值', () => {
     expect(validateArgs('position:get-records', SCHEMAS.positionGetRecords, ['000001'])).toEqual(['000001', 1, 20]);
     expect(() => validateArgs('position:get-records', SCHEMAS.positionGetRecords, ['000001', 1, -1])).toThrow(/pageSize/);
@@ -158,5 +171,16 @@ describe('关键通道 schema', () => {
     expect(() => validateArgs('watchlist:add', SCHEMAS.watchlistAdd, [valid])).not.toThrow();
     expect(() => validateArgs('watchlist:add', SCHEMAS.watchlistAdd, [{ ...valid, stockCode: '' }])).toThrow(/input.stockCode/);
     expect(() => validateArgs('watchlist:add', SCHEMAS.watchlistAdd, [{ ...valid, stockCode: 'sh 600519' }])).toThrow(/格式不合法/);
+  });
+});
+
+describe('校验器职责边界', () => {
+  it('不引入任何数据源端点常量或端点查询函数', () => {
+    const source = readFileSync(new URL('../../electron/ipcValidation.ts', import.meta.url), 'utf8');
+
+    // 端点派生属于配置归一化层（normalizeApiConfig）的职责，校验器必须保持纯结构校验
+    for (const token of ['hq.sinajs.cn', 'push2.eastmoney.com', 'web.sqt.gtimg.cn', 'getQuoteEndpoint']) {
+      expect(source).not.toContain(token);
+    }
   });
 });

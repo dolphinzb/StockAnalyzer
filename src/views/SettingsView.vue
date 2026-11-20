@@ -206,8 +206,10 @@ const handleBackup = async () => {
             id="apiUrl"
             v-model="localConfig.api.url"
             type="text"
-            required
+            readonly
+            aria-readonly="true"
           />
+          <span class="form-hint">地址由所选数据源决定，不可修改</span>
         </div>
       </section>
 

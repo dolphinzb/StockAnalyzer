@@ -3,7 +3,8 @@ import log from 'electron-log';
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
 import { SqliteDatabase, type DatabaseLike, type SqlValue } from './sqliteEngine';
-import type { AddTradeResult, AppConfig, KlinePeriod } from '../shared/types';
+import type { AddTradeResult, AppConfig, KlinePeriod, QuoteProviderId } from '../shared/types';
+import { getQuoteEndpoint } from '../shared/types';
 import { getUserVersion, getPendingMigrations, runMigrations } from './migrations';
 import { recalculateBalancesFrom } from './services/fundService';
 import {
@@ -53,6 +54,19 @@ export interface UpdateStockInput {
   monitorEnabled?: boolean;
 }
 
+const PROVIDER_IDS: QuoteProviderId[] = ['sina', 'eastmoney', 'tencent'];
+
+/**
+ * 按 provider 派生唯一的合法 API 配置。
+ * `url` 不接受外部输入，始终等于该 provider 的只读端点；非法 provider 回退新浪。
+ */
+export function normalizeApiConfig(provider: unknown): AppConfig['api'] {
+  const normalized = PROVIDER_IDS.includes(provider as QuoteProviderId)
+    ? (provider as QuoteProviderId)
+    : 'sina';
+  return { provider: normalized, url: getQuoteEndpoint(normalized) };
+}
+
 export const DEFAULT_CONFIG: AppConfig = {
   trading: {
     morningStart: '09:30',
@@ -63,10 +77,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   polling: {
     interval: 1,
   },
-  api: {
-    provider: 'sina',
-    url: 'https://hq.sinajs.cn/list=',
-  },
+  api: normalizeApiConfig('sina'),
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -82,7 +93,6 @@ export function mergeWithDefaultConfig(raw: unknown): AppConfig {
   const trading = isRecord(source.trading) ? source.trading : {};
   const polling = isRecord(source.polling) ? source.polling : {};
   const api = isRecord(source.api) ? source.api : {};
-  const providers: AppConfig['api']['provider'][] = ['sina', 'eastmoney', 'tencent'];
 
   const timeOr = (value: unknown, fallback: string): string =>
     typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : fallback;
@@ -99,14 +109,8 @@ export function mergeWithDefaultConfig(raw: unknown): AppConfig {
         ? polling.interval
         : DEFAULT_CONFIG.polling.interval,
     },
-    api: {
-      provider: providers.includes(api.provider as AppConfig['api']['provider'])
-        ? api.provider as AppConfig['api']['provider']
-        : DEFAULT_CONFIG.api.provider,
-      url: typeof api.url === 'string' && api.url.trim().length > 0
-        ? api.url
-        : DEFAULT_CONFIG.api.url,
-    },
+    // url 一律由 provider 派生，库中的历史地址（如东财单只端点）在读取时被纠正
+    api: normalizeApiConfig(api.provider),
   };
 }
 
@@ -275,18 +279,27 @@ export function loadConfig(): AppConfig {
   return { ...DEFAULT_CONFIG };
 }
 
-export function saveConfig(config: AppConfig): boolean {
-  if (!db) {
+/**
+ * 保存配置：落盘前按 provider 归一化 api.url，渲染层提交的地址一律不生效
+ * @param config 渲染层提交的配置
+ * @param target 目标数据库实例（测试可注入内存库）
+ * @returns 是否保存成功
+ */
+export function saveConfig(config: AppConfig, target?: Database): boolean {
+  const database = target ?? db;
+  if (!database) {
     log.error('数据库未初始化，无法保存配置');
     return false;
   }
 
   try {
-    const configJson = JSON.stringify(config);
+    // 落盘前再次归一化：渲染层提交的 api.url 一律不生效
+    const normalized: AppConfig = { ...config, api: normalizeApiConfig(config.api?.provider) };
+    const configJson = JSON.stringify(normalized);
     execute("UPDATE config SET value = ?, updated_at = ? WHERE key = 'app_config'", [
       configJson,
       Date.now(),
-    ]);
+    ], database);
     log.info('配置保存到数据库成功');
     return true;
   } catch (error) {

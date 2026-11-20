@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import initSqlJs, { type Database } from 'sql.js';
+import { SqliteDatabase, type DatabaseLike as Database } from '../../electron/sqliteEngine';
 
 // 隔离主进程依赖，使用内存数据库验证写库语义
 vi.mock('electron', () => ({
@@ -79,8 +79,7 @@ function tradeDates(table: string): string[] {
 }
 
 beforeEach(async () => {
-  const SQL = await initSqlJs();
-  database = new SQL.Database();
+  database = new SqliteDatabase(':memory:');
   // 用 V1 迁移建表，保证测试结构与线上一致（不再依赖内联 DDL）
   runMigrations(database, { isNewDatabase: true });
 });

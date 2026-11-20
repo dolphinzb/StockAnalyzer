@@ -23,7 +23,6 @@ import {
   loadConfig,
   runInTransaction,
   saveConfig,
-  saveDatabase,
   updateStock,
   updateTradeRecord,
   type AddStockInput,
@@ -465,7 +464,7 @@ handleValidated('position:add-record', SCHEMAS.positionAddRecord, async (_event,
   try {
     // 交易记录 + 资金明细 + 余额重算在同一事务内完成，事务内不落盘
     const result = await runInTransaction(async () => {
-      const added = dbAddTradeRecord(input, { skipSave: true });
+      const added = dbAddTradeRecord(input);
       if (!fundService) {
         throw new Error('fundService未初始化');
       }
@@ -517,8 +516,6 @@ handleValidated('position:add-record', SCHEMAS.positionAddRecord, async (_event,
       }
       return added;
     });
-    // 批次提交后统一落盘一次，保证磁盘上交易记录与资金明细同时存在
-    saveDatabase();
     return result;
   } catch (error) {
     log.error('IPC position:add-record error:', error);
@@ -531,8 +528,7 @@ handleValidated('position:update-record', SCHEMAS.positionUpdateRecord, async (_
   log.info('IPC: position:update-record', JSON.stringify(input));
   try {
     // 编辑会重放持仓快照链、同步关联明细金额并重算余额链，全部在同一事务内
-    const result = await runInTransaction(() => updateTradeRecord(input, { skipSave: true }));
-    saveDatabase();
+    const result = await runInTransaction(() => updateTradeRecord(input));
     return result;
   } catch (error) {
     log.error('IPC position:update-record error:', error);
@@ -544,9 +540,8 @@ handleValidated('position:delete-record', SCHEMAS.positionDeleteRecord, async (_
   log.info('IPC: position:delete-record', id);
   try {
     await runInTransaction(() => {
-      deleteTradeRecord(id, { skipSave: true });
+      deleteTradeRecord(id);
     });
-    saveDatabase();
     return true;
   } catch (error) {
     log.error('IPC position:delete-record error:', error);
@@ -698,7 +693,6 @@ handleValidated('add-transfer-record', SCHEMAS.addTransferRecord, async (_event,
       throw new Error('FundService not initialized');
     }
     const id = await fundService.addTransferRecord(record);
-    saveDatabase(); // 保存数据库
     return { id };
   } catch (error) {
     log.error('IPC add-transfer-record error:', error);
@@ -716,7 +710,6 @@ handleValidated('update-transfer-record', SCHEMAS.updateTransferRecord, async (_
       throw new Error('FundService not initialized');
     }
     const success = await fundService.updateTransferRecord(id, data);
-    saveDatabase(); // 保存数据库
     return { success };
   } catch (error) {
     log.error('IPC update-transfer-record error:', error);
@@ -734,7 +727,6 @@ handleValidated('delete-transfer-record', SCHEMAS.deleteTransferRecord, async (_
       throw new Error('FundService not initialized');
     }
     const success = await fundService.deleteTransferRecord(id);
-    saveDatabase(); // 保存数据库
     return { success };
   } catch (error) {
     log.error('IPC delete-transfer-record error:', error);

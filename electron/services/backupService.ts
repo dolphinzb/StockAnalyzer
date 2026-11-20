@@ -7,11 +7,11 @@
  * - 自动清理过期备份文件
  */
 
-import { copyFileSync, existsSync, readdirSync, statSync, unlinkSync, renameSync } from 'fs';
+import { existsSync, readdirSync, statSync, unlinkSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import log from 'electron-log';
 import type { BackupResult } from '../../shared/types';
-import { getDatabasePath, saveDatabase } from '../database';
+import { backupTo, getDatabasePath } from '../database';
 
 // 模块级状态变量
 let isBackupRunning = false;
@@ -63,15 +63,6 @@ export async function performBackup(): Promise<BackupResult> {
   isBackupRunning = true;
 
   try {
-    // sql.js 是内存库：复制磁盘文件前先落盘，保证备份包含全部已提交写入
-    try {
-      saveDatabase();
-    } catch (error) {
-      const reason = `备份前落盘失败：${errorText(error)}`;
-      log.error(`❌ ${reason}`);
-      return { success: false, error: reason };
-    }
-
     const dbPath = getDatabasePath();
     if (!existsSync(dbPath)) {
       const reason = `数据库文件不存在：${dbPath}`;
@@ -80,21 +71,12 @@ export async function performBackup(): Promise<BackupResult> {
     }
 
     const backupPath = generateBackupPath(dbPath);
-    const tempPath = backupPath + '.tmp';
     const startTime = Date.now();
 
     try {
-      // 原子写入：先写入临时文件，然后重命名
-      copyFileSync(dbPath, tempPath);
-      renameSync(tempPath, backupPath);
+      // 引擎一致性快照：包含备份时刻所有已提交事务（WAL 模式下直接拷主库会漏数据）
+      await backupTo(backupPath);
     } catch (error) {
-      if (existsSync(tempPath)) {
-        try {
-          unlinkSync(tempPath);
-        } catch {
-          // 忽略临时文件清理失败，主错误仍需返回
-        }
-      }
       const reason = `备份文件写入失败：${errorText(error)}`;
       log.error(`❌ ${reason}`);
       return { success: false, error: reason };

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import initSqlJs, { type Database } from 'sql.js';
+import { SqliteDatabase, type DatabaseLike as Database } from '../../electron/sqliteEngine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron-log', () => ({
@@ -49,8 +49,7 @@ function tableNames(db: Database): string[] {
 }
 
 beforeEach(async () => {
-  const SQL = await initSqlJs();
-  database = new SQL.Database();
+  database = new SqliteDatabase(':memory:');
   tempDirs = [];
 });
 

@@ -26,7 +26,6 @@ import {
   getLatestTradeDates,
   getWatchlist,
   saveKlineData,
-  saveDatabase,
   getChartData as dbGetChartData,
   type LatestTradeDateEntry
 } from '../database';
@@ -239,7 +238,6 @@ async function downloadSingleAdjust(
  * @param endDate 结束日期 (YYYYMMDD)
  * @param adjustTypes 复权类型数组（可选，默认 ['', 'qfq']）
  * @param period K线周期（默认日线）
- * @param skipSave 是否跳过落盘（默认 false）；批量下载时由 downloadBatch 传 true
  * @returns 下载结果（包含所选复权类型的统计）
  */
 export async function downloadKline(
@@ -247,8 +245,7 @@ export async function downloadKline(
   startDate: string,
   endDate: string,
   adjustTypes?: ('' | 'qfq')[],
-  period: KlinePeriod = 'd',
-  skipSave = false
+  period: KlinePeriod = 'd'
 ): Promise<KlineDownloadResult> {
   // T112：如果未指定adjustTypes，默认下载两种类型
   const typesToDownload = adjustTypes && adjustTypes.length > 0 ? adjustTypes : ['', 'qfq'];
@@ -285,13 +282,7 @@ export async function downloadKline(
     }
   }
 
-  // 落盘：单只下载在此统一落盘一次（原实现是每种复权类型各落盘一次）。
-  // 批量下载时 skipSave 为 true，由 downloadBatch 在整批结束后统一落盘。
-  // downloadSingleAdjust 已捕获全部异常并返回结果对象，循环不会抛出，故此处等价于 try/finally；
-  // 若将来在循环内引入可能抛出的调用，需改为 try/finally 保证已写入的数据落盘。
-  if (!skipSave) {
-    saveDatabase();
-  }
+  // 写入由引擎在事务提交时持久化，无需在此显式落盘
 
   const result: KlineDownloadResult = {
     success: overallSuccess,
@@ -458,7 +449,6 @@ export async function getLastTradingDay(today: Date = new Date()): Promise<strin
  * @param endDate 结束日期 (YYYYMMDD)
  * @param adjustTypes 复权类型数组（可选，默认 ['', 'qfq']）
  * @param period K线周期（默认日线）
- * @param skipSave 是否跳过落盘（默认 false），透传给 downloadKline
  * @returns 下载结果
  */
 export async function downloadWithRetry(
@@ -466,16 +456,15 @@ export async function downloadWithRetry(
   startDate: string,
   endDate: string,
   adjustTypes?: ('' | 'qfq')[],
-  period: KlinePeriod = 'd',
-  skipSave = false
+  period: KlinePeriod = 'd'
 ): Promise<KlineDownloadResult> {
   // 首次尝试
-  let result = await downloadKline(stockCode, startDate, endDate, adjustTypes, period, skipSave);
+  let result = await downloadKline(stockCode, startDate, endDate, adjustTypes, period);
 
   // 首次失败时重试1次
   if (!result.success) {
     log.warn(`K线数据下载失败，重试1次: ${stockCode}`);
-    result = await downloadKline(stockCode, startDate, endDate, adjustTypes, period, skipSave);
+    result = await downloadKline(stockCode, startDate, endDate, adjustTypes, period);
   }
 
   return result;
@@ -778,7 +767,7 @@ export function collectPendingStocks(
  * - 按入参顺序串行下载（避免并发触发数据源限流）
  * - 每只开始/完成时通过 onProgress 推送进度
  * - 与定时自动下载共享互斥标志，同一时刻只允许一个批量任务
- * - 逐只下载不落盘（skipSave=true），整批只在结束时落盘一次
+ * - 每只股票的写入在各自事务内提交并立即持久化
  * @param stocks 待下载的股票列表（代码 + 名称，可选逐只 startDate；缺省用整批 startDate）
  * @param startDate 整批默认开始日期 (YYYYMMDD)
  * @param endDate 结束日期 (YYYYMMDD)
@@ -833,10 +822,9 @@ export async function downloadBatch(
       let downloadResult: KlineDownloadResult;
       try {
         log.debug(`${periodLabel}下载区间: ${stock.stockCode}, ${from} ~ ${endDate}`);
-        // skipSave=true：整批只在 finally 落盘一次，避免每只股票都把整库序列化写入
         downloadResult = options.retry
-          ? await downloadWithRetry(stock.stockCode, from, endDate, typesToDownload, period, true)
-          : await downloadKline(stock.stockCode, from, endDate, typesToDownload, period, true);
+          ? await downloadWithRetry(stock.stockCode, from, endDate, typesToDownload, period)
+          : await downloadKline(stock.stockCode, from, endDate, typesToDownload, period);
       } catch (error) {
         downloadResult = {
           success: false,
@@ -860,8 +848,6 @@ export async function downloadBatch(
     }
   } finally {
     batchDownloading = false;
-    // 整批唯一落盘点：即使中途异常，已写入内存库的 K 线数据也会落盘
-    saveDatabase();
   }
 
   const summary = buildBatchSummary(results);

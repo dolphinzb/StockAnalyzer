@@ -1,5 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import initSqlJs, { type Database } from 'sql.js';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '', getAppPath: () => '' },
@@ -16,12 +18,14 @@ vi.mock('electron-log', () => ({
 }));
 
 import { runMigrations } from '../../electron/migrations';
-import { addTradeRecord, runInTransaction, saveDatabase } from '../../electron/database';
+import { addTradeRecord, runInTransaction } from '../../electron/database';
 import { FundService } from '../../electron/services/fundService';
 import { calcStockBuyAmount } from '../../electron/services/tradeService';
+import { SqliteDatabase, type DatabaseLike as Database } from '../../electron/sqliteEngine';
 
 let database: Database;
 let fundService: FundService;
+let tempDir = '';
 
 const tradeInput = {
   stockCode: '000001',
@@ -39,7 +43,7 @@ function countRows(db: Database, table: string): number {
 
 async function writeBatch(): Promise<void> {
   await runInTransaction(async () => {
-    const added = addTradeRecord(tradeInput, { skipSave: true, target: database });
+    const added = addTradeRecord(tradeInput, { target: database });
     await fundService.addTransferRecord({
       transferDate: tradeInput.tradeDate,
       amount: calcStockBuyAmount(tradeInput.tradePrice, tradeInput.tradeCount, tradeInput.stockCode),
@@ -50,14 +54,15 @@ async function writeBatch(): Promise<void> {
 }
 
 beforeEach(async () => {
-  const SQL = await initSqlJs();
-  database = new SQL.Database();
+  database = new SqliteDatabase(':memory:');
+  tempDir = mkdtempSync(join(tmpdir(), 'stockanalyzer-fund-'));
   runMigrations(database, { isNewDatabase: true });
   fundService = new FundService(database);
 });
 
 afterEach(() => {
   database.close();
+  rmSync(tempDir, { recursive: true, force: true });
 });
 
 describe('交易与资金明细的批次落盘', () => {
@@ -66,32 +71,19 @@ describe('交易与资金明细的批次落盘', () => {
     expect(countRows(database, 'trade_record')).toBe(1);
     expect(countRows(database, 'transfer_records')).toBe(1);
 
-    // 模拟落盘后的磁盘文件：从导出字节重新载入
-    const SQL = await initSqlJs();
-    const reloaded = new SQL.Database(database.export());
+    // 模拟落盘后的磁盘文件：把导出字节写成文件后重新打开
+    const filePath = join(tempDir, 'restored.db');
+    writeFileSync(filePath, Buffer.from(database.export()));
+    const reloaded = new SqliteDatabase(filePath);
     expect(countRows(reloaded, 'trade_record')).toBe(1);
     expect(countRows(reloaded, 'transfer_records')).toBe(1);
     reloaded.close();
-
-    // 事务提交后 saveDatabase 不再被事务标记拦截
-    expect(() => saveDatabase()).not.toThrow();
-  });
-
-  it('事务内禁止落盘，违规调用会连带回滚整批写入', async () => {
-    await expect(
-      runInTransaction(() => {
-        addTradeRecord(tradeInput, { skipSave: true, target: database });
-        saveDatabase();
-      }, database)
-    ).rejects.toThrow(/事务内禁止落盘/);
-
-    expect(countRows(database, 'trade_record')).toBe(0);
   });
 
   it('批次任一步失败时回滚全部写入，不留半态', async () => {
     await expect(
       runInTransaction(async () => {
-        const added = addTradeRecord(tradeInput, { skipSave: true, target: database });
+        const added = addTradeRecord(tradeInput, { target: database });
         await fundService.addTransferRecord({
           transferDate: tradeInput.tradeDate,
           amount: 1005,

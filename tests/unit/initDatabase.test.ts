@@ -1,7 +1,6 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import initSqlJs from 'sql.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // 首次加载 sql.js wasm + 落盘，全量并行跑测试时耗时可能超过默认 5s
@@ -29,6 +28,7 @@ vi.mock('electron-log', () => ({
 }));
 
 import { runMigrations, setUserVersion } from '../../electron/migrations';
+import { SqliteDatabase } from '../../electron/sqliteEngine';
 
 let tempHome = '';
 
@@ -36,8 +36,7 @@ let tempHome = '';
  * 读取数据库文件的 user_version
  */
 async function readUserVersion(filePath: string): Promise<number> {
-  const SQL = await initSqlJs();
-  const database = new SQL.Database(readFileSync(filePath));
+  const database = new SqliteDatabase(filePath);
   const result = database.exec('PRAGMA user_version');
   const version = result.length > 0 ? Number(result[0].values[0][0]) : -1;
   database.close();
@@ -48,8 +47,7 @@ async function readUserVersion(filePath: string): Promise<number> {
  * 在临时 home 下构造「当前结构但无版本记录」的存量库
  */
 async function createLegacyFile(): Promise<string> {
-  const SQL = await initSqlJs();
-  const database = new SQL.Database();
+  const database = new SqliteDatabase(':memory:');
   runMigrations(database, { isNewDatabase: true });
   setUserVersion(database, 0);
 
@@ -67,7 +65,14 @@ beforeEach(() => {
   vi.resetModules();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // 引擎持有文件句柄，删除临时目录前必须先关闭连接
+  try {
+    const module = await import('../../electron/database');
+    module.closeDatabase();
+  } catch {
+    // 模块未被当前用例加载时忽略
+  }
   vi.resetModules();
   rmSync(tempHome, { recursive: true, force: true });
 });
@@ -102,17 +107,23 @@ describe('数据库初始化', () => {
     expect(backups).toHaveLength(1);
   });
 
-  it('已是最新版本时二次启动不重复落盘', async () => {
-    const { initDatabase } = await import('../../electron/database');
-    await initDatabase();
+  it('已是最新版本时二次启动不产生迁移备份', async () => {
+    const first = await import('../../electron/database');
+    await first.initDatabase();
+    first.closeDatabase();
 
     const filePath = join(tempHome, '.stockanalyzer', 'stockanalyzer.db');
-    const firstBuffer = readFileSync(filePath);
+    expect(await readUserVersion(filePath)).toBe(1);
 
     vi.resetModules();
     const second = await import('../../electron/database');
     await second.initDatabase();
+    second.closeDatabase();
 
-    expect(readFileSync(filePath).equals(firstBuffer)).toBe(true);
+    expect(await readUserVersion(filePath)).toBe(1);
+    const backups = readdirSync(join(tempHome, '.stockanalyzer')).filter(name =>
+      name.startsWith('stockanalyzer.db.bak-')
+    );
+    expect(backups).toHaveLength(0);
   });
 });

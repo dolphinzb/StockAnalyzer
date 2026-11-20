@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import log from 'electron-log';
-import type { Database } from 'sql.js';
+import type { DatabaseLike as Database } from './sqliteEngine';
 
 /**
  * 迁移文件命名约定：NNN_name.sql

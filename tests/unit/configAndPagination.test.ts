@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import initSqlJs, { type Database } from 'sql.js';
+import { SqliteDatabase, type DatabaseLike as Database } from '../../electron/sqliteEngine';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '', getAppPath: () => '' },
@@ -35,8 +35,7 @@ function countRows(table: string): number {
 }
 
 beforeEach(async () => {
-  const SQL = await initSqlJs();
-  database = new SQL.Database();
+  database = new SqliteDatabase(':memory:');
   runMigrations(database, { isNewDatabase: true });
 });
 

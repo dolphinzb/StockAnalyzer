@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import initSqlJs from 'sql.js';
+import { SqliteDatabase } from '../../electron/sqliteEngine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // initDatabase 内部会重新加载 sql.js wasm，全量并行跑测试时耗时可能超过默认 5s 超时
@@ -38,8 +38,7 @@ let tempHome = '';
  * 数据顺序（sort_order 升序）：监控中 → 未监控较新 → 未监控较早
  */
 async function createDatabase(): Promise<void> {
-  const SQL = await initSqlJs();
-  const database = new SQL.Database();
+  const database = new SqliteDatabase(':memory:');
   runMigrations(database, { isNewDatabase: true });
 
   const insert = `INSERT INTO watchlist_stocks
@@ -60,7 +59,14 @@ beforeEach(() => {
   mockState.home = tempHome;
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // 引擎持有文件句柄，删除临时目录前必须先关闭连接
+  try {
+    const module = await import('../../electron/database');
+    module.closeDatabase();
+  } catch {
+    // 模块未被当前用例加载时忽略
+  }
   vi.resetModules();
   rmSync(tempHome, { recursive: true, force: true });
 });

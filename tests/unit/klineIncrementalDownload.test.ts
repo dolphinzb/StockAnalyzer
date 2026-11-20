@@ -45,7 +45,6 @@ vi.mock('stock-sdk', () => ({
 vi.mock('../../electron/database', () => ({
   getWatchlist: () => [],
   saveKlineData: () => 0,
-  saveDatabase: () => undefined,
   getChartData: () => [],
   getLatestTradeDates: () => {
     if (dbState.fail) {

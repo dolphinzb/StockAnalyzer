@@ -1,4 +1,4 @@
-import { getDb, saveDatabase } from '../electron/database';
+import { getDb } from '../electron/database';
 
 /**
  * 数据库迁移:为 transfer_records 表添加 trade_record_id 字段
@@ -21,7 +21,6 @@ export function migrateAddTradeRecordId(): void {
   if (!hasTradeRecordId) {
     console.log('正在添加 trade_record_id 字段...');
     db.run('ALTER TABLE transfer_records ADD COLUMN trade_record_id INTEGER');
-    saveDatabase();
     console.log('✓ trade_record_id 字段添加成功');
   } else {
     console.log('✓ trade_record_id 字段已存在,跳过迁移');

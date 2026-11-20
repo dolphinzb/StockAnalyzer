@@ -55,10 +55,17 @@ export interface PollingConfig {
 }
 
 /**
+ * 行情数据源标识
+ */
+export type QuoteProviderId = 'sina' | 'eastmoney' | 'tencent';
+
+/**
  * API配置
  */
 export interface ApiConfig {
-  provider: 'sina' | 'eastmoney' | 'tencent';
+  /** 行情数据源 */
+  provider: QuoteProviderId;
+  /** 数据源端点：由 provider 派生，只读，不接受用户编辑 */
   url: string;
 }
 
@@ -82,22 +89,48 @@ export interface ConfigAPI {
 }
 
 /**
- * API Provider 选项
+ * 单只证券的行情快照 —— 由各数据源适配器统一输出
  */
-export interface ApiProviderOption {
-  value: string;
-  label: string;
-  defaultUrl: string;
+export interface QuoteSnapshot {
+  /** 请求时的原始带前缀代码，如 sh600519 / bj920799（禁止按数据源字段反推前缀） */
+  code: string;
+  name: string;
+  price: number;
+  openPrice: number;
+  prevClosePrice: number;
+  highPrice: number;
+  lowPrice: number;
+  /** 该条是否有效（现价为 0 / "-" / 空字符串视为无效） */
+  success: boolean;
+  error?: string;
 }
 
 /**
- * API Provider 常量
+ * API Provider 选项
+ */
+export interface ApiProviderOption {
+  value: QuoteProviderId;
+  label: string;
+  /** 只读端点元数据，配置中的 api.url 由该值派生 */
+  endpoint: string;
+}
+
+/**
+ * API Provider 常量 —— TS 侧唯一的端点来源
  */
 export const API_PROVIDERS: ApiProviderOption[] = [
-  { value: 'sina', label: '新浪财经API', defaultUrl: 'https://hq.sinajs.cn/list=' },
-  { value: 'eastmoney', label: '东方财富API', defaultUrl: 'https://push2.eastmoney.com/api/qt/stock/get' },
-  { value: 'tencent', label: '腾讯API', defaultUrl: 'https://web.sqt.gtimg.cn/q=' },
+  { value: 'sina', label: '新浪财经API', endpoint: 'https://hq.sinajs.cn/list=' },
+  { value: 'eastmoney', label: '东方财富API', endpoint: 'https://push2.eastmoney.com/api/qt/ulist.np/get' },
+  { value: 'tencent', label: '腾讯API', endpoint: 'https://web.sqt.gtimg.cn/q=' },
 ];
+
+/**
+ * 按 provider 取只读端点；未知值回退新浪，保证调用方不因脏配置崩溃
+ */
+export function getQuoteEndpoint(provider: QuoteProviderId): string {
+  const found = API_PROVIDERS.find((p) => p.value === provider);
+  return found ? found.endpoint : API_PROVIDERS[0].endpoint;
+}
 
 /**
  * Electron 版本信息

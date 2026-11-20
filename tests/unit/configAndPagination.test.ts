@@ -1,5 +1,7 @@
+import { readFileSync } from 'fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SqliteDatabase, type DatabaseLike as Database } from '../../electron/sqliteEngine';
+import { getQuoteEndpoint, type AppConfig } from '../../shared/types';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '', getAppPath: () => '' },
@@ -16,7 +18,13 @@ vi.mock('electron-log', () => ({
 }));
 
 import { runMigrations } from '../../electron/migrations';
-import { DEFAULT_CONFIG, getTradeRecords, mergeWithDefaultConfig } from '../../electron/database';
+import {
+  DEFAULT_CONFIG,
+  getTradeRecords,
+  mergeWithDefaultConfig,
+  normalizeApiConfig,
+  saveConfig,
+} from '../../electron/database';
 
 let database: Database;
 
@@ -64,6 +72,66 @@ describe('配置加载与默认值合并', () => {
     expect(mergeWithDefaultConfig(null)).toEqual(DEFAULT_CONFIG);
     expect(mergeWithDefaultConfig('broken')).toEqual(DEFAULT_CONFIG);
     expect(mergeWithDefaultConfig({})).toEqual(DEFAULT_CONFIG);
+  });
+
+  it('东财旧单只端点被归一化为批量端点', () => {
+    const merged = mergeWithDefaultConfig({
+      api: { provider: 'eastmoney', url: 'https://push2.eastmoney.com/api/qt/stock/get' },
+    });
+
+    expect(merged.api.provider).toBe('eastmoney');
+    expect(merged.api.url).toBe('https://push2.eastmoney.com/api/qt/ulist.np/get');
+  });
+
+  it('配置中的自定义地址被 provider 端点覆盖', () => {
+    const merged = mergeWithDefaultConfig({
+      api: { provider: 'tencent', url: 'https://custom.example.com/quote' },
+    });
+
+    expect(merged.api.url).toBe('https://web.sqt.gtimg.cn/q=');
+  });
+
+  it('normalizeApiConfig 按 provider 派生端点，非法值回退新浪', () => {
+    expect(normalizeApiConfig('eastmoney')).toEqual({
+      provider: 'eastmoney',
+      url: 'https://push2.eastmoney.com/api/qt/ulist.np/get',
+    });
+    expect(normalizeApiConfig('tencent').url).toBe('https://web.sqt.gtimg.cn/q=');
+    expect(normalizeApiConfig('binance')).toEqual({
+      provider: 'sina',
+      url: getQuoteEndpoint('sina'),
+    });
+    expect(normalizeApiConfig(undefined)).toEqual({
+      provider: 'sina',
+      url: getQuoteEndpoint('sina'),
+    });
+  });
+
+  it('SQL 初始化脚本中的新浪端点与共享元数据一致', () => {
+    const sql = readFileSync(new URL('../../sql/migrations/001_init.sql', import.meta.url), 'utf8');
+    const sinaEndpoint = getQuoteEndpoint('sina');
+
+    expect(DEFAULT_CONFIG.api.url).toBe(sinaEndpoint);
+    expect(sql).toContain(`"url":"${sinaEndpoint}"`);
+  });
+
+  it('saveConfig 落盘前按 provider 覆写自定义或空 api.url', () => {
+    const submit = (url: string): AppConfig => ({
+      ...DEFAULT_CONFIG,
+      api: { provider: 'tencent', url },
+    });
+    const readStored = (): AppConfig => {
+      const result = database.exec("SELECT value FROM config WHERE key = 'app_config'");
+      return JSON.parse(String(result[0].values[0][0])) as AppConfig;
+    };
+
+    // 自定义地址不生效
+    expect(saveConfig(submit('https://custom.example.com/quote'), database)).toBe(true);
+    expect(readStored().api).toEqual({ provider: 'tencent', url: getQuoteEndpoint('tencent') });
+
+    // 空地址同样被 provider 端点覆盖
+    expect(saveConfig(submit(''), database)).toBe(true);
+    expect(readStored().api).toEqual({ provider: 'tencent', url: getQuoteEndpoint('tencent') });
   });
 });
 

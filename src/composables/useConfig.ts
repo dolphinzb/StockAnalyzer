@@ -1,6 +1,6 @@
 import { readonly, ref } from 'vue';
 import type { AppConfig } from '../../shared/types';
-import { API_PROVIDERS } from '../../shared/types';
+import { API_PROVIDERS, getQuoteEndpoint } from '../../shared/types';
 
 export const DEFAULT_CONFIG: AppConfig = {
   trading: {
@@ -14,12 +14,16 @@ export const DEFAULT_CONFIG: AppConfig = {
   },
   api: {
     provider: 'sina',
-    url: 'https://hq.sinajs.cn/list=',
+    // 端点从只读元数据派生，不写字面量
+    url: getQuoteEndpoint('sina'),
   },
 };
 
+/** 深拷贝默认配置，避免切换 provider 时改写共享的 DEFAULT_CONFIG.api 引用 */
+const cloneDefaultConfig = (): AppConfig => JSON.parse(JSON.stringify(DEFAULT_CONFIG)) as AppConfig;
+
 export function useConfig() {
-  const config = ref<AppConfig>({ ...DEFAULT_CONFIG });
+  const config = ref<AppConfig>(cloneDefaultConfig());
   const isLoading = ref(false);
   const error = ref<string | null>(null);
   const saveSuccess = ref(false);
@@ -51,7 +55,9 @@ export function useConfig() {
       const success = result === true;
       console.log('[useConfig] setConfig result:', result);
       if (success) {
-        config.value = newConfig;
+        // 主进程按 provider 派生 api.url，回读一次保证只读字段与落盘值一致
+        const saved = await window.configAPI.getConfig();
+        config.value = saved ?? newConfig;
         saveSuccess.value = true;
       } else {
         error.value = typeof result === 'object' && result !== null
@@ -69,17 +75,20 @@ export function useConfig() {
   };
 
   const resetToDefault = () => {
-    config.value = { ...DEFAULT_CONFIG };
+    config.value = cloneDefaultConfig();
   };
 
-  const getApiProviderDefaultUrl = (provider: string): string => {
+  const getApiProviderEndpoint = (provider: string): string => {
     const found = API_PROVIDERS.find((p) => p.value === provider);
-    return found ? found.defaultUrl : DEFAULT_CONFIG.api.url;
+    return found ? found.endpoint : DEFAULT_CONFIG.api.url;
   };
 
+  /** 切换数据源：只改 provider 与只读展示的端点，端点最终以主进程派生值为准 */
   const onApiProviderChange = (provider: string) => {
-    config.value.api.provider = provider as AppConfig['api']['provider'];
-    config.value.api.url = getApiProviderDefaultUrl(provider);
+    const found = API_PROVIDERS.find((p) => p.value === provider);
+    if (!found) return;
+    config.value.api.provider = found.value;
+    config.value.api.url = found.endpoint;
   };
 
   return {
@@ -90,7 +99,7 @@ export function useConfig() {
     loadConfig,
     saveConfig: saveConfigToStore,
     resetToDefault,
-    getApiProviderDefaultUrl,
+    getApiProviderEndpoint,
     onApiProviderChange,
     API_PROVIDERS,
   };

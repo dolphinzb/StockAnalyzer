@@ -1,4 +1,22 @@
 /**
+ * 应用版本与运行环境信息
+ * 由主进程 `app:info` 通道提供，供界面展示版本号与排障路径
+ */
+export interface AppInfo {
+  /** 应用版本号（来自 package.json 的 version） */
+  version: string;
+  /**
+   * 是否为未打包运行
+   * 注意：语义仅为「当前是否以安装版运行」，与主进程内部的 isDev（含 NODE_ENV 判断）不同义
+   */
+  isDev: boolean;
+  /** 数据库文件绝对路径 */
+  dbPath: string;
+  /** 日志目录绝对路径（不是当天日志文件路径） */
+  logDir: string;
+}
+
+/**
  * 窗口 API 类型 - 通过 preload contextBridge 暴露给渲染进程
  */
 export interface WindowAPI {
@@ -13,6 +31,10 @@ export interface WindowAPI {
   close: () => void;
   isMaximized: () => Promise<boolean>;
   onMaximized: (callback: (isMaximized: boolean) => void) => void;
+  /** 获取应用版本与运行环境信息 */
+  getAppInfo: () => Promise<AppInfo>;
+  /** 打开数据库文件所在目录 */
+  openDbDirectory: () => Promise<{ success: boolean; error?: string }>;
 }
 
 /**

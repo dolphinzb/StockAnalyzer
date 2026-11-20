@@ -128,6 +128,8 @@ const windowAPI: WindowAPI = {
   maximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),
   isMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+  getAppInfo: () => ipcRenderer.invoke('app:info'),
+  openDbDirectory: () => ipcRenderer.invoke('app:open-db-directory'),
   onMaximized: (callback: (isMaximized: boolean) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, isMaximized: boolean) => callback(isMaximized);
     ipcRenderer.on('window:maximized', handler);

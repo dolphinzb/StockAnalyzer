@@ -617,6 +617,39 @@ ipcMain.handle('log:getPath', () => {
   return getLogFilePath(LOG_DIR, formatLogDate(new Date()));
 });
 
+// 版本与运行环境信息（无入参只读通道，不需要 IPC 入参校验）
+ipcMain.handle('app:info', () => {
+  log.debug('IPC: app:info');
+  return {
+    version: app.getVersion(),
+    // 仅表示「是否未打包」，与下方 isDev（含 NODE_ENV）语义不同，勿混用
+    isDev: !app.isPackaged,
+    dbPath: getDatabasePath(),
+    // 目录路径：log:getPath 返回的是当天日志文件，这里必须用日志目录
+    logDir: getLogDir(),
+  };
+});
+
+// 打开数据库文件所在目录（路径固定由主进程推导，不接受外部传入路径）
+ipcMain.handle('app:open-db-directory', async () => {
+  log.debug('IPC: app:open-db-directory');
+  try {
+    const dbDir = join(getDatabasePath(), '..');
+    // 首次运行或目录被清理时先确保存在再打开
+    fs.mkdirSync(dbDir, { recursive: true });
+    const openError = await shell.openPath(dbDir);
+    if (openError) {
+      log.error('IPC app:open-db-directory error:', openError);
+      return { success: false, error: openError };
+    }
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('IPC app:open-db-directory error:', message);
+    return { success: false, error: message };
+  }
+});
+
 ipcMain.handle('log:open-directory', async () => {
   log.debug('IPC: log:open-directory');
   try {

@@ -1,6 +1,6 @@
 {
   "name": "stockanalyzer",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "基于 Electron + Vite + Vue3 + TypeScript 的股票分析桌面应用",
   "main": "dist-electron/electron/index.js",
   "author": "",

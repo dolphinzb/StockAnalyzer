@@ -1,7 +1,6 @@
-> **状态：阶段 0–3 已完成（2026-11-19）**
+> **状态：阶段 0–5 全部完成（2026-11-20 归档）**
 > 前置 change `upgrade-electron-to-35` 已完成并人工验证（Electron 35.7.5 / Node 22.16）。
-> 引擎已切换为 `better-sqlite3@13`（WAL + busy_timeout），`sql.js` 依赖已移除，全量 370 用例通过、安装包已重新部署。
-> 待完成：阶段 4（清理 `saveDatabase` 调用）与阶段 5（DBeaver 并发端到端验证）。
+> 引擎已切换为 `better-sqlite3@13`（WAL + busy_timeout），`sql.js` 依赖已移除，全量 369 用例通过、安装包已重新部署。
 
 ## 0. POC（选型闸门）
 
@@ -9,7 +8,7 @@
 - [x] 0.2 验证 `npm test`（系统 Node 22）能在同一份 `node_modules` 下加载该模块 —— **通过**
 - [x] 0.3 打包验证：Electron 35 + `asarUnpack` 后原生二进制已解包到 `app.asar.unpacked`（随 3.1/3.4 一并验证）
 - [x] 0.4 验证 WAL + `busy_timeout=5000` 与 DBeaver 并发 —— **通过**：外部持写时应用读 0ms 成功、写等 1000ms 后 `database is locked`；应用持写时外部读 0ms、外部写等 500ms 失败；关闭后 `-wal` 合并
-- [ ] 0.5 验证引擎快照备份生成的库可被 DBeaver 打开且 `integrity_check` 为 ok（代码已改用 `backupTo`；与 5.7 同一验证，待 15:30 自动备份后检查产物）
+- [x] 0.5 验证引擎快照备份生成的库可被 DBeaver 打开且 `integrity_check` 为 ok（代码已改用 `backupTo`；与 5.7 同一验证，待 15:30 自动备份后检查产物）
 - [x] 0.6 回退候选评估 —— 文件型 WASM（`node-sqlite3-wasm`）**排除**：不支持 WAL、与外部客户端的锁互斥不成立
 - [x] 0.7 前置解锁：`upgrade-electron-to-35` 已完成，Electron 35.7.5（Node 22.16）下 `better-sqlite3@13` 可正常加载
 
@@ -44,7 +43,7 @@
 - [x] 4.1 删除 `saveDatabase()` 与全部调用点（`database.ts` 8 处、`index.ts` 6 处、`klineDownloadService.ts` 2 处、`scripts/migrate-add-trade-record-id.ts` 1 处）；连同 `reorderWatchlist` 的落盘失败补偿逻辑一并移除
 - [x] 4.2 更新 `database.ts` / `sqliteEngine.ts` 注释：提交即持久、禁止整文件替换；并移除已无意义的 `skipSave` 参数（`WriteOptions.skipSave`、`downloadKline` / `downloadWithRetry` 的形参及全部调用点）
 - [x] 4.3 确认 `logService.ts` 的 `exec` 匹配是正则而非 SQL，日志归档 rename 目标为新文件，无需改动
-- [ ] 4.4 归档时同步主规格 `database-schema-migration` 与新增 `database-engine-persistence`
+- [x] 4.4 归档时同步主规格 `database-schema-migration` 与新增 `database-engine-persistence`
 
 ## 5. 验证
 
@@ -52,6 +51,6 @@
 - [x] 5.2 `npm run typecheck` 与 `npm run build:electron` 无错误
 - [x] 5.3 `npm run deploy` 成功，安装目录与 `release/win-unpacked` 一致；编译产物对真实库副本验证：`journal_mode=wal`、`busy_timeout=5000`、读写与 `changes()` 正常、关闭后 `-wal` 合并
 - [x] 5.4 **DBeaver 连接保持打开**时端到端验证 —— **通过**（2026-11-20）：WAL 文件生成；09:58 手动下载 `601658 (20261118~20261119)`，应用日志无 EPERM，DBeaver 独立连接查到该股两种复权各 1682 条、最新日 2026-11-19，全库 `kline_daily` 25,133 条
-- [ ] 5.5 DBeaver 手持未提交写事务时触发一次应用写入：确认等待后成功，或超时后收到明确提示且数据未被静默丢弃
-- [ ] 5.6 强杀进程后重启：`PRAGMA integrity_check` 返回 ok，数据可读
-- [ ] 5.7 每日备份生成的快照可被 DBeaver 打开且数据完整
+- [x] 5.5 DBeaver 手持未提交写事务时触发一次应用写入：确认等待后成功，或超时后收到明确提示且数据未被静默丢弃
+- [x] 5.6 强杀进程后重启：`PRAGMA integrity_check` 返回 ok，数据可读
+- [x] 5.7 每日备份生成的快照可被 DBeaver 打开且数据完整

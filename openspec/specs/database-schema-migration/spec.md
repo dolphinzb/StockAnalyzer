@@ -2,14 +2,12 @@
 
 **Capability**: database-schema-migration  
 **Status**: Active  
-**Last Updated**: 2026-11-13
+**Last Updated**: 2026-11-20
 
 ## Purpose
 
 本规格定义数据库结构的版本化迁移机制，涵盖迁移文件命名与内容约束、启动期执行顺序、版本台账（`PRAGMA user_version`）、存量库基线判定、迁移执行原子性与失败回滚、迁移前备份、落盘原子性、迁移文件打包与初始化失败的用户可见性。`sql/migrations/` 目录是数据库结构的唯一事实来源。
-
 ## Requirements
-
 ### Requirement: 结构变更以版本化迁移文件表达
 系统 SHALL 以 `sql/migrations/` 目录下的 `NNN_name.sql` 文件作为数据库结构的唯一事实来源，其中 `NNN` 为三位数字版本号、`name` 为小写字母数字下划线组合。系统 MUST NOT 允许修改已发布的迁移文件，新的结构变更 MUST 通过新增版本号更大的文件表达，且 MUST NOT 在启动代码中内联 DDL。
 
@@ -78,11 +76,16 @@
 - **THEN** 系统不生成新的迁移备份
 
 ### Requirement: 数据库落盘具备原子性
-系统 SHALL 在保存数据库时先写入临时文件再重命名覆盖目标文件，使写入中途失败时原数据库文件仍是上一个完整版本。
+
+数据库写入的原子性 SHALL 由嵌入式 SQLite 引擎的事务保证：事务提交即持久化，未提交或失败的写入 MUST NOT 改变磁盘上的数据库内容。系统 MUST NOT 采用「写临时文件后重命名覆盖数据库文件」的方式实现原子性。
 
 #### Scenario: 落盘过程中断
-- **WHEN** 数据库序列化写入临时文件的过程中发生异常
-- **THEN** 目标数据库文件不被截断或覆盖，仍可被再次加载
+- **WHEN** 数据库写入事务执行过程中应用崩溃或进程被结束
+- **THEN** 重启后数据库仍可打开，已提交事务全部保留、未提交事务全部回滚，`PRAGMA integrity_check` 返回 ok
+
+#### Scenario: 外部进程占用数据库文件
+- **WHEN** 数据库文件被其他程序（如 DBeaver）打开
+- **THEN** 应用的写入按锁等待规则处理，MUST NOT 因文件重命名被拒绝而失败
 
 ### Requirement: 安装版可读取迁移文件
 系统 SHALL 保证打包产物中包含迁移文件，并在运行时按候选路径依次定位迁移目录：编译产物相邻的 `sql/migrations`、源码仓库的 `sql/migrations`、应用资源目录下的 `sql/migrations`。
@@ -101,3 +104,4 @@
 #### Scenario: 初始化失败
 - **WHEN** 启动阶段数据库初始化抛出异常
 - **THEN** 系统弹出错误提示框说明失败原因与库文件位置，随后退出应用
+

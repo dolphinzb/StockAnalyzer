@@ -361,34 +361,48 @@ const handleBackup = async () => {
 }
 
 .btn {
-  padding: 0.625rem 1.5rem;
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1.25rem;
+  border: 1px solid transparent;
   border-radius: 4px;
-  font-size: 0.9375rem;
+  font-family: inherit;
+  font-size: 0.875rem;
   font-weight: 500;
+  line-height: 1.4;
   cursor: pointer;
-  transition: background-color 0.2s, opacity 0.2s;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s;
 
   &:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
 }
 
 .btn-primary {
-  background: var(--color-primary);
+  background-color: var(--color-primary);
+  color: #ffffff;
 
   &:hover:not(:disabled) {
-    background: var(--color-primary-hover, #3595f5);
+    background-color: var(--color-primary-dark);
   }
 }
 
 .btn-secondary {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
+  background-color: transparent;
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 
   &:hover:not(:disabled) {
-    background: var(--border-color);
+    background-color: var(--color-primary);
+    color: #ffffff;
   }
 }
 

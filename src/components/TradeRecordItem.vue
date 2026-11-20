@@ -58,7 +58,7 @@ function formatPrice(price: number | null): string {
 <template>
   <div class="trade-record-item">
     <span class="col-code">{{ record.stockCode }}</span>
-    <span class="col-name">{{ record.stockName }}</span>
+    <span class="col-name" :title="record.stockName">{{ record.stockName }}</span>
     <span class="col-type" :class="getTradeTypeClass(record.tradeType)">
       {{ getTradeTypeLabel(record.tradeType) }}
     </span>
@@ -75,9 +75,11 @@ function formatPrice(price: number | null): string {
 </template>
 
 <style scoped lang="scss">
+@use '../styles/position-grid' as *;
+
 .trade-record-item {
   display: grid;
-  grid-template-columns: 80px 90px 80px 100px 90px 90px 90px 100px 60px;
+  grid-template-columns: $position-record-columns;
   gap: 0.5rem;
   padding: 0.5rem;
   font-size: 0.875rem;

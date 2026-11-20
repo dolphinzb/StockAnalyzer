@@ -56,7 +56,12 @@ function handleDeleteRecord(id: number) {
 </template>
 
 <style scoped lang="scss">
+@use '../styles/position-grid' as *;
+
 .position-list {
+  /* 占满视图剩余高度，让列表主体自身滚动：避免内容溢出被 overflow 裁掉最后一行 */
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-color);
@@ -66,7 +71,7 @@ function handleDeleteRecord(id: number) {
 
 .list-header {
   display: grid;
-  grid-template-columns: 80px 90px 80px 70px 80px 80px 90px 70px 40px;
+  grid-template-columns: $position-summary-columns;
   gap: 0.5rem;
   padding: 0.5rem;
   background-color: var(--bg-header);
@@ -97,6 +102,10 @@ function handleDeleteRecord(id: number) {
 }
 
 .list-body {
+  /* 表头固定，列表主体滚动；滚动到底时最后一行完整可见 */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }

@@ -1,0 +1,10 @@
+// 持仓列表列宽（表头 PositionList 与数据行 PositionItem 必须共用同一份定义）
+// 依次为：股票代码、股票名称、日期、持仓、成本、现价、盈亏、比例、展开箭头
+// 名称列给到 120px，可完整显示「科创50ETF华夏」等长名称，超出部分省略并悬浮显示全名
+// 日期列给到 90px，可完整显示等宽字体下的「2026-11-20」
+// 列总宽 720px，含列间距与内边距约 800px，可在默认 1200px 窗口下完整显示
+$position-summary-columns: 80px 120px 90px 70px 80px 80px 90px 70px 40px;
+
+// 持仓展开后的交易记录列宽（表头 record-header 与数据行 TradeRecordItem 必须共用同一份定义）
+// 依次为：股票代码、股票名称、交易类型、交易日期、交易价格、交易数量、持仓数量、持仓均价、操作
+$position-record-columns: 80px 120px 80px 100px 90px 90px 90px 100px 60px;

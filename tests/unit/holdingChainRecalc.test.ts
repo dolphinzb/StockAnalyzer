@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import initSqlJs, { type Database } from 'sql.js';
+import { SqliteDatabase, type DatabaseLike as Database } from '../../electron/sqliteEngine';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '', getAppPath: () => '' },
@@ -105,8 +105,7 @@ function editInput(id: number, overrides: Partial<UpdateTradeInput> = {}): Updat
 }
 
 beforeEach(async () => {
-  const SQL = await initSqlJs();
-  database = new SQL.Database();
+  database = new SqliteDatabase(':memory:');
   runMigrations(database, { isNewDatabase: true });
   seed();
 });
@@ -118,7 +117,7 @@ afterEach(() => {
 describe('编辑交易后重放持仓快照链', () => {
   it('修改中间一笔价格后，该笔及之后全部按新价格递推', () => {
     const before = readChain();
-    updateTradeRecord(editInput(2, { tradePrice: 20 }), { skipSave: true, target: database });
+    updateTradeRecord(editInput(2, { tradePrice: 20 }), { target: database });
     const after = readChain();
 
     const first = calcHoldingPrice(null, 'BUY', 10, 100, STOCK_CODE);
@@ -138,7 +137,7 @@ describe('编辑交易后重放持仓快照链', () => {
   });
 
   it('修改买入数量时同步关联明细金额并重算余额链', () => {
-    updateTradeRecord(editInput(2, { tradeCount: 200 }), { skipSave: true, target: database });
+    updateTradeRecord(editInput(2, { tradeCount: 200 }), { target: database });
     const linked = readTransfer(2);
     const expectedAmount = calcStockBuyAmount(12, 200, STOCK_CODE);
 
@@ -154,7 +153,6 @@ describe('编辑交易后重放持仓快照链', () => {
   it('把交易日期改到更早时按新顺序重放全链', () => {
     const before = readChain();
     updateTradeRecord(editInput(3, { tradeDate: '2025-12-31', tradePrice: 14 }), {
-      skipSave: true,
       target: database,
     });
     const after = readChain();
@@ -170,7 +168,7 @@ describe('编辑交易后重放持仓快照链', () => {
 
 describe('删除交易后重放持仓链与资金余额链', () => {
   it('删除中间一笔后，剩余记录与关联明细全部重算', () => {
-    deleteTradeRecord(2, { skipSave: true, target: database });
+    deleteTradeRecord(2, { target: database });
 
     const chain = readChain();
     expect(chain).toHaveLength(2);
@@ -193,7 +191,7 @@ describe('删除交易后重放持仓链与资金余额链', () => {
   });
 
   it('删除最后一笔后持仓快照回到该笔之前状态', () => {
-    deleteTradeRecord(3, { skipSave: true, target: database });
+    deleteTradeRecord(3, { target: database });
     const chain = readChain();
     expect(chain).toHaveLength(2);
     expect(chain[1].holdingCount).toBe(200);

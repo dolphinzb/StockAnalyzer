@@ -23,7 +23,6 @@ import {
   loadConfig,
   runInTransaction,
   saveConfig,
-  saveDatabase,
   updateStock,
   updateTradeRecord,
   type AddStockInput,
@@ -465,7 +464,7 @@ handleValidated('position:add-record', SCHEMAS.positionAddRecord, async (_event,
   try {
     // 交易记录 + 资金明细 + 余额重算在同一事务内完成，事务内不落盘
     const result = await runInTransaction(async () => {
-      const added = dbAddTradeRecord(input, { skipSave: true });
+      const added = dbAddTradeRecord(input);
       if (!fundService) {
         throw new Error('fundService未初始化');
       }
@@ -517,8 +516,6 @@ handleValidated('position:add-record', SCHEMAS.positionAddRecord, async (_event,
       }
       return added;
     });
-    // 批次提交后统一落盘一次，保证磁盘上交易记录与资金明细同时存在
-    saveDatabase();
     return result;
   } catch (error) {
     log.error('IPC position:add-record error:', error);
@@ -531,8 +528,7 @@ handleValidated('position:update-record', SCHEMAS.positionUpdateRecord, async (_
   log.info('IPC: position:update-record', JSON.stringify(input));
   try {
     // 编辑会重放持仓快照链、同步关联明细金额并重算余额链，全部在同一事务内
-    const result = await runInTransaction(() => updateTradeRecord(input, { skipSave: true }));
-    saveDatabase();
+    const result = await runInTransaction(() => updateTradeRecord(input));
     return result;
   } catch (error) {
     log.error('IPC position:update-record error:', error);
@@ -544,9 +540,8 @@ handleValidated('position:delete-record', SCHEMAS.positionDeleteRecord, async (_
   log.info('IPC: position:delete-record', id);
   try {
     await runInTransaction(() => {
-      deleteTradeRecord(id, { skipSave: true });
+      deleteTradeRecord(id);
     });
-    saveDatabase();
     return true;
   } catch (error) {
     log.error('IPC position:delete-record error:', error);
@@ -617,6 +612,39 @@ ipcMain.handle('log:getPath', () => {
   return getLogFilePath(LOG_DIR, formatLogDate(new Date()));
 });
 
+// 版本与运行环境信息（无入参只读通道，不需要 IPC 入参校验）
+ipcMain.handle('app:info', () => {
+  log.debug('IPC: app:info');
+  return {
+    version: app.getVersion(),
+    // 仅表示「是否未打包」，与下方 isDev（含 NODE_ENV）语义不同，勿混用
+    isDev: !app.isPackaged,
+    dbPath: getDatabasePath(),
+    // 目录路径：log:getPath 返回的是当天日志文件，这里必须用日志目录
+    logDir: getLogDir(),
+  };
+});
+
+// 打开数据库文件所在目录（路径固定由主进程推导，不接受外部传入路径）
+ipcMain.handle('app:open-db-directory', async () => {
+  log.debug('IPC: app:open-db-directory');
+  try {
+    const dbDir = join(getDatabasePath(), '..');
+    // 首次运行或目录被清理时先确保存在再打开
+    fs.mkdirSync(dbDir, { recursive: true });
+    const openError = await shell.openPath(dbDir);
+    if (openError) {
+      log.error('IPC app:open-db-directory error:', openError);
+      return { success: false, error: openError };
+    }
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('IPC app:open-db-directory error:', message);
+    return { success: false, error: message };
+  }
+});
+
 ipcMain.handle('log:open-directory', async () => {
   log.debug('IPC: log:open-directory');
   try {
@@ -665,7 +693,6 @@ handleValidated('add-transfer-record', SCHEMAS.addTransferRecord, async (_event,
       throw new Error('FundService not initialized');
     }
     const id = await fundService.addTransferRecord(record);
-    saveDatabase(); // 保存数据库
     return { id };
   } catch (error) {
     log.error('IPC add-transfer-record error:', error);
@@ -683,7 +710,6 @@ handleValidated('update-transfer-record', SCHEMAS.updateTransferRecord, async (_
       throw new Error('FundService not initialized');
     }
     const success = await fundService.updateTransferRecord(id, data);
-    saveDatabase(); // 保存数据库
     return { success };
   } catch (error) {
     log.error('IPC update-transfer-record error:', error);
@@ -701,7 +727,6 @@ handleValidated('delete-transfer-record', SCHEMAS.deleteTransferRecord, async (_
       throw new Error('FundService not initialized');
     }
     const success = await fundService.deleteTransferRecord(id);
-    saveDatabase(); // 保存数据库
     return { success };
   } catch (error) {
     log.error('IPC delete-transfer-record error:', error);

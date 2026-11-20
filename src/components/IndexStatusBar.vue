@@ -75,10 +75,8 @@
       </template>
     </div>
 
-    <!-- 错误提示 -->
-    <div v-if="hasError" class="error-indicator">
-      <span class="error-text">{{ indexDataState.errorMessage || '数据更新失败' }}</span>
-    </div>
+    <!-- 错误提示（栏内右侧紧凑标签，不遮挡指数项） -->
+    <span v-if="hasError" class="error-indicator" :title="errorText">{{ errorText }}</span>
   </div>
 </template>
 
@@ -107,6 +105,9 @@ const kc50Index = computed<IndexData | null>(() => {
 const hasError = computed(() => {
   return props.indexDataState.status === 'error';
 });
+
+// 错误提示文案
+const errorText = computed(() => props.indexDataState.errorMessage || '数据更新失败');
 
 // 根据涨跌方向获取CSS类名
 function getPriceClass(direction: IndexDirection): string {
@@ -145,13 +146,13 @@ function formatChangePercent(percent: number): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
   height: 30px;
   padding: 0 16px;
-  background-color: #f5f5f5;
-  border-top: 1px solid #e0e0e0;
+  background-color: var(--title-bar-bg);
+  border-top: 1px solid var(--border-color);
   font-size: 13px;
   font-family: 'Courier New', monospace;
-  position: relative;
 }
 
 .index-item {
@@ -159,6 +160,7 @@ function formatChangePercent(percent: number): string {
   align-items: center;
   gap: 8px;
   flex: 1;
+  min-width: 0;
 }
 
 .index-item.right {
@@ -170,7 +172,7 @@ function formatChangePercent(percent: number): string {
 }
 
 .index-name {
-  color: #333;
+  color: var(--text-color);
   font-weight: 500;
 }
 
@@ -209,23 +211,23 @@ function formatChangePercent(percent: number): string {
 }
 
 .placeholder {
-  color: #999;
+  color: var(--text-secondary);
 }
 
+/* 错误提示：栏内右侧紧凑标签 */
 .error-indicator {
-  position: absolute;
-  top: -20px;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: rgba(255, 152, 0, 0.9);
-  color: white;
-  padding: 2px 8px;
+  flex: 0 0 auto;
+  margin-left: 8px;
+  padding: 2px 6px;
   border-radius: 3px;
+  background-color: rgba(255, 152, 0, 0.15);
+  border: 1px solid rgba(255, 152, 0, 0.45);
+  color: #d97706;
   font-size: 11px;
-  z-index: 10;
-}
-
-.error-text {
+  line-height: 16px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50%;
 }
 </style>

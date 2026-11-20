@@ -1,18 +1,8 @@
 import { app } from 'electron';
 import log from 'electron-log';
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from 'fs';
+import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
-import initSqlJs, { Database } from 'sql.js';
+import { SqliteDatabase, type DatabaseLike, type SqlValue } from './sqliteEngine';
 import type { AddTradeResult, AppConfig, KlinePeriod } from '../shared/types';
 import { getUserVersion, getPendingMigrations, runMigrations } from './migrations';
 import { recalculateBalancesFrom } from './services/fundService';
@@ -22,6 +12,11 @@ import {
   calcStockSellAmount,
   type CalcResult,
 } from './services/tradeService';
+
+/**
+ * 数据库句柄类型（引擎最小接口，测试可注入内存库）
+ */
+export type Database = DatabaseLike;
 
 /**
  * 自选股实体类型
@@ -178,7 +173,8 @@ function cleanupMigrationBackups(dbPath: string): void {
  */
 function backupBeforeMigration(dbPath: string): string {
   const backupPath = `${dbPath}.bak-${formatBackupTimestamp()}`;
-  copyFileSync(dbPath, backupPath);
+  // 引擎快照：包含当时所有已提交事务（WAL 下也完整）
+  writeFileSync(backupPath, Buffer.from(getDb().export()));
   cleanupMigrationBackups(dbPath);
   log.info(`迁移前已备份数据库: ${backupPath}`);
   return backupPath;
@@ -188,8 +184,6 @@ export async function initDatabase(): Promise<void> {
   const dbPath = getDatabasePath();
   log.info(`初始化数据库: ${dbPath}`);
 
-  const SQL = await initSqlJs();
-
   const configDir = join(dbPath, '..');
   if (!existsSync(configDir)) {
     mkdirSync(configDir, { recursive: true });
@@ -198,12 +192,11 @@ export async function initDatabase(): Promise<void> {
   const fileExisted = existsSync(dbPath);
 
   try {
+    // 引擎直接打开文件：事务提交即持久化，不需要序列化整库后再替换文件
+    db = new SqliteDatabase(dbPath);
     if (fileExisted) {
-      const fileBuffer = readFileSync(dbPath);
-      db = new SQL.Database(fileBuffer);
       log.info('数据库文件加载成功');
     } else {
-      db = new SQL.Database();
       log.warn('数据库文件不存在，按 V1 结构新建:', dbPath);
     }
 
@@ -216,12 +209,6 @@ export async function initDatabase(): Promise<void> {
 
     const result = runMigrations(db, { isNewDatabase: !fileExisted });
 
-    // 内存库有变更才落盘：新库、执行过迁移、补写过基线版本
-    const changed = !fileExisted || result.applied.length > 0 || result.baselineApplied;
-    if (changed) {
-      saveDatabase();
-    }
-
     log.info(`数据库初始化完成: 版本 v${result.toVersion}`);
   } catch (error) {
     log.error('数据库初始化失败:', error);
@@ -230,48 +217,17 @@ export async function initDatabase(): Promise<void> {
 }
 
 /**
- * 保存数据库到磁盘（原子写：先写临时文件，再重命名覆盖目标文件）
- * 写入失败时清理临时文件并抛出，原数据库文件保持上一个完整版本
- * @throws 序列化或写入磁盘失败时抛出
+ * 写操作选项
+ * @remarks 引擎在事务提交时即持久化，无需「跳过落盘」之类的批次控制
  */
-export function saveDatabase(): void {
-  if (inTransaction) {
-    throw new Error('SAVE_INSIDE_TRANSACTION: 事务内禁止落盘，请在提交后统一保存');
-  }
-  if (!db) {
-    log.warn('saveDatabase: db is null');
-    return;
-  }
-  const dbPath = getDatabasePath();
-  const tmpPath = `${dbPath}.tmp`;
-  const buffer = Buffer.from(db.export());
-
-  try {
-    writeFileSync(tmpPath, buffer);
-    renameSync(tmpPath, dbPath);
-    log.debug('saveDatabase: 数据库已保存到', dbPath);
-  } catch (error) {
-    if (existsSync(tmpPath)) {
-      try {
-        unlinkSync(tmpPath);
-      } catch {
-        // 临时文件清理失败不影响主流程
-      }
-    }
-    log.error('saveDatabase: 数据库保存失败:', error);
-    throw error;
-  }
-}
-
-/** 写操作选项：批次内跳过落盘，测试可注入内存库 */
 export interface WriteOptions {
-  skipSave?: boolean;
+  /** 目标数据库实例（测试可注入内存库） */
   target?: Database;
 }
 
 /**
  * 在单个事务内执行一批写操作；任一步失败回滚全部写入。
- * 事务内禁止调用 saveDatabase()，落盘由调用方在提交后统一执行。
+ * 引擎在事务提交时即完成持久化，调用方无需再做额外落盘。
  */
 export async function runInTransaction<T>(
   fn: () => T | Promise<T>,
@@ -306,9 +262,8 @@ export function loadConfig(): AppConfig {
   }
 
   try {
-    const result = db.exec("SELECT value FROM config WHERE key = 'app_config'");
-    if (result.length > 0 && result[0].values.length > 0) {
-      const configJson = result[0].values[0][0] as string;
+    const configJson = queryValue<string>("SELECT value FROM config WHERE key = 'app_config'");
+    if (configJson) {
       const config = JSON.parse(configJson) as unknown;
       log.info('从数据库加载配置成功');
       return mergeWithDefaultConfig(config);
@@ -328,11 +283,10 @@ export function saveConfig(config: AppConfig): boolean {
 
   try {
     const configJson = JSON.stringify(config);
-    db.run(
-      "UPDATE config SET value = ?, updated_at = ? WHERE key = 'app_config'",
-      [configJson, Date.now()]
-    );
-    saveDatabase();
+    execute("UPDATE config SET value = ?, updated_at = ? WHERE key = 'app_config'", [
+      configJson,
+      Date.now(),
+    ]);
     log.info('配置保存到数据库成功');
     return true;
   } catch (error) {
@@ -346,13 +300,13 @@ export function closeDatabase(): void {
     return;
   }
   try {
-    saveDatabase();
+    // 关闭连接：WAL 会在此合并回主库，无需额外落盘
+    db.close();
   } catch (error) {
-    // 退出前保存失败不应阻断关闭流程，磁盘上仍是上一个完整版本
-    log.error('关闭数据库前保存失败:', error);
+    log.error('关闭数据库失败:', error);
+  } finally {
+    db = null;
   }
-  db.close();
-  db = null;
 }
 
 export function getDb(): Database {
@@ -362,11 +316,103 @@ export function getDb(): Database {
   return db;
 }
 
+/** SQL 值类型（引擎无关，与 sqliteEngine 保持一致） */
+export type { SqlValue }; 
+
+/**
+ * 执行查询并返回行数组（保持 SELECT 的列顺序）
+ * 业务层统一通过本函数访问数据库，禁止直接持有驱动的 exec/run
+ * @param sql 参数化 SQL（占位符统一用 ?）
+ * @param params 绑定参数
+ * @param target 目标数据库实例（测试可注入内存库）
+ * @returns 行数组，无结果时为空数组
+ */
+export function queryRows(sql: string, params: unknown[] = [], target?: Database): SqlValue[][] {
+  const database = target ?? getDb();
+  const result = params.length > 0 ? database.exec(sql, params as never) : database.exec(sql);
+  if (result.length === 0) {
+    return [];
+  }
+  return result[0].values as SqlValue[][];
+}
+
+/**
+ * 执行查询并返回首行首列
+ * @param sql 参数化 SQL
+ * @param params 绑定参数
+ * @param target 目标数据库实例
+ * @returns 首行首列的值，无结果时为 null
+ */
+export function queryValue<T = SqlValue>(sql: string, params: unknown[] = [], target?: Database): T | null {
+  const rows = queryRows(sql, params, target);
+  if (rows.length === 0 || rows[0].length === 0) {
+    return null;
+  }
+  return rows[0][0] as T;
+}
+
+/**
+ * 执行写语句（INSERT/UPDATE/DELETE/DDL），返回受影响行数
+ * @param sql 参数化 SQL
+ * @param params 绑定参数
+ * @param target 目标数据库实例
+ * @returns 受影响行数
+ */
+export function execute(sql: string, params: unknown[] = [], target?: Database): number {
+  const database = target ?? getDb();
+  if (params.length > 0) {
+    database.run(sql, params as never);
+  } else {
+    database.run(sql);
+  }
+  return database.getRowsModified();
+}
+
+/**
+ * 在单个事务内执行，抛错时回滚并向上抛出
+ * 事务内禁止落盘（由 inTransaction 标记拦截）
+ * @param fn 事务体
+ * @param target 目标数据库实例
+ * @returns 事务体的返回值
+ */
+export function transaction<T>(fn: () => T, target?: Database): T {
+  const database = target ?? getDb();
+  if (inTransaction) {
+    throw new Error('NESTED_TRANSACTION: 不支持嵌套事务');
+  }
+  inTransaction = true;
+  database.run('BEGIN');
+  try {
+    const result = fn();
+    database.run('COMMIT');
+    return result;
+  } catch (error) {
+    try {
+      database.run('ROLLBACK');
+    } catch (rollbackError) {
+      log.error('transaction: 回滚失败', rollbackError);
+    }
+    throw error;
+  } finally {
+    inTransaction = false;
+  }
+}
+
+/**
+ * 生成数据库的一致性备份到指定路径
+ * 备份内容为当前已提交的全部数据
+ * @param destPath 备份文件路径
+ */
+export async function backupTo(destPath: string): Promise<void> {
+  const database = getDb();
+  writeFileSync(destPath, Buffer.from(database.export()));
+}
+
 /** 自选股查询列清单（sort_order 固定追加在末尾，避免既有下标错位） */
 const WATCHLIST_SELECT_COLUMNS =
   'id, stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at, sort_order';
 
-function rowToWatchlistStock(row: any[]): WatchlistStock {
+function rowToWatchlistStock(row: SqlValue[]): WatchlistStock {
   return {
     id: row[0] as number,
     stockCode: row[1] as string,
@@ -381,60 +427,36 @@ function rowToWatchlistStock(row: any[]): WatchlistStock {
 }
 
 export function getWatchlist(): WatchlistStock[] {
-  const database = getDb();
-  const result = database.exec(
+  return queryRows(
     `SELECT ${WATCHLIST_SELECT_COLUMNS} FROM watchlist_stocks ORDER BY sort_order ASC, id ASC`
-  );
-  if (result.length === 0) {
-    return [];
-  }
-  return result[0].values.map(rowToWatchlistStock);
+  ).map(rowToWatchlistStock);
 }
 
 export function getWatchlistById(id: number): WatchlistStock | null {
-  const database = getDb();
-  const result = database.exec(
-    `SELECT ${WATCHLIST_SELECT_COLUMNS} FROM watchlist_stocks WHERE id = ?`,
-    [id]
-  );
-  if (result.length === 0 || result[0].values.length === 0) {
-    return null;
-  }
-  return rowToWatchlistStock(result[0].values[0]);
+  const rows = queryRows(`SELECT ${WATCHLIST_SELECT_COLUMNS} FROM watchlist_stocks WHERE id = ?`, [id]);
+  return rows.length > 0 ? rowToWatchlistStock(rows[0]) : null;
 }
 
 export function getEnabledStocks(): WatchlistStock[] {
-  const database = getDb();
-  const result = database.exec(
+  return queryRows(
     `SELECT ${WATCHLIST_SELECT_COLUMNS} FROM watchlist_stocks WHERE monitor_enabled = 1 ORDER BY sort_order ASC, id ASC`
-  );
-  if (result.length === 0) {
-    return [];
-  }
-  return result[0].values.map(rowToWatchlistStock);
+  ).map(rowToWatchlistStock);
 }
 
 export function getStockByCode(stockCode: string): WatchlistStock | null {
-  const database = getDb();
-  const result = database.exec(
-    `SELECT ${WATCHLIST_SELECT_COLUMNS} FROM watchlist_stocks WHERE stock_code = ?`,
-    [stockCode]
-  );
-  if (result.length === 0 || result[0].values.length === 0) {
-    return null;
-  }
-  return rowToWatchlistStock(result[0].values[0]);
+  const rows = queryRows(`SELECT ${WATCHLIST_SELECT_COLUMNS} FROM watchlist_stocks WHERE stock_code = ?`, [
+    stockCode,
+  ]);
+  return rows.length > 0 ? rowToWatchlistStock(rows[0]) : null;
 }
 
 export function addStock(input: AddStockInput): WatchlistStock {
-  const database = getDb();
   const now = new Date().toISOString();
-  database.run(
+  execute(
     `INSERT INTO watchlist_stocks (stock_code, stock_name, buy_threshold, sell_threshold, monitor_enabled, created_at, updated_at, sort_order)
      VALUES (?, ?, ?, ?, 0, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM watchlist_stocks))`,
     [input.stockCode, input.stockName, input.buyThreshold, input.sellThreshold, now, now]
   );
-  saveDatabase();
   const inserted = getStockByCode(input.stockCode);
   if (!inserted) {
     throw new Error('添加股票失败');
@@ -443,7 +465,6 @@ export function addStock(input: AddStockInput): WatchlistStock {
 }
 
 export function updateStock(id: number, input: UpdateStockInput): WatchlistStock | null {
-  const database = getDb();
   const existing = getWatchlistById(id);
   if (!existing) {
     return null;
@@ -464,88 +485,32 @@ export function updateStock(id: number, input: UpdateStockInput): WatchlistStock
     values.push(input.monitorEnabled ? 1 : 0);
   }
   values.push(id);
-  database.run(
-    `UPDATE watchlist_stocks SET ${updates.join(', ')} WHERE id = ?`,
-    values
-  );
-  saveDatabase();
+  execute(`UPDATE watchlist_stocks SET ${updates.join(', ')} WHERE id = ?`, values);
   return getWatchlistById(id);
 }
 
 export function deleteStock(id: number): boolean {
-  const database = getDb();
   const existing = getWatchlistById(id);
   if (!existing) {
     return false;
   }
-  database.run('DELETE FROM watchlist_stocks WHERE id = ?', [id]);
-  saveDatabase();
+  execute('DELETE FROM watchlist_stocks WHERE id = ?', [id]);
   return true;
-}
-
-/**
- * 按给定顺序值恢复自选股的排序（仅作用于内存库，不落盘）
- * 用于落盘失败时回滚已提交的内存变更
- * @param database 数据库实例
- * @param orders 重排前的 id 与顺序值
- */
-function restoreSortOrders(
-  database: Database,
-  orders: Array<{ id: number; sortOrder: number }>
-): void {
-  database.run('BEGIN');
-  try {
-    orders.forEach(order => {
-      database.run('UPDATE watchlist_stocks SET sort_order = ? WHERE id = ?', [
-        order.sortOrder,
-        order.id,
-      ]);
-    });
-    database.run('COMMIT');
-  } catch (error) {
-    database.run('ROLLBACK');
-    log.error('恢复自选股顺序失败:', error);
-  }
 }
 
 /**
  * 按给定 id 顺序重写自选股排序值
  * 说明：整表重写为连续的 0..N-1，同时压缩删除产生的空缺；重排不改写 updated_at
- * 事务提交成功但落盘失败时，会按重排前的顺序值恢复内存库，保证界面与磁盘一致
+ * 引擎在事务提交时即持久化，失败会整体回滚，不存在「内存已提交但磁盘未写」的中间态
  * @param orderedIds 完整的有序自选股 id 列表
  * @returns 重排后的完整自选股列表
  */
 export function reorderWatchlist(orderedIds: number[]): WatchlistStock[] {
-  const database = getDb();
-  const beforeResult = database.exec('SELECT id, sort_order FROM watchlist_stocks');
-  const beforeOrders =
-    beforeResult.length > 0
-      ? beforeResult[0].values.map(row => ({
-          id: Number(row[0]),
-          sortOrder: Number(row[1]),
-        }))
-      : [];
-
-  database.run('BEGIN');
-  try {
+  transaction(() => {
     orderedIds.forEach((id, index) => {
-      database.run('UPDATE watchlist_stocks SET sort_order = ? WHERE id = ?', [index, id]);
+      execute('UPDATE watchlist_stocks SET sort_order = ? WHERE id = ?', [index, id]);
     });
-    database.run('COMMIT');
-  } catch (error) {
-    database.run('ROLLBACK');
-    log.error('重排自选股顺序失败，已回滚:', error);
-    throw error;
-  }
-
-  try {
-    saveDatabase();
-  } catch (error) {
-    // 内存库已提交但磁盘未写入：恢复内存顺序，避免重启后顺序回退造成不一致
-    log.error('重排自选股顺序落盘失败，恢复内存顺序:', error);
-    restoreSortOrders(database, beforeOrders);
-    throw error;
-  }
+  });
 
   return getWatchlist();
 }
@@ -597,9 +562,8 @@ function rowToTradeRecord(row: any[]): TradeRecord {
 }
 
 export function getPositions(): Position[] {
-  const database = getDb();
   // 获取每个股票的最新交易记录（按id最大），然后过滤出持仓数量大于0的股票
-  const result = database.exec(`
+  const rows = queryRows(`
     SELECT t1.stock_code, t1.stock_name, t1.holding_count, t1.holding_price, t1.trade_date
     FROM trade_record t1
     INNER JOIN (
@@ -609,10 +573,7 @@ export function getPositions(): Position[] {
     ) t2 ON t1.id = t2.max_id
     WHERE t1.holding_count > 0
   `);
-  if (result.length === 0 || result[0].values.length === 0) {
-    return [];
-  }
-  return result[0].values.map(row => ({
+  return rows.map(row => ({
     stockCode: row[0] as string,
     stockName: row[1] as string,
     holdingCount: row[2] as number,
@@ -625,33 +586,27 @@ export function getPositions(): Position[] {
 }
 
 export function getLastZeroTrade(stockCode: string, target?: Database): TradeRecord | null {
-  const database = target ?? getDb();
-  const result = database.exec(
+  const rows = queryRows(
     `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
      FROM trade_record
      WHERE stock_code = ? AND holding_count = 0
      ORDER BY trade_date DESC LIMIT 1`,
-    [stockCode]
+    [stockCode],
+    target
   );
-  if (result.length === 0 || result[0].values.length === 0) {
-    return null;
-  }
-  return rowToTradeRecord(result[0].values[0]);
+  return rows.length > 0 ? rowToTradeRecord(rows[0]) : null;
 }
 
 function getFirstOpenAfterZero(stockCode: string, zeroDate: string, target?: Database): TradeRecord | null {
-  const database = target ?? getDb();
-  const result = database.exec(
+  const rows = queryRows(
     `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
      FROM trade_record
      WHERE stock_code = ? AND trade_date > ? AND trade_type = 'BUY' AND holding_count > 0
      ORDER BY trade_date ASC LIMIT 1`,
-    [stockCode, zeroDate]
+    [stockCode, zeroDate],
+    target
   );
-  if (result.length === 0 || result[0].values.length === 0) {
-    return null;
-  }
-  return rowToTradeRecord(result[0].values[0]);
+  return rows.length > 0 ? rowToTradeRecord(rows[0]) : null;
 }
 
 export interface UpdateTradeInput {
@@ -669,19 +624,19 @@ export interface UpdateTradeInput {
  * 编辑/删除任意历史交易后调用，快照字段只由服务端计算。
  */
 export function rebuildHoldingChain(stockCode: string, target?: Database): void {
-  const database = target ?? getDb();
-  const result = database.exec(
+  const rows = queryRows(
     `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
      FROM trade_record WHERE stock_code = ?
      ORDER BY trade_date ASC, id ASC`,
-    [stockCode]
+    [stockCode],
+    target
   );
-  if (result.length === 0) {
+  if (rows.length === 0) {
     return;
   }
 
   let previous: TradeRecord | null = null;
-  for (const row of result[0].values) {
+  for (const row of rows) {
     const record = rowToTradeRecord(row);
     const calc: CalcResult = calcHoldingPrice(
       previous,
@@ -690,9 +645,10 @@ export function rebuildHoldingChain(stockCode: string, target?: Database): void 
       record.tradeCount,
       record.stockCode
     );
-    database.run(
+    execute(
       `UPDATE trade_record SET holding_count = ?, holding_price = ? WHERE id = ?`,
-      [calc.holdingCount, calc.holdingPrice, record.id]
+      [calc.holdingCount, calc.holdingPrice, record.id],
+      target
     );
     previous = { ...record, holdingCount: calc.holdingCount, holdingPrice: calc.holdingPrice };
   }
@@ -700,11 +656,8 @@ export function rebuildHoldingChain(stockCode: string, target?: Database): void 
 
 /** 编辑价格/数量/类型后，同步关联 STOCK_BUY / STOCK_SELL 明细的金额与日期；不新建明细 */
 function syncLinkedTransferAmounts(database: Database, tradeId: number, trade: UpdateTradeInput): void {
-  const linked = database.exec(`SELECT id, type FROM transfer_records WHERE trade_record_id = ?`, [tradeId]);
-  if (linked.length === 0) {
-    return;
-  }
-  for (const row of linked[0].values) {
+  const linked = queryRows(`SELECT id, type FROM transfer_records WHERE trade_record_id = ?`, [tradeId], database);
+  for (const row of linked) {
     const transferId = row[0] as number;
     const type = row[1] as string;
     let amount: number | null = null;
@@ -716,41 +669,40 @@ function syncLinkedTransferAmounts(database: Database, tradeId: number, trade: U
     if (amount === null || amount <= 0) {
       continue;
     }
-    database.run(
+    execute(
       `UPDATE transfer_records SET amount = ?, transfer_date = ?, updated_at = ? WHERE id = ?`,
-      [amount, trade.tradeDate, new Date().toISOString(), transferId]
+      [amount, trade.tradeDate, new Date().toISOString(), transferId],
+      database
     );
   }
 }
 
 /** 关联资金明细中最早的日期，作为余额链重算起点 */
 function earliestLinkedDate(database: Database, tradeId: number): string | null {
-  const result = database.exec(
+  const value = queryValue<string>(
     `SELECT MIN(transfer_date) AS earliest FROM transfer_records WHERE trade_record_id = ?`,
-    [tradeId]
+    [tradeId],
+    database
   );
-  if (result.length === 0) {
-    return null;
-  }
-  const value = result[0].values[0][0];
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 export function updateTradeRecord(input: UpdateTradeInput, options: WriteOptions = {}): TradeRecord {
   const database = options.target ?? getDb();
   log.debug('updateTradeRecord input:', JSON.stringify(input));
-  const original = database.exec(`SELECT stock_code FROM trade_record WHERE id = ?`, [input.id]);
-  if (original.length === 0 || original[0].values.length === 0) {
+  const original = queryRows(`SELECT stock_code FROM trade_record WHERE id = ?`, [input.id], database);
+  if (original.length === 0) {
     throw new Error('交易记录不存在');
   }
-  const previousStockCode = original[0].values[0][0] as string;
+  const previousStockCode = original[0][0] as string;
   const earliestDate = earliestLinkedDate(database, input.id);
 
-  database.run(
+  execute(
     `UPDATE trade_record
      SET stock_code = ?, stock_name = ?, trade_date = ?, trade_type = ?, trade_price = ?, trade_count = ?
      WHERE id = ?`,
-    [input.stockCode, input.stockName, input.tradeDate, input.tradeType, input.tradePrice, input.tradeCount, input.id]
+    [input.stockCode, input.stockName, input.tradeDate, input.tradeType, input.tradePrice, input.tradeCount, input.id],
+    database
   );
 
   rebuildHoldingChain(input.stockCode, database);
@@ -764,40 +716,35 @@ export function updateTradeRecord(input: UpdateTradeInput, options: WriteOptions
     const recalcFrom = earliestDate < input.tradeDate ? earliestDate : input.tradeDate;
     recalculateBalancesFrom(database, recalcFrom);
   }
-  if (!options.skipSave) {
-    saveDatabase();
-  }
 
-  const result = database.exec(
+  const result = queryRows(
     `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
      FROM trade_record WHERE id = ?`,
-    [input.id]
+    [input.id],
+    database
   );
-  if (result.length === 0 || result[0].values.length === 0) {
+  if (result.length === 0) {
     throw new Error('更新交易记录失败');
   }
-  return rowToTradeRecord(result[0].values[0]);
+  return rowToTradeRecord(result[0]);
 }
 
 export function deleteTradeRecord(id: number, options: WriteOptions = {}): void {
   const database = options.target ?? getDb();
-  const original = database.exec(`SELECT stock_code FROM trade_record WHERE id = ?`, [id]);
-  if (original.length === 0 || original[0].values.length === 0) {
+  const original = queryRows(`SELECT stock_code FROM trade_record WHERE id = ?`, [id], database);
+  if (original.length === 0) {
     throw new Error('交易记录不存在');
   }
-  const stockCode = original[0].values[0][0] as string;
+  const stockCode = original[0][0] as string;
   const earliestDate = earliestLinkedDate(database, id);
 
   // 先删除关联的资金明细，再删除交易记录
-  database.run(`DELETE FROM transfer_records WHERE trade_record_id = ?`, [id]);
-  database.run(`DELETE FROM trade_record WHERE id = ?`, [id]);
+  execute(`DELETE FROM transfer_records WHERE trade_record_id = ?`, [id], database);
+  execute(`DELETE FROM trade_record WHERE id = ?`, [id], database);
 
   rebuildHoldingChain(stockCode, database);
   if (earliestDate) {
     recalculateBalancesFrom(database, earliestDate);
-  }
-  if (!options.skipSave) {
-    saveDatabase();
   }
 }
 
@@ -866,16 +813,10 @@ export function getTradeRecords(
   }
 
   // 查询总数
-  const countResult = database.exec(countQuery, countParams);
-  const total = countResult.length > 0 && countResult[0].values.length > 0
-    ? (countResult[0].values[0][0] as number)
-    : 0;
+  const total = queryValue<number>(countQuery, countParams, database) ?? 0;
 
   // 查询分页数据
-  const dataResult = database.exec(dataQuery, dataParams);
-  const records = dataResult.length > 0
-    ? dataResult[0].values.map(rowToTradeRecord)
-    : [];
+  const records = queryRows(dataQuery, dataParams, database).map(rowToTradeRecord);
 
   // 计算是否还有更多记录
   const hasMore = safePage * safeSize < total;
@@ -898,23 +839,22 @@ export function addTradeRecord(input: AddTradeInput, options: WriteOptions = {})
     input.tradeCount,
     input.stockCode
   );
-  database.run(
+  execute(
     `INSERT INTO trade_record (stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [input.stockCode, input.stockName, input.tradeDate, input.tradeType, input.tradePrice, input.tradeCount, calcResult.holdingCount, calcResult.holdingPrice]
+    [input.stockCode, input.stockName, input.tradeDate, input.tradeType, input.tradePrice, input.tradeCount, calcResult.holdingCount, calcResult.holdingPrice],
+    database
   );
-  if (!options.skipSave) {
-    saveDatabase();
-  }
-  const result = database.exec(
+  const result = queryRows(
     `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
      FROM trade_record WHERE stock_code = ? ORDER BY trade_date DESC, id DESC LIMIT 1`,
-    [input.stockCode]
+    [input.stockCode],
+    database
   );
-  if (result.length === 0 || result[0].values.length === 0) {
+  if (result.length === 0) {
     throw new Error('添加交易记录失败');
   }
-  const record = rowToTradeRecord(result[0].values[0]);
+  const record = rowToTradeRecord(result[0]);
   return { record };
 }
 
@@ -923,16 +863,11 @@ export function addTradeRecord(input: AddTradeInput, options: WriteOptions = {})
  * @returns 所有交易记录数组，按股票代码和交易日期排序
  */
 export function getAllTradeRecords(): TradeRecord[] {
-  const database = getDb();
-  const result = database.exec(
+  return queryRows(
     `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
      FROM trade_record
      ORDER BY stock_code, trade_date ASC`
-  );
-  if (result.length === 0) {
-    return [];
-  }
-  return result[0].values.map(rowToTradeRecord);
+  ).map(rowToTradeRecord);
 }
 
 /**
@@ -941,18 +876,13 @@ export function getAllTradeRecords(): TradeRecord[] {
  * @returns 该股票的所有交易记录数组，按交易日期正序排列
  */
 export function getTradeRecordsByStockCode(stockCode: string): TradeRecord[] {
-  const database = getDb();
-  const result = database.exec(
+  return queryRows(
     `SELECT id, stock_code, stock_name, trade_date, trade_type, trade_price, trade_count, holding_count, holding_price
      FROM trade_record
      WHERE stock_code = ?
      ORDER BY trade_date ASC`,
     [stockCode]
-  );
-  if (result.length === 0) {
-    return [];
-  }
-  return result[0].values.map(rowToTradeRecord);
+  ).map(rowToTradeRecord);
 }
 
 
@@ -1020,19 +950,16 @@ export function getLatestTradeDates(
   }
 
   const placeholders = stockCodes.map(() => '?').join(', ');
-  const result = database.exec(
+  const rows = queryRows(
     `SELECT stock_code, adjust_type, MAX(trade_date) AS latest
      FROM ${table}
      WHERE stock_code IN (${placeholders})
      GROUP BY stock_code, adjust_type`,
-    stockCodes
+    stockCodes,
+    database
   );
 
-  if (result.length === 0) {
-    return latest;
-  }
-
-  for (const row of result[0].values) {
+  for (const row of rows) {
     const stockCode = String(row[0] ?? '');
     const adjustType = String(row[1] ?? '');
     const tradeDate = row[2] === null || row[2] === undefined ? '' : String(row[2]);
@@ -1097,9 +1024,7 @@ export function getCurrentPeriodStart(period: 'w' | 'm'): string {
  * @param period K线周期：d 日线 | w 周线 | m 月线（决定写入的数据表）
  * @param target 目标数据库实例（默认取全局库，测试可注入内存库）
  * @returns 保存的数据条数
- * @remarks 本函数只写入数据库对象，**不负责落盘**。
- *          持久化由知道批次边界的调用方显式调用 saveDatabase() 触发，
- *          避免批量下载时每写一只股票就把整个库序列化落盘一次。
+ * @remarks 写入在单个事务内完成，提交即持久化（引擎页级写入，不需要整库序列化）
  */
 export function saveKlineData(
   stockCode: string,
@@ -1113,73 +1038,70 @@ export function saveKlineData(
   const table = tableOf(period);
 
   try {
-    // 开启事务
-    database.run('BEGIN TRANSACTION');
+    transaction(() => {
+      // 周线/月线：数据源对未完成周期返回的 trade_date 是「最新交易日」（11-04 → 11-05 → …），
+      // 不清理会按不同日期堆出同一周期的多行。仅当本批数据包含当前周期的记录时才清理，
+      // 避免下载纯历史区间时误删库中已有的当前周期数据。
+      if (period !== 'd') {
+        const periodStart = getCurrentPeriodStart(period);
+        const hasCurrentPeriodBar = klines.some(kline => (kline.date || '') >= periodStart);
+        if (hasCurrentPeriodBar) {
+          execute(
+            `DELETE FROM ${table} WHERE stock_code = ? AND adjust_type = ? AND trade_date >= ?`,
+            [stockCode, adjustType, periodStart],
+            database
+          );
+        }
+      }
 
-    // 周线/月线：数据源对未完成周期返回的 trade_date 是「最新交易日」（11-04 → 11-05 → …），
-    // 不清理会按不同日期堆出同一周期的多行。仅当本批数据包含当前周期的记录时才清理，
-    // 避免下载纯历史区间时误删库中已有的当前周期数据。
-    if (period !== 'd') {
-      const periodStart = getCurrentPeriodStart(period);
-      const hasCurrentPeriodBar = klines.some(kline => (kline.date || '') >= periodStart);
-      if (hasCurrentPeriodBar) {
-        database.run(
-          `DELETE FROM ${table} WHERE stock_code = ? AND adjust_type = ? AND trade_date >= ?`,
-          [stockCode, adjustType, periodStart]
+      for (const kline of klines) {
+        // 去除股票代码前缀（如 sz000001 → 000001）
+        const pureCode = kline.code ? kline.code.replace(/^(sh|sz)/, '') : stockCode;
+        const tradeDate = kline.date || '';
+
+        // UPSERT：唯一键冲突时走 DO UPDATE，保留原 id 与 created_at（首次入库时间），
+        // 仅刷新行情字段与 updated_at；or REPLACE 会先删后插，导致 id 变化、created_at 丢失
+        execute(
+          `INSERT INTO ${table} 
+           (stock_code, trade_date, adjust_type, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(stock_code, trade_date, adjust_type) DO UPDATE SET
+             open = excluded.open,
+             close = excluded.close,
+             high = excluded.high,
+             low = excluded.low,
+             volume = excluded.volume,
+             amount = excluded.amount,
+             amplitude = excluded.amplitude,
+             change_percent = excluded.change_percent,
+             change_amount = excluded.change_amount,
+             turnover_rate = excluded.turnover_rate,
+             updated_at = excluded.updated_at`,
+          [
+            pureCode,
+            tradeDate,
+            adjustType,
+            kline.open ?? null,
+            kline.close ?? null,
+            kline.high ?? null,
+            kline.low ?? null,
+            kline.volume ?? null,
+            kline.amount ?? null,
+            kline.amplitude ?? null,
+            kline.changePercent ?? null,
+            kline.change ?? null,
+            kline.turnoverRate ?? null,
+            now,
+            now,
+          ],
+          database
         );
       }
-    }
+    }, database);
 
-    for (const kline of klines) {
-      // 去除股票代码前缀（如 sz000001 → 000001）
-      const pureCode = kline.code ? kline.code.replace(/^(sh|sz)/, '') : stockCode;
-      const tradeDate = kline.date || '';
-
-      // UPSERT：唯一键冲突时走 DO UPDATE，保留原 id 与 created_at（首次入库时间），
-      // 仅刷新行情字段与 updated_at；or REPLACE 会先删后插，导致 id 变化、created_at 丢失
-      database.run(
-        `INSERT INTO ${table} 
-         (stock_code, trade_date, adjust_type, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(stock_code, trade_date, adjust_type) DO UPDATE SET
-           open = excluded.open,
-           close = excluded.close,
-           high = excluded.high,
-           low = excluded.low,
-           volume = excluded.volume,
-           amount = excluded.amount,
-           amplitude = excluded.amplitude,
-           change_percent = excluded.change_percent,
-           change_amount = excluded.change_amount,
-           turnover_rate = excluded.turnover_rate,
-           updated_at = excluded.updated_at`,
-        [
-          pureCode,
-          tradeDate,
-          adjustType,
-          kline.open ?? null,
-          kline.close ?? null,
-          kline.high ?? null,
-          kline.low ?? null,
-          kline.volume ?? null,
-          kline.amount ?? null,
-          kline.amplitude ?? null,
-          kline.changePercent ?? null,
-          kline.change ?? null,
-          kline.turnoverRate ?? null,
-          now,
-          now,
-        ]
-      );
-    }
-
-    // 提交事务（仅提交到内存库，落盘由调用方决定）
-    database.run('COMMIT');
     log.debug(`K线数据保存成功: ${stockCode}, 周期: ${period}, 复权类型: ${adjustType}, 共 ${klines.length} 条`);
     return klines.length;
   } catch (error) {
-    // 事务回滚
-    database.run('ROLLBACK');
     log.error(`K线数据保存失败: ${stockCode}, 周期: ${period}, 复权类型: ${adjustType}`, error);
     throw error;
   }
@@ -1242,13 +1164,7 @@ export function getKlineData(
 
   query += ` ORDER BY trade_date ASC`;
 
-  const result = database.exec(query, params);
-
-  if (result.length === 0) {
-    return [];
-  }
-
-  return result[0].values.map(rowToKlineData);
+  return queryRows(query, params, database).map(rowToKlineData);
 }
 
 /**
@@ -1267,13 +1183,7 @@ export function getChartData(
   const table = tableOf(period);
 
   const query = `SELECT id, stock_code, trade_date, adjust_type, open, close, high, low, volume, amount, amplitude, change_percent, change_amount, turnover_rate, created_at, updated_at
-                 FROM ${table} WHERE stock_code = ? AND adjust_type = ? ORDER BY trade_date ASC`;
+                FROM ${table} WHERE stock_code = ? AND adjust_type = ? ORDER BY trade_date ASC`;
 
-  const result = database.exec(query, [stockCode, adjustType]);
-
-  if (result.length === 0) {
-    return [];
-  }
-
-  return result[0].values.map(rowToKlineData);
+  return queryRows(query, [stockCode, adjustType], database).map(rowToKlineData);
 }

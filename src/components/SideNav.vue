@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted, ref } from 'vue';
 import type { ViewId } from '../composables/useNavigation';
 
 defineProps<{
@@ -8,6 +9,22 @@ defineProps<{
 const emit = defineEmits<{
   navigate: [viewId: ViewId]
 }>()
+
+// 版本号来自主进程 app.getVersion()，获取失败时保持为空（不显示，不阻塞导航）
+const appVersion = ref('')
+const appIsDev = ref(false)
+
+onMounted(async () => {
+  try {
+    const info = await window.electronAPI?.getAppInfo()
+    if (info) {
+      appVersion.value = info.version
+      appIsDev.value = info.isDev
+    }
+  } catch {
+    // 降级：拿不到版本就不显示
+  }
+})
 
 interface NavItem {
   id: ViewId
@@ -85,6 +102,11 @@ const handleClick = (viewId: ViewId) => {
         </svg>
       </button>
     </div>
+
+    <div v-if="appVersion" class="app-version" :title="`v${appVersion}${appIsDev ? ' (dev)' : ''}`">
+      <span class="version-line">v{{ appVersion }}</span>
+      <span v-if="appIsDev" class="version-line">(dev)</span>
+    </div>
   </nav>
 </template>
 
@@ -105,6 +127,31 @@ const handleClick = (viewId: ViewId) => {
   align-items: center;
   padding: 8px 0;
   gap: 4px;
+  // 允许收缩：否则 min-height:auto 会把底部版本块顶出可视区
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.app-version {
+  // 侧边栏仅 56px，版本号允许折成两行（v1.0.0 / (dev)），不裁切
+  flex-shrink: 0;
+  padding: 4px 2px 8px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text-secondary);
+  word-break: break-all;
+  user-select: text;
+}
+
+.version-line {
+  display: block;
 }
 
 .nav-item {

@@ -1,5 +1,5 @@
 import log from 'electron-log';
-import { Database } from 'sql.js';
+import type { DatabaseLike as Database } from '../sqliteEngine';
 import type { FundOverview, HoldingMarketDetail } from '../../shared/types';
 
 /** 按资金类型递推账户余额（以分为单位计算，避免浮点误差） */

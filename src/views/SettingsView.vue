@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue';
-import type { AppConfig } from '../../shared/types';
+import type { AppConfig, AppInfo } from '../../shared/types';
 import { DEFAULT_CONFIG, useConfig } from '../composables/useConfig';
 import { useToast } from '../composables/useToast';
 import { useBackup } from '../composables/useBackup';
@@ -24,7 +24,44 @@ const { triggerManualBackup } = useBackup();
 const localConfig = ref<AppConfig | null>(null);
 const isBackingUp = ref(false);
 
+const appInfo = ref<AppInfo | null>(null);
+
+/** 读取版本与运行环境信息；失败时关于区整体降级为占位 */
+const loadAppInfo = async (): Promise<void> => {
+  try {
+    const info = await window.electronAPI?.getAppInfo();
+    appInfo.value = info ?? null;
+  } catch {
+    appInfo.value = null;
+  }
+};
+
+/** 打开日志目录，失败时给出可见提示 */
+const handleOpenLogDir = async (): Promise<void> => {
+  try {
+    const result = await window.logApi.openLogDirectory();
+    if (!result.success) {
+      showToast(`打开日志目录失败: ${result.error ?? '未知错误'}`, 'error');
+    }
+  } catch (error) {
+    showToast(`打开日志目录失败: ${error instanceof Error ? error.message : '未知错误'}`, 'error');
+  }
+};
+
+/** 打开数据库文件所在目录，失败时给出可见提示 */
+const handleOpenDbDir = async (): Promise<void> => {
+  try {
+    const result = await window.electronAPI?.openDbDirectory();
+    if (!result?.success) {
+      showToast(`打开数据库目录失败: ${result?.error ?? '未知错误'}`, 'error');
+    }
+  } catch (error) {
+    showToast(`打开数据库目录失败: ${error instanceof Error ? error.message : '未知错误'}`, 'error');
+  }
+};
+
 onMounted(async () => {
+  void loadAppInfo();
   await loadConfig();
   if (config.value) {
     localConfig.value = JSON.parse(JSON.stringify(config.value));
@@ -198,6 +235,33 @@ const handleBackup = async () => {
         {{ isBackingUp ? '备份中...' : '备份数据库' }}
       </button>
     </section>
+
+    <section class="settings-section about-section">
+      <h3>关于</h3>
+      <dl v-if="appInfo" class="about-list">
+        <div class="about-row">
+          <dt>版本</dt>
+          <dd>v{{ appInfo.version }}{{ appInfo.isDev ? ' (dev)' : '' }}</dd>
+        </div>
+        <div class="about-row">
+          <dt>数据库</dt>
+          <dd class="path" :title="appInfo.dbPath">{{ appInfo.dbPath }}</dd>
+        </div>
+        <div class="about-row">
+          <dt>日志目录</dt>
+          <dd class="path" :title="appInfo.logDir">{{ appInfo.logDir }}</dd>
+        </div>
+      </dl>
+      <p v-else class="about-placeholder">版本信息暂不可用</p>
+      <div class="about-actions">
+        <button type="button" class="btn btn-secondary" @click="handleOpenLogDir">
+          打开日志目录
+        </button>
+        <button type="button" class="btn btn-secondary" @click="handleOpenDbDir">
+          打开数据库目录
+        </button>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -353,6 +417,50 @@ const handleBackup = async () => {
     color: var(--text-secondary);
     margin-bottom: 1rem;
     line-height: 1.5;
+  }
+}
+
+.about-section {
+  margin-top: 1rem;
+
+  .about-list {
+    margin: 0 0 1rem;
+  }
+
+  .about-row {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.35rem 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+
+    dt {
+      flex: 0 0 4.5rem;
+      color: var(--text-secondary);
+    }
+
+    dd {
+      flex: 1;
+      min-width: 0;
+      margin: 0;
+    }
+  }
+
+  .path {
+    font-family: Consolas, 'Courier New', monospace;
+    word-break: break-all;
+  }
+
+  .about-placeholder {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+  }
+
+  .about-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
   }
 }
 </style>

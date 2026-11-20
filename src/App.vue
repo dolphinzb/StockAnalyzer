@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from 'vue'
+import IndexStatusBar from './components/IndexStatusBar.vue'
 import SideNav from './components/SideNav.vue'
 import TitleBar from './components/TitleBar.vue'
 import ToastNotification from './components/ToastNotification.vue'
@@ -56,9 +57,13 @@ onUnmounted(() => {
     <TitleBar />
     <div class="app-body">
       <SideNav :current-view-id="currentViewId" @navigate="handleNavigate" />
-      <main class="main-content">
-        <component :is="currentComponent" />
-      </main>
+      <div class="content-area">
+        <main class="main-content">
+          <component :is="currentComponent" />
+        </main>
+        <!-- 指数状态栏：主内容区底部常驻，左边缘与主内容区对齐 -->
+        <IndexStatusBar :index-data-state="watchlistStore.indexDataState" />
+      </div>
     </div>
     <ToastNotification />
   </div>
@@ -79,8 +84,17 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.content-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .main-content {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   background-color: var(--bg-color);
 }

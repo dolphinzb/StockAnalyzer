@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import IndexStatusBar from '../components/IndexStatusBar.vue';
 import KlineBatchDownloadDialog from '../components/KlineBatchDownloadDialog.vue';
 import KlineChartDialog from '../components/KlineChartDialog.vue';
 import KlineDownloadDialog from '../components/KlineDownloadDialog.vue';
@@ -245,9 +244,6 @@ function handleCloseKlineChart() {
       <p>暂无自选股</p>
       <button class="btn-add" @click="handleAddStock">添加第一只股票</button>
     </div>
-
-    <!-- 指数状态栏 -->
-    <IndexStatusBar :index-data-state="store.indexDataState" />
   </div>
 </template>
 

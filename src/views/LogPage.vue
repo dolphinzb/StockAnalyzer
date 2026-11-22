@@ -97,12 +97,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="log-page">
-    <header class="log-header">
-      <h2>日志查看</h2>
+  <div class="page log-page">
+    <header class="page-header">
+      <h2 class="page-title">日志查看</h2>
       <div class="header-actions">
         <select
-          class="date-select"
+          class="select date-select"
           :value="logStore.selectedDate"
           title="选择要查看的日志日期"
           @change="handleDateChange"
@@ -111,7 +111,7 @@ onUnmounted(() => {
             {{ formatDateLabel(date) }}
           </option>
         </select>
-        <button class="btn-open-dir" type="button" @click="handleOpenDirectory">
+        <button class="btn btn-secondary btn-sm" type="button" @click="handleOpenDirectory">
           打开日志目录
         </button>
         <span v-if="lastRefreshTime" class="last-refresh">
@@ -131,65 +131,24 @@ onUnmounted(() => {
 </template>
 
 <style scoped lang="scss">
+// 页面骨架由全局 .page / .page-header / .page-title 提供，此处只补充该页特有布局
 .log-page {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 1rem;
-  gap: 1rem;
-}
-
-.log-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  h2 {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
-  }
+  gap: var(--space-4);
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
+// 日期下拉按内容宽度显示，不撑满标题栏
 .date-select {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.875rem;
-  font-family: inherit;
-  color: var(--text-color);
-  background-color: var(--bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  cursor: pointer;
-
-  &:focus {
-    outline: none;
-    border-color: var(--primary-color);
-  }
-}
-
-.btn-open-dir {
-  padding: 0.25rem 0.75rem;
-  font-size: 0.875rem;
-  font-family: inherit;
-  color: var(--text-color);
-  background-color: var(--bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  cursor: pointer;
-
-  &:hover {
-    background-color: var(--hover-bg);
-  }
+  width: auto;
 }
 
 .last-refresh {
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 </style>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { reactive, ref, computed } from 'vue';
+import AppIcon from '../components/ui/AppIcon.vue';
 import { useToast } from '../composables/useToast';
 import { runGridSimulation } from '../composables/useGridSimulation';
 import type {
@@ -58,9 +59,9 @@ const typeLabel = (t: string) => {
 };
 
 const typeClass = (t: string) => {
-  if (t === 'BUY') return 'tag-buy';
-  if (t === 'SELL') return 'tag-sell';
-  return 'tag-dividend';
+  if (t === 'BUY') return 'status-tag-buy';
+  if (t === 'SELL') return 'status-tag-sell';
+  return 'status-tag-dividend';
 };
 
 const gridStrategyTip =
@@ -192,48 +193,48 @@ void totalAssetsSeries.value;
 </script>
 
 <template>
-  <div class="grid-sim-view">
+  <div class="page grid-sim-view">
     <div class="card">
       <div class="card-header">
         <span>网格交易仿真参数</span>
       </div>
       <div class="form-grid">
         <div class="form-item">
-          <label>开始日期</label>
-          <input v-model="form.startDate" type="date" />
+          <label class="form-label">开始日期</label>
+          <input class="input" v-model="form.startDate" type="date" />
         </div>
         <div class="form-item">
-          <label>股票代码</label>
-          <input v-model="form.stockCode" type="text" placeholder="如 000001" />
+          <label class="form-label">股票代码</label>
+          <input class="input" v-model="form.stockCode" type="text" placeholder="如 000001" />
         </div>
         <div class="form-item">
-          <label>初始资金</label>
-          <input v-model="form.initialCapital" type="number" placeholder="如 100000" />
+          <label class="form-label">初始资金</label>
+          <input class="input" v-model="form.initialCapital" type="number" placeholder="如 100000" />
         </div>
         <!-- 网格类策略（strategy1/2/3）才显示网格参数 -->
         <template v-if="['strategy1', 'strategy2', 'strategy3'].includes(form.gridStrategy)">
           <div class="form-item">
-            <label>网格上限</label>
-            <input v-model="form.upperLimit" type="number" step="0.01" placeholder="如 15" />
+            <label class="form-label">网格上限</label>
+            <input class="input" v-model="form.upperLimit" type="number" step="0.01" placeholder="如 15" />
           </div>
           <div class="form-item">
-            <label>网格下限</label>
-            <input v-model="form.lowerLimit" type="number" step="0.01" placeholder="如 8" />
+            <label class="form-label">网格下限</label>
+            <input class="input" v-model="form.lowerLimit" type="number" step="0.01" placeholder="如 8" />
           </div>
           <div class="form-item">
-            <label>网格间距</label>
-            <input v-model="form.spacing" type="number" step="0.01" placeholder="如 1 或 0.05" />
+            <label class="form-label">网格间距</label>
+            <input class="input" v-model="form.spacing" type="number" step="0.01" placeholder="如 1 或 0.05" />
           </div>
           <div class="form-item">
-            <label>间距类型</label>
-            <select v-model="form.spacingType">
+            <label class="form-label">间距类型</label>
+            <select class="select" v-model="form.spacingType">
               <option value="fixed">固定金额</option>
               <option value="percentage">百分比(等比)</option>
             </select>
           </div>
           <div class="form-item">
-            <label>每格股数(留空自动)</label>
-            <input v-model="form.sharesPerGrid" type="number" step="100" placeholder="留空=自动估算" />
+            <label class="form-label">每格股数(留空自动)</label>
+            <input class="input" v-model="form.sharesPerGrid" type="number" step="100" placeholder="留空=自动估算" />
             <span class="hint">留空时按「初始资金 ÷ 档位数 ÷ 触发价」估算并取整到100股</span>
           </div>
         </template>
@@ -241,30 +242,31 @@ void totalAssetsSeries.value;
         <!-- 阈值全仓策略（strategy5）才显示两个触发价 -->
         <template v-if="form.gridStrategy === 'strategy5'">
           <div class="form-item">
-            <label>买入触发价</label>
-            <input v-model="form.buyThreshold" type="number" step="0.01" placeholder="股价 ≤ 此价则全仓买入" />
+            <label class="form-label">买入触发价</label>
+            <input class="input" v-model="form.buyThreshold" type="number" step="0.01" placeholder="股价 ≤ 此价则全仓买入" />
           </div>
           <div class="form-item">
-            <label>卖出触发价</label>
-            <input v-model="form.sellThreshold" type="number" step="0.01" placeholder="股价 ≥ 此价则清仓卖出" />
+            <label class="form-label">卖出触发价</label>
+            <input class="input" v-model="form.sellThreshold" type="number" step="0.01" placeholder="股价 ≥ 此价则清仓卖出" />
           </div>
         </template>
 
         <!-- 半仓平衡策略（strategy4）说明 -->
         <div class="form-item" v-if="form.gridStrategy === 'strategy4'">
-          <label>策略说明</label>
+          <label class="form-label">策略说明</label>
           <span class="hint">半仓平衡不依赖网格：每日以收盘价做一次再平衡，目标持仓 = 可用资金 / 2，偏差超 ±5% 才买卖。</span>
         </div>
 
         <!-- 策略选择（始终显示） -->
         <div class="form-item">
-          <label>
+          <label class="form-label">
             <span>网格策略</span>
-            <span class="help-icon" tabindex="0" aria-label="网格策略说明">?
+            <span class="help-icon" tabindex="0" aria-label="网格策略说明">
+              <AppIcon name="help" :size="16" />
               <span class="tooltip-pop">{{ gridStrategyTip }}</span>
             </span>
           </label>
-          <select v-model="form.gridStrategy">
+          <select class="select" v-model="form.gridStrategy">
             <option value="strategy1">网格策略1（整批清仓）</option>
             <option value="strategy2">网格策略2（分步减仓）</option>
             <option value="strategy3">网格策略3（隔两档卖出）</option>
@@ -273,27 +275,27 @@ void totalAssetsSeries.value;
           </select>
         </div>
         <div class="form-item">
-          <label>手续费率</label>
-          <input v-model="form.commissionRate" type="number" step="0.00001" placeholder="0.00025" />
+          <label class="form-label">手续费率</label>
+          <input class="input" v-model="form.commissionRate" type="number" step="0.00001" placeholder="0.00025" />
         </div>
         <div class="form-item">
-          <label>最低手续费</label>
-          <input v-model="form.minFee" type="number" step="0.01" placeholder="5" />
+          <label class="form-label">最低手续费</label>
+          <input class="input" v-model="form.minFee" type="number" step="0.01" placeholder="5" />
         </div>
         <div class="form-item">
-          <label>印花税(卖出)</label>
-          <input v-model="form.stampTaxRate" type="number" step="0.00001" placeholder="0.0005" />
+          <label class="form-label">印花税(卖出)</label>
+          <input class="input" v-model="form.stampTaxRate" type="number" step="0.00001" placeholder="0.0005" />
         </div>
         <div class="form-item">
-          <label>每股年股息(预留)</label>
-          <input v-model="form.dividendPerShare" type="number" step="0.01" placeholder="0" :disabled="true" />
+          <label class="form-label">每股年股息(预留)</label>
+          <input class="input" v-model="form.dividendPerShare" type="number" step="0.01" placeholder="0" :disabled="true" />
         </div>
       </div>
       <div class="form-actions">
-        <button class="btn-primary" :disabled="isRunning" @click="runSimulation">
+        <button class="btn btn-primary" :disabled="isRunning" @click="runSimulation">
           {{ isRunning ? '仿真中...' : '开始仿真' }}
         </button>
-        <button class="btn-secondary" @click="reset">重置</button>
+        <button class="btn btn-secondary" @click="reset">重置</button>
       </div>
     </div>
 
@@ -371,7 +373,7 @@ void totalAssetsSeries.value;
           <tbody>
             <tr v-for="(op, i) in result.operations" :key="i">
               <td>{{ op.date }}</td>
-              <td><span :class="['tag', typeClass(op.type), { 'tag-virtual': op.virtual }]">{{ typeLabel(op.type) }}<template v-if="op.virtual"> (虚拟)</template></span></td>
+              <td><span :class="['status-tag', typeClass(op.type), { 'status-tag-virtual': op.virtual }]">{{ typeLabel(op.type) }}<template v-if="op.virtual"> (虚拟)</template></span></td>
               <td>¥{{ fmt(op.price) }}</td>
               <td>{{ op.shares }}</td>
               <td>¥{{ fmt(op.fee) }}</td>
@@ -390,64 +392,46 @@ void totalAssetsSeries.value;
 </template>
 
 <style scoped lang="scss">
+// 页面骨架、卡片、按钮、表单控件均由全局基础类提供，此处只保留该页特有布局
 .grid-sim-view {
-  padding: 1rem;
-  height: 100%;
+  gap: var(--space-4);
   overflow: auto;
-}
-
-.card {
-  background: var(--card-bg);
-  border-radius: 8px;
-  padding: 1rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  margin-bottom: 1rem;
-}
-
-.card-header {
-  font-weight: bold;
-  margin-bottom: 1rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--border-color);
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
+// 表单控件不设最小宽度，由网格列宽决定
 .form-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-
-  label {
-    font-size: 12px;
-    color: var(--text-secondary);
+  > .input,
+  > .select {
+    min-width: 0;
   }
 
   .hint {
-    font-size: 11px;
-    color: var(--text-tertiary, #aaa);
-    line-height: 1.3;
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-tight);
+    color: var(--text-tertiary);
   }
 
+  // 帮助图标：图形由 AppIcon 提供，此处只负责定位与悬浮提示
   .help-icon {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
-    height: 14px;
-    margin-left: 4px;
-    border-radius: 50%;
-    background: var(--text-tertiary, #aaa);
-    color: #fff;
-    font-size: 10px;
-    font-weight: bold;
+    margin-left: var(--space-1);
+    color: var(--text-tertiary);
     cursor: help;
-    position: relative;
     outline: none;
+
+    &:hover,
+    &:focus {
+      color: var(--color-primary);
+    }
 
     .tooltip-pop {
       visibility: hidden;
@@ -455,19 +439,19 @@ void totalAssetsSeries.value;
       position: absolute;
       top: 150%;
       right: 0;
-      z-index: 50;
+      z-index: var(--z-dropdown);
       width: max-content;
       max-width: 280px;
-      padding: 0.5rem 0.65rem;
-      border-radius: 6px;
-      background: #303133;
-      color: #fff;
-      font-size: 12px;
-      font-weight: normal;
-      line-height: 1.5;
-      white-space: pre-line;
+      padding: var(--space-2) var(--space-3);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-normal);
+      line-height: var(--line-height-base);
+      color: var(--chart-tooltip-text);
       text-align: left;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      white-space: pre-line;
+      background: var(--chart-tooltip-bg);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-lg);
       transition: opacity 0.15s ease;
       pointer-events: none;
     }
@@ -478,59 +462,12 @@ void totalAssetsSeries.value;
       opacity: 1;
     }
   }
-
-  input, select {
-    padding: 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 14px;
-    background: var(--input-bg);
-    color: var(--text-color);
-
-    &:focus {
-      outline: none;
-      border-color: var(--primary-color);
-    }
-  }
 }
 
 .form-actions {
   display: flex;
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.btn-primary {
-  padding: 0.5rem 1.5rem;
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  &:hover:not(:disabled) {
-    background: var(--color-primary-dark);
-  }
-}
-
-.btn-secondary {
-  padding: 0.5rem 1.5rem;
-  background: var(--secondary-bg);
-  color: var(--text-color);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-
-  &:hover {
-    background: var(--hover-bg);
-  }
+  gap: var(--space-2);
+  margin-top: var(--space-4);
 }
 
 .result-card {
@@ -545,60 +482,70 @@ void totalAssetsSeries.value;
 .metrics-row {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 1rem;
-  margin-bottom: 1rem;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
 }
 
 .metric-card {
-  padding: 1rem;
-  background: var(--secondary-bg);
-  border-radius: 6px;
+  padding: var(--space-4);
   text-align: center;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
 }
 
 .metric-title {
-  font-size: 12px;
+  margin-bottom: var(--space-2);
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
-  margin-bottom: 0.5rem;
 }
 
 .metric-value {
-  font-size: 18px;
-  font-weight: bold;
-  color: var(--text-color);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
 }
 
 .metric-detail {
-  font-size: 12px;
+  margin-top: var(--space-1);
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
-  margin-top: 0.25rem;
 }
 
-.profit-up { color: #f56c6c; }
-.profit-down { color: #67c23a; }
-.profit-flat { color: #909399; }
+.profit-up {
+  color: var(--color-profit);
+}
+
+.profit-down {
+  color: var(--color-loss);
+}
+
+.profit-flat {
+  color: var(--text-tertiary);
+}
 
 .strategy-card {
-  background: #f9f9f9;
-  border-radius: 6px;
-  padding: 1rem;
-  margin-top: 1rem;
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
 }
 
 .strategy-title {
-  font-weight: bold;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-2);
+  font-weight: var(--font-weight-semibold);
 }
 
 .strategy-content {
-  font-size: 14px;
-  line-height: 1.8;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-loose);
 
   ul {
-    margin: 0.5rem 0;
-    padding-left: 1.5rem;
+    margin: var(--space-2) 0;
+    padding-left: var(--space-5);
 
-    li { margin: 0.25rem 0; }
+    li {
+      margin: var(--space-1) 0;
+    }
   }
 }
 
@@ -606,71 +553,75 @@ void totalAssetsSeries.value;
   max-height: 400px;
   overflow: auto;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .op-table {
   width: 100%;
+  font-size: var(--font-size-xs);
   border-collapse: collapse;
-  font-size: 13px;
 
-  th, td {
-    padding: 0.5rem 0.75rem;
+  th,
+  td {
+    padding: var(--space-2) var(--space-3);
     text-align: right;
-    border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
+    border-bottom: 1px solid var(--border-color);
   }
 
-  th:first-child, td:first-child,
-  th:nth-child(2), td:nth-child(2) {
+  th:first-child,
+  td:first-child,
+  th:nth-child(2),
+  td:nth-child(2) {
     text-align: left;
   }
 
   thead th {
     position: sticky;
     top: 0;
-    background: var(--card-bg);
-    font-weight: bold;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-secondary);
+    background: var(--card-bg);
   }
 
   tbody tr:hover {
-    background: var(--hover-bg);
+    background: var(--bg-hover);
   }
 
   .empty {
+    padding: var(--space-5);
     text-align: center;
     color: var(--text-secondary);
-    padding: 1.5rem;
   }
 }
 
-.tag {
+// 操作类型状态标签（与全局 .tag 区分：此处为方角状态标记）
+.status-tag {
   display: inline-block;
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: bold;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  border-radius: var(--radius-sm);
 
-  &.tag-buy {
-    background: #fef0f0;
-    color: #f56c6c;
+  &.status-tag-buy {
+    background: var(--bg-danger-subtle);
+    color: var(--color-buy);
   }
 
-  &.tag-sell {
-    background: #f0f9eb;
-    color: #67c23a;
+  &.status-tag-sell {
+    background: var(--bg-success-subtle);
+    color: var(--color-sell);
   }
 
-  &.tag-dividend {
-    background: #ecf5ff;
-    color: #409eff;
+  &.status-tag-dividend {
+    background: var(--bg-info-subtle);
+    color: var(--color-info);
   }
 
-  &.tag-virtual {
-    background: #f4f4f5;
-    color: #909399;
-    border: 1px dashed #c0c4cc;
+  &.status-tag-virtual {
+    background: var(--bg-tertiary);
+    color: var(--text-tertiary);
+    border: 1px dashed var(--border-color-strong);
   }
 }
 </style>

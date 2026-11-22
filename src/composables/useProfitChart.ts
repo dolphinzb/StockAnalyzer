@@ -1,4 +1,5 @@
 import { ref } from 'vue';
+import { token } from '../utils/designTokens';
 
 /** Tooltip 信息 */
 export interface TooltipInfo {
@@ -62,8 +63,8 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
 
     const {
       title = '',
-      colorPositive = '#ef4444',
-      colorNegative = '#10b981',
+      colorPositive = token('--color-profit'),
+      colorNegative = token('--color-loss'),
     } = options;
 
     // 清空画布
@@ -71,7 +72,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
 
     if (data.length === 0) {
       // 无数据时显示提示
-      ctx.fillStyle = '#9ca3af';
+      ctx.fillStyle = token('--text-tertiary');
       ctx.font = '14px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('暂无数据', canvas.width / 2, canvas.height / 2);
@@ -95,14 +96,14 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
 
     // 绘制标题
     if (title) {
-      ctx.fillStyle = '#374151';
+      ctx.fillStyle = token('--text-primary');
       ctx.font = 'bold 14px sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(title, padding.left, 20);
     }
 
     // 绘制X轴（零线）
-    ctx.strokeStyle = '#d1d5db';
+    ctx.strokeStyle = token('--border-color-strong');
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(padding.left, zeroY);
@@ -147,7 +148,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
 
     // 绘制Y轴刻度标签
     const yTicks = 5;
-    ctx.fillStyle = '#6b7280';
+    ctx.fillStyle = token('--text-secondary');
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'right';
     for (let i = 0; i <= yTicks; i++) {
@@ -156,7 +157,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
       const y = padding.top + chartHeight * (1 - ratio);
 
       // 绘制刻度线
-      ctx.strokeStyle = '#e5e7eb';
+      ctx.strokeStyle = token('--border-color-light');
       ctx.beginPath();
       ctx.moveTo(padding.left - 5, y);
       ctx.lineTo(padding.left, y);
@@ -199,7 +200,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
       ctx.save();
       ctx.translate(x + barWidth / 2, displayHeight - padding.bottom + 15);
       ctx.rotate(-Math.PI / 4);
-      ctx.fillStyle = '#6b7280';
+      ctx.fillStyle = token('--text-secondary');
 
       // 根据数据量调整字体大小
       const fontSize = data.length > 12 ? 9 : 10;
@@ -356,7 +357,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
 
     if (totalValue === 0 || data.length === 0) {
       // 无数据时显示提示
-      ctx.fillStyle = '#9ca3af';
+      ctx.fillStyle = token('--text-tertiary');
       ctx.font = '14px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('暂无数据', displayWidth / 2, displayHeight / 2);
@@ -391,7 +392,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
       ctx.fill();
 
       // 绘制扇区边框
-      ctx.strokeStyle = '#ffffff';
+      ctx.strokeStyle = token('--text-on-color');
       ctx.lineWidth = 2;
       ctx.stroke();
 
@@ -419,7 +420,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
         const labelX = centerX + Math.cos(midAngle) * labelRadius;
         const labelY = centerY + Math.sin(midAngle) * labelRadius;
 
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = token('--text-on-color');
         ctx.font = 'bold 12px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -558,9 +559,9 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
 
     const {
       title = '',
-      lineColorBalance = '#3b82f6',
-      lineColorHoldings = '#f97316',
-      lineColorTotal = '#10b981',
+      lineColorBalance = token('--color-info'),
+      lineColorHoldings = token('--color-warning'),
+      lineColorTotal = token('--color-success'),
     } = options;
 
     // 获取CSS显示尺寸
@@ -571,7 +572,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (data.length === 0) {
-      ctx.fillStyle = '#9ca3af';
+      ctx.fillStyle = token('--text-tertiary');
       ctx.font = '14px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('暂无数据', displayWidth / 2, displayHeight / 2);
@@ -596,7 +597,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
 
     // 绘制标题
     if (title) {
-      ctx.fillStyle = '#374151';
+      ctx.fillStyle = token('--text-primary');
       ctx.font = 'bold 14px sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(title, padding.left, 20);
@@ -604,7 +605,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
 
     // 绘制网格线和Y轴标签
     const yTicks = 5;
-    ctx.fillStyle = '#6b7280';
+    ctx.fillStyle = token('--text-secondary');
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'right';
     for (let i = 0; i <= yTicks; i++) {
@@ -613,7 +614,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
       const y = padding.top + chartHeight * (1 - ratio);
 
       // 绘制网格线
-      ctx.strokeStyle = '#f3f4f6';
+      ctx.strokeStyle = token('--bg-tertiary');
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(padding.left, y);
@@ -628,7 +629,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
     }
 
     // 绘制坐标轴
-    ctx.strokeStyle = '#d1d5db';
+    ctx.strokeStyle = token('--border-color-strong');
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(padding.left, padding.top);
@@ -692,7 +693,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
         // 外圈
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = token('--text-on-color');
         ctx.fill();
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
@@ -735,7 +736,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
     });
 
     // 绘制X轴标签（月份）
-    ctx.fillStyle = '#6b7280';
+    ctx.fillStyle = token('--text-secondary');
     const labelInterval = data.length > 24 ? 3 : data.length > 12 ? 2 : 1;
     data.forEach((item, index) => {
       if (index % labelInterval !== 0 && index !== data.length - 1) return;
@@ -755,7 +756,7 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
     // 总资产图例
     ctx.fillStyle = lineColorTotal;
     ctx.fillRect(displayWidth - padding.right - 270, legendY, 12, 12);
-    ctx.fillStyle = '#374151';
+    ctx.fillStyle = token('--text-primary');
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText('总资产', displayWidth - padding.right - 254, legendY + 10);
@@ -763,13 +764,13 @@ export function useProfitChart(canvasRef: HTMLCanvasElement | null) {
     // 账户余额图例
     ctx.fillStyle = lineColorBalance;
     ctx.fillRect(displayWidth - padding.right - 180, legendY, 12, 12);
-    ctx.fillStyle = '#374151';
+    ctx.fillStyle = token('--text-primary');
     ctx.fillText('账户余额', displayWidth - padding.right - 164, legendY + 10);
 
     // 持仓市值图例
     ctx.fillStyle = lineColorHoldings;
     ctx.fillRect(displayWidth - padding.right - 90, legendY, 12, 12);
-    ctx.fillStyle = '#374151';
+    ctx.fillStyle = token('--text-primary');
     ctx.fillText('持仓市值', displayWidth - padding.right - 74, legendY + 10);
 
     // 设置鼠标事件

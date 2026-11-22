@@ -8,12 +8,8 @@
           {{ formatPrice(shIndex.price) }}
         </span>
         <span class="index-change" :class="getPriceClass(shIndex.direction)">
-          <svg v-if="shIndex.direction === 'up'" class="arrow" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 4l-8 8h5v8h6v-8h5z"/>
-          </svg>
-          <svg v-if="shIndex.direction === 'down'" class="arrow" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 20l8-8h-5v-8h-6v8h-5z"/>
-          </svg>
+          <AppIcon v-if="shIndex.direction === 'up'" name="arrow-up" :size="16" class="arrow" />
+          <AppIcon v-if="shIndex.direction === 'down'" name="arrow-up" :size="16" class="arrow is-down" />
           {{ formatChange(shIndex.change) }}
         </span>
         <span class="index-change-percent" :class="getPriceClass(shIndex.direction)">
@@ -33,12 +29,8 @@
           {{ formatPrice(kc50Index.price) }}
         </span>
         <span class="index-change" :class="getPriceClass(kc50Index.direction)">
-          <svg v-if="kc50Index.direction === 'up'" class="arrow" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 4l-8 8h5v8h6v-8h5z"/>
-          </svg>
-          <svg v-if="kc50Index.direction === 'down'" class="arrow" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 20l8-8h-5v-8h-6v8h-5z"/>
-          </svg>
+          <AppIcon v-if="kc50Index.direction === 'up'" name="arrow-up" :size="16" class="arrow" />
+          <AppIcon v-if="kc50Index.direction === 'down'" name="arrow-up" :size="16" class="arrow is-down" />
           {{ formatChange(kc50Index.change) }}
         </span>
         <span class="index-change-percent" :class="getPriceClass(kc50Index.direction)">
@@ -58,12 +50,8 @@
           {{ formatPrice(szIndex.price) }}
         </span>
         <span class="index-change" :class="getPriceClass(szIndex.direction)">
-          <svg v-if="szIndex.direction === 'up'" class="arrow" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 4l-8 8h5v8h6v-8h5z"/>
-          </svg>
-          <svg v-if="szIndex.direction === 'down'" class="arrow" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 20l8-8h-5v-8h-6v8h-5z"/>
-          </svg>
+          <AppIcon v-if="szIndex.direction === 'up'" name="arrow-up" :size="16" class="arrow" />
+          <AppIcon v-if="szIndex.direction === 'down'" name="arrow-up" :size="16" class="arrow is-down" />
           {{ formatChange(szIndex.change) }}
         </span>
         <span class="index-change-percent" :class="getPriceClass(szIndex.direction)">
@@ -81,6 +69,7 @@
 </template>
 
 <script setup lang="ts">
+import AppIcon from './ui/AppIcon.vue';
 import { computed } from 'vue';
 import type { IndexData, IndexDataState, IndexDirection } from '../types';
 
@@ -147,18 +136,18 @@ function formatChangePercent(percent: number): string {
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  height: 30px;
-  padding: 0 16px;
+  height: 2.25rem;
+  padding: 0 var(--space-4);
   background-color: var(--title-bar-bg);
   border-top: 1px solid var(--border-color);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-family: 'Courier New', monospace;
 }
 
 .index-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   flex: 1;
   min-width: 0;
 }
@@ -172,42 +161,46 @@ function formatChangePercent(percent: number): string {
 }
 
 .index-name {
-  color: var(--text-color);
+  color: var(--text-primary);
   font-weight: 500;
 }
 
 .index-price {
   font-weight: 600;
-  font-size: clamp(12px, 1.2vw, 14px);
+  font-size: var(--font-size-sm);
 }
 
 .index-change {
-  font-size: clamp(11px, 1vw, 13px);
+  font-size: var(--font-size-xs);
 }
 
 .index-change-percent {
-  font-size: clamp(11px, 1vw, 13px);
+  font-size: var(--font-size-xs);
 }
 
 .arrow {
-  width: 12px;
-  height: 12px;
+  display: inline-block;
   vertical-align: middle;
+}
+
+/* 下跌方向由同一图标旋转 180 度表达 */
+.arrow.is-down {
+  transform: rotate(180deg);
 }
 
 /* 上涨样式 - 红色 */
 .price-up {
-  color: #e53935;
+  color: var(--color-profit);
 }
 
 /* 下跌样式 - 绿色 */
 .price-down {
-  color: #43a047;
+  color: var(--color-loss);
 }
 
-/* 持平样式 - 黑色 */
+/* 持平样式 - 常规正文色 */
 .price-flat {
-  color: #000000;
+  color: var(--text-primary);
 }
 
 .placeholder {
@@ -217,14 +210,14 @@ function formatChangePercent(percent: number): string {
 /* 错误提示：栏内右侧紧凑标签 */
 .error-indicator {
   flex: 0 0 auto;
-  margin-left: 8px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  background-color: rgba(255, 152, 0, 0.15);
-  border: 1px solid rgba(255, 152, 0, 0.45);
-  color: #d97706;
-  font-size: 11px;
-  line-height: 16px;
+  margin-left: var(--space-2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-warning-subtle);
+  border: 1px solid var(--color-warning);
+  color: var(--color-warning);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-tight);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

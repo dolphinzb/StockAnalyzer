@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './ui/AppIcon.vue';
 import { getCurrentInstance, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Position } from '../types';
 import TradeRecordItem from './TradeRecordItem.vue';
@@ -200,7 +201,9 @@ watch([() => props.isExpanded, () => tradeRecords.value.length], async () => {
       <span class="col-current">{{ formatPrice(position.currentPrice) }}</span>
       <span class="col-profit" :class="getProfitClass(position.profitAmount)">{{ formatProfitAmount(position.profitAmount) }}</span>
       <span class="col-ratio" :class="getProfitClass(position.profitAmount)">{{ formatProfitRatio(position.profitRatio) }}</span>
-      <span class="col-arrow" :class="{ expanded: isExpanded }">▼</span>
+      <span class="col-arrow" :class="{ expanded: isExpanded }">
+        <AppIcon name="chevron-down" :size="16" />
+      </span>
     </div>
 
     <div v-if="isExpanded" class="trade-records">
@@ -254,14 +257,14 @@ watch([() => props.isExpanded, () => tradeRecords.value.length], async () => {
 .position-summary {
   display: grid;
   grid-template-columns: $position-summary-columns;
-  gap: 0.5rem;
-  padding: 0.5rem;
+  gap: var(--space-2);
+  padding: var(--space-2);
   cursor: pointer;
   align-items: center;
   transition: background-color 0.2s;
 
   &:hover {
-    background-color: var(--hover-bg);
+    background-color: var(--bg-hover);
   }
 }
 
@@ -292,7 +295,7 @@ watch([() => props.isExpanded, () => tradeRecords.value.length], async () => {
 
 .col-arrow {
   text-align: center;
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   transition: transform 0.2s;
 
@@ -302,22 +305,22 @@ watch([() => props.isExpanded, () => tradeRecords.value.length], async () => {
 }
 
 .profit-positive {
-  color: #e53935;
+  color: var(--color-profit);
 }
 
 .profit-negative {
-  color: #43a047;
+  color: var(--color-loss);
 }
 
 .trade-records {
-  padding: 0.5rem;
+  padding: var(--space-2);
   background-color: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
 }
 
 .loading,
 .empty-records {
-  padding: 1rem;
+  padding: var(--space-4);
   text-align: center;
   color: var(--text-secondary);
 }
@@ -330,23 +333,23 @@ watch([() => props.isExpanded, () => tradeRecords.value.length], async () => {
 .records-list {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 /* 加载更多提示样式（FR-016） */
 .load-more-tip {
-  padding: 0.5rem;
+  padding: var(--space-2);
   text-align: center;
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: var(--font-size-xs);
 }
 
 .record-header {
   display: grid;
   grid-template-columns: $position-record-columns;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  font-size: 0.75rem;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   font-weight: 500;
 

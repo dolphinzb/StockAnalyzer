@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './ui/AppIcon.vue';
 const props = defineProps<{
   record: {
     id: number;
@@ -68,8 +69,12 @@ function formatPrice(price: number | null): string {
     <span class="col-holding-count">{{ record.holdingCount }}</span>
     <span class="col-holding-price">{{ formatPrice(record.holdingPrice) }}</span>
     <div class="col-actions">
-      <button class="btn-edit" @click="emit('edit', record)" title="编辑">✎</button>
-      <button class="btn-delete" @click="emit('delete', record.id)" title="删除">✕</button>
+      <button class="btn btn-ghost btn-icon" @click="emit('edit', record)" title="编辑">
+        <AppIcon name="edit" :size="16" />
+      </button>
+      <button class="btn btn-ghost-danger btn-icon" @click="emit('delete', record.id)" title="删除">
+        <AppIcon name="trash" :size="16" />
+      </button>
     </div>
   </div>
 </template>
@@ -80,13 +85,13 @@ function formatPrice(price: number | null): string {
 .trade-record-item {
   display: grid;
   grid-template-columns: $position-record-columns;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  font-size: 0.875rem;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  font-size: var(--font-size-sm);
   align-items: center;
 
   &:hover {
-    background-color: var(--hover-bg);
+    background-color: var(--bg-hover);
   }
 }
 
@@ -109,15 +114,15 @@ function formatPrice(price: number | null): string {
   text-align: center;
 
   &.type-buy {
-    color: var(--color-buy, #43a047);
+    color: var(--color-buy, var(--color-loss));
   }
 
   &.type-sell {
-    color: var(--color-sell, #e53935);
+    color: var(--color-sell, var(--color-profit));
   }
 
   &.type-dividend {
-    color: var(--color-dividend, #fb8c00);
+    color: var(--color-dividend, var(--color-warning));
   }
 }
 
@@ -135,32 +140,8 @@ function formatPrice(price: number | null): string {
 
 .col-actions {
   display: flex;
-  gap: 0.25rem;
+  gap: var(--space-1);
   justify-content: center;
 
-  button {
-    background: none;
-    border: 1px solid var(--border-color);
-    border-radius: 3px;
-    cursor: pointer;
-    padding: 0.2rem 0.4rem;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    transition: all 0.2s;
-
-    &:hover {
-      background-color: var(--hover-bg);
-    }
-  }
-
-  .btn-edit:hover {
-    color: var(--color-primary, #1976d2);
-    border-color: var(--color-primary, #1976d2);
-  }
-
-  .btn-delete:hover {
-    color: var(--color-sell, #e53935);
-    border-color: var(--color-sell, #e53935);
-  }
 }
 </style>

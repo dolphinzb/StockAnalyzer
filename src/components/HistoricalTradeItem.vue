@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './ui/AppIcon.vue';
 import { ref, watch } from 'vue';
 import type { HistoricalTradeRecord, TradeDetail } from '../types';
 import HistoricalTradeDetail from './HistoricalTradeDetail.vue';
@@ -45,7 +46,7 @@ function formatProfitRatio(ratio: number): string {
 function getProfitColor(profit: number): string {
   if (profit > 0) return 'var(--color-profit)';
   if (profit < 0) return 'var(--color-loss)';
-  return 'var(--text-color)';
+  return 'var(--text-primary)';
 }
 
 /**
@@ -96,7 +97,7 @@ async function loadDetails(): Promise<void> {
           <span class="period-dates">{{ record.openTime }} ~ {{ record.closeTime }}</span>
         </div>
         <span class="expand-icon" :class="{ expanded: isExpanded }">
-          {{ isExpanded ? '▼' : '▶' }}
+          <AppIcon name="chevron-right" :size="16" />
         </span>
       </div>
     </div>
@@ -157,7 +158,7 @@ async function loadDetails(): Promise<void> {
   transition: background-color 0.2s ease;
 
   &:hover {
-    background-color: var(--hover-bg);
+    background-color: var(--bg-hover);
   }
 }
 
@@ -165,43 +166,43 @@ async function loadDetails(): Promise<void> {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
+  padding: var(--space-4);
   cursor: pointer;
   user-select: none;
 
   &:hover {
-    background-color: rgba(0, 0, 0, 0.02);
+    background-color: var(--bg-subtle);
   }
 }
 
 .stock-info {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .stock-code {
-  font-size: 1rem;
+  font-size: var(--font-size-sm);
   font-weight: 600;
-  color: var(--text-color);
+  color: var(--text-primary);
 }
 
 .stock-name {
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .trade-period {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  font-size: 0.75rem;
+  gap: var(--space-1);
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 
@@ -214,37 +215,38 @@ async function loadDetails(): Promise<void> {
 }
 
 .expand-icon {
-  font-size: 0.75rem;
+  display: inline-flex;
   color: var(--text-secondary);
   transition: transform 0.2s ease;
 
+  // 收起时指向右，展开时指向下
   &.expanded {
-    transform: rotate(0deg);
+    transform: rotate(90deg);
   }
 }
 
 .trade-stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 0.75rem;
-  padding: 0 1rem 1rem 1rem;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4) var(--space-4);
 }
 
 .stat-group {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .stat-label {
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 
 .stat-value {
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
   font-weight: 500;
-  color: var(--text-color);
+  color: var(--text-primary);
 }
 
 .profit-value {
@@ -256,9 +258,9 @@ async function loadDetails(): Promise<void> {
 }
 
 .loading-details {
-  padding: 1rem;
+  padding: var(--space-4);
   text-align: center;
   color: var(--text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
 }
 </style>

@@ -121,24 +121,28 @@ function handleShowKlineChart(stockCode: string, stockName: string) {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
 .stock-list-header {
   display: grid;
   grid-template-columns: $stock-list-columns;
-  gap: 0.375rem;
-  padding: 0.75rem 1rem;
+  gap: var(--space-2);
+  // 右侧额外预留滚动条宽度：名称列是弹性列（1fr），表头与数据行的可用宽度必须一致才不会错位
+  padding: var(--space-3) calc(var(--space-4) + 0.5rem) var(--space-3) var(--space-4);
   background-color: var(--bg-secondary);
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-tight);
   color: var(--text-secondary);
 }
 
 .stock-list-body {
   flex: 1;
   overflow-y: auto;
+  // 无论是否出现滚动条都预留滚动条空间，保证与表头列宽一致
+  scrollbar-gutter: stable;
 }
 
 .stock-list-header span {
@@ -156,6 +160,6 @@ function handleShowKlineChart(stockCode: string, stockName: string) {
 
 :deep(.drag-chosen) {
   background-color: var(--bg-highlight);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
 }
 </style>

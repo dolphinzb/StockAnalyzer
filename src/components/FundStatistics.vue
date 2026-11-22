@@ -10,7 +10,7 @@
     <!-- 错误状态 -->
     <div v-else-if="loadError" class="error-state">
       <p class="error-message">{{ loadError }}</p>
-      <button class="btn-retry" @click="loadData">重试</button>
+      <button class="btn btn-secondary" @click="loadData">重试</button>
     </div>
 
     <!-- 数据展示 -->
@@ -169,6 +169,7 @@ import { useProfitChart } from '../composables/useProfitChart';
 import { useFundManagementStore } from '../stores/fundManagement';
 import { formatPrice } from '../utils/formatPrice';
 import { buildHoldingsRows } from '../utils/holdings';
+import { token } from '../utils/designTokens';
 
 const store = useFundManagementStore();
 
@@ -296,7 +297,7 @@ function drawPieChart(): void {
   const pieData = [
     ...holdingSlices,
     ...(overview.currentAccountBalance > 0
-      ? [{ label: '账户余额', value: overview.currentAccountBalance, color: '#3b82f6' }]
+      ? [{ label: '账户余额', value: overview.currentAccountBalance, color: token('--color-info') }]
       : []),
   ];
 
@@ -344,11 +345,9 @@ function drawLineChart(): void {
   }));
 
   // 绘制折线图
+  // 折线颜色由 useProfitChart 的默认值（令牌 --color-info / --color-warning / --color-success）提供
   lineChartInstance.drawMultiLineChart(lineData, {
     title: '',
-    lineColorBalance: '#3b82f6',
-    lineColorHoldings: '#f97316',
-    lineColorTotal: '#10b981',
   });
 
   // 同步tooltip信息
@@ -386,13 +385,13 @@ onUnmounted(() => {
 
 <style scoped lang="scss">
 .fund-statistics {
-  padding: 16px;
+  padding: var(--space-4);
 
   h2 {
-    margin: 0 0 16px 0;
-    font-size: 18px;
+    margin: 0 0 var(--space-4) 0;
+    font-size: var(--font-size-lg);
     font-weight: 600;
-    color: #1f2937;
+    color: var(--text-primary);
   }
 
   .loading-state,
@@ -401,8 +400,8 @@ onUnmounted(() => {
     justify-content: center;
     align-items: center;
     min-height: 200px;
-    color: #9ca3af;
-    font-size: 14px;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-sm);
   }
 
   .error-state {
@@ -411,88 +410,75 @@ onUnmounted(() => {
     align-items: center;
     justify-content: center;
     min-height: 200px;
-    gap: 12px;
+    gap: var(--space-3);
 
     .error-message {
-      color: #ef4444;
-      font-size: 14px;
       margin: 0;
+      font-size: var(--font-size-sm);
+      color: var(--color-danger);
     }
 
-    .btn-retry {
-      padding: 8px 16px;
-      background-color: #3b82f6;
-      color: #ffffff;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 14px;
-
-      &:hover {
-        background-color: #2563eb;
-      }
-    }
   }
 
   .statistics-content {
     .cards-row {
       display: flex;
-      gap: 16px;
-      margin-bottom: 24px;
+      gap: var(--space-4);
+      margin-bottom: var(--space-5);
 
       .stat-card {
         flex: 1;
-        padding: 16px;
-        background-color: #f9fafb;
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
+        padding: var(--space-4);
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: var(--radius-lg);
         text-align: center;
 
         .stat-label {
-          font-size: 13px;
-          color: #6b7280;
-          margin-bottom: 8px;
+          font-size: var(--font-size-sm);
+          color: var(--text-secondary);
+          margin-bottom: var(--space-2);
         }
 
         .stat-value {
-          font-size: 20px;
+          font-size: var(--font-size-xl);
           font-weight: 700;
 
           &.balance {
-            color: #3b82f6;
+            color: var(--color-info);
           }
 
           &.holdings {
-            color: #f97316;
+            color: var(--color-warning);
           }
 
           &.total {
-            color: #1f2937;
+            color: var(--text-primary);
           }
         }
 
         &.highlight {
-          background-color: #eff6ff;
-          border-color: #bfdbfe;
+          background-color: var(--bg-info-subtle);
+          border-color: var(--bg-info-subtle);
         }
       }
     }
 
     .chart-section {
-      margin-top: 24px;
+      margin-top: var(--space-5);
 
       .section-title {
-        font-size: 15px;
+        font-size: var(--font-size-md);
         font-weight: 600;
-        color: #374151;
-        margin: 0 0 12px 0;
+        color: var(--text-primary);
+        margin: 0 0 var(--space-3) 0;
       }
 
       .chart-container {
-        background-color: #ffffff;
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        padding: 16px;
+        background-color: var(--bg-primary);
+        border: 1px solid var(--border-color-light);
+        border-radius: var(--radius-lg);
+        padding: var(--space-4);
       }
 
       .pie-canvas,
@@ -503,7 +489,7 @@ onUnmounted(() => {
       // 资产分布：左侧饼图 + 右侧持仓明细表格
       .distribution-layout {
         display: flex;
-        gap: 16px;
+        gap: var(--space-4);
         align-items: stretch;
 
         .pie-panel {
@@ -516,10 +502,10 @@ onUnmounted(() => {
           min-width: 420px;
           display: flex;
           flex-direction: column;
-          background-color: #ffffff;
-          border: 1px solid #e5e7eb;
-          border-radius: 8px;
-          padding: 16px;
+          background-color: var(--bg-primary);
+          border: 1px solid var(--border-color-light);
+          border-radius: var(--radius-lg);
+          padding: var(--space-4);
         }
       }
 
@@ -538,19 +524,19 @@ onUnmounted(() => {
       .holdings-header {
         display: flex;
         align-items: baseline;
-        gap: 8px;
-        margin-bottom: 12px;
+        gap: var(--space-2);
+        margin-bottom: var(--space-3);
 
         .holdings-title {
           margin: 0;
-          font-size: 14px;
+          font-size: var(--font-size-sm);
           font-weight: 600;
-          color: #374151;
+          color: var(--text-primary);
         }
 
         .holdings-subtitle {
-          font-size: 12px;
-          color: #9ca3af;
+          font-size: var(--font-size-xs);
+          color: var(--text-tertiary);
         }
       }
 
@@ -560,8 +546,8 @@ onUnmounted(() => {
         align-items: center;
         justify-content: center;
         min-height: 220px;
-        color: #9ca3af;
-        font-size: 13px;
+        color: var(--text-tertiary);
+        font-size: var(--font-size-sm);
       }
 
       .holdings-table-wrapper {
@@ -573,13 +559,13 @@ onUnmounted(() => {
       .holdings-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 12px;
+        font-size: var(--font-size-xs);
         white-space: nowrap;
 
         th,
         td {
-          padding: 8px 10px;
-          border-bottom: 1px solid #f3f4f6;
+          padding: var(--space-2) var(--space-3);
+          border-bottom: 1px solid var(--bg-tertiary);
           text-align: left;
         }
 
@@ -588,13 +574,13 @@ onUnmounted(() => {
           position: sticky;
           top: 0;
           z-index: 1;
-          background-color: #f9fafb;
-          color: #6b7280;
+          background-color: var(--bg-secondary);
+          color: var(--text-secondary);
           font-weight: 600;
         }
 
         tbody tr:hover {
-          background-color: #f9fafb;
+          background-color: var(--bg-secondary);
         }
 
         .col-num,
@@ -607,8 +593,8 @@ onUnmounted(() => {
           display: inline-block;
           width: 10px;
           height: 10px;
-          border-radius: 2px;
-          margin-right: 6px;
+          border-radius: var(--radius-sm);
+          margin-right: var(--space-2);
           vertical-align: middle;
         }
 
@@ -620,74 +606,74 @@ onUnmounted(() => {
         }
 
         .stock-name {
-          color: #1f2937;
+          color: var(--text-primary);
           font-weight: 500;
         }
 
         .stock-code {
-          color: #9ca3af;
-          font-size: 11px;
+          color: var(--text-tertiary);
+          font-size: var(--font-size-xs);
         }
 
         .percent-value {
-          color: #374151;
+          color: var(--text-primary);
         }
 
         // 占比进度条
         .percent-bar {
           display: block;
           height: 4px;
-          margin-top: 4px;
-          background-color: #f3f4f6;
-          border-radius: 2px;
+          margin-top: var(--space-1);
+          background-color: var(--bg-tertiary);
+          border-radius: var(--radius-sm);
           overflow: hidden;
         }
 
         .percent-bar-inner {
           display: block;
           height: 100%;
-          border-radius: 2px;
+          border-radius: var(--radius-sm);
         }
 
         // 缺少行情数据的行整体置灰
         .missing-data {
           .stock-name {
-            color: #9ca3af;
+            color: var(--text-tertiary);
           }
         }
 
         .missing-value {
-          color: #9ca3af;
+          color: var(--text-tertiary);
         }
 
         tfoot td {
-          border-top: 1px solid #e5e7eb;
+          border-top: 1px solid var(--border-color-light);
           border-bottom: none;
-          background-color: #f9fafb;
-          color: #374151;
+          background-color: var(--bg-secondary);
+          color: var(--text-primary);
           font-weight: 600;
         }
       }
 
       .holdings-hint {
-        margin: 8px 0 0 0;
-        font-size: 12px;
-        color: #b45309;
+        margin: var(--space-2) 0 0 0;
+        font-size: var(--font-size-xs);
+        color: var(--color-warning);
       }
     }
   }
 
   .chart-tooltip {
     position: fixed;
-    background-color: rgba(31, 41, 55, 0.9);
-    color: #ffffff;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 12px;
+    background-color: var(--chart-tooltip-bg);
+    color: var(--text-on-color);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-xs);
     pointer-events: none;
     z-index: 1000;
     white-space: nowrap;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-md);
 
     &.line-tooltip {
       white-space: pre-line;

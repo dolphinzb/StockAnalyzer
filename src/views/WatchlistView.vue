@@ -181,22 +181,22 @@ function handleCloseKlineChart() {
 </script>
 
 <template>
-  <div class="watchlist-view">
-    <header class="watchlist-header">
-      <h2>自选股</h2>
+  <div class="page watchlist-view">
+    <header class="page-header">
+      <h2 class="page-title">自选股</h2>
       <div class="header-actions">
         <span v-if="lastRefreshTime" class="last-refresh">
           最后刷新: {{ new Date(lastRefreshTime).toLocaleString() }}
         </span>
         <RefreshButton @refresh="store.refreshPrices" :loading="isRefreshing" />
         <button
-          class="btn-secondary"
+          class="btn btn-secondary"
           :disabled="sortedStocks.length === 0 || store.isBatchDownloading"
           @click="handleOpenBatchDownload"
         >
           下载K线
         </button>
-        <button class="btn-add" @click="handleAddStock">添加股票</button>
+        <button class="btn btn-primary" @click="handleAddStock">添加股票</button>
       </div>
     </header>
 
@@ -242,87 +242,25 @@ function handleCloseKlineChart() {
 
     <div v-if="sortedStocks.length === 0 && !store.isLoading" class="empty-state">
       <p>暂无自选股</p>
-      <button class="btn-add" @click="handleAddStock">添加第一只股票</button>
+      <button class="btn btn-primary" @click="handleAddStock">添加第一只股票</button>
     </div>
   </div>
 </template>
 
 <style scoped lang="scss">
-.watchlist-view {
-  padding: 1rem;
-  height: 100%;
+// 页面骨架、按钮与空状态由全局基础类提供
+.header-actions {
   display: flex;
-  flex-direction: column;
-}
-
-.watchlist-header {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
-
-  h2 {
-    font-size: 1.5rem;
-    margin: 0;
-  }
-
-  .header-actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .last-refresh {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-  }
+  gap: var(--space-4);
 }
 
-.btn-add {
-  padding: 0.5rem 1rem;
-  background-color: var(--color-primary);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.875rem;
-
-  &:hover {
-    background-color: var(--color-primary-dark);
-  }
-}
-
-.btn-secondary {
-  padding: 0.5rem 1rem;
-  background-color: transparent;
-  color: var(--color-primary);
-  border: 1px solid var(--color-primary);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.875rem;
-
-  &:hover:not(:disabled) {
-    background-color: var(--color-primary);
-    color: white;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-}
-
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
+.last-refresh {
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
+}
 
-  p {
-    margin-bottom: 1rem;
-    font-size: 1.125rem;
-  }
+.empty-state p {
+  font-size: var(--font-size-md);
 }
 </style>

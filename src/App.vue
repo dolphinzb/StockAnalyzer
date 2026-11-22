@@ -74,8 +74,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background-color: var(--bg-color);
-  color: var(--text-color);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .app-body {
@@ -96,6 +96,6 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  background-color: var(--bg-color);
+  background-color: var(--bg-primary);
 }
 </style>

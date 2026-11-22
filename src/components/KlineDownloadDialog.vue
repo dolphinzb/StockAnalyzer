@@ -174,8 +174,8 @@ function handleCancel() {
       <span v-if="validationError" class="error-message">{{ validationError }}</span>
 
       <div class="dialog-actions">
-        <button class="btn-cancel" @click="handleCancel">取消</button>
-        <button class="btn-confirm" :disabled="!canSubmit" @click="handleConfirm">确定</button>
+        <button class="btn btn-secondary" @click="handleCancel">取消</button>
+        <button class="btn btn-primary" :disabled="!canSubmit" @click="handleConfirm">确定</button>
       </div>
     </div>
   </Modal>
@@ -185,27 +185,27 @@ function handleCancel() {
 .kline-download-dialog {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .stock-info {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background-color: #f3f4f6;
-  border-radius: 6px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-md);
 
   .stock-code {
     font-family: monospace;
-    font-size: 14px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
-    color: #111827;
+    color: var(--text-primary);
   }
 
   .stock-name {
-    font-size: 14px;
-    color: #6b7280;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
   }
 }
 
@@ -213,25 +213,25 @@ function handleCancel() {
 .period-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 
   .section-label {
-    font-size: 14px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
-    color: #374151;
+    color: var(--text-primary);
   }
 
   .radio-group {
     display: flex;
-    gap: 16px;
+    gap: var(--space-4);
 
     .radio-item {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: var(--space-2);
       cursor: pointer;
-      font-size: 14px;
-      color: #374151;
+      font-size: var(--font-size-sm);
+      color: var(--text-primary);
 
       input[type="radio"] {
         width: 16px;
@@ -255,25 +255,25 @@ function handleCancel() {
 .adjust-type-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 
   .section-label {
-    font-size: 14px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
-    color: #374151;
+    color: var(--text-primary);
   }
 
   .checkbox-group {
     display: flex;
-    gap: 16px;
+    gap: var(--space-4);
 
     .checkbox-item {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: var(--space-2);
       cursor: pointer;
-      font-size: 14px;
-      color: #374151;
+      font-size: var(--font-size-sm);
+      color: var(--text-primary);
 
       input[type="checkbox"] {
         width: 16px;
@@ -294,47 +294,15 @@ function handleCancel() {
 }
 
 .error-message {
-  font-size: 12px;
-  color: #ef4444;
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
 }
 
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
-  margin-top: 8px;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
 }
 
-.btn-cancel,
-.btn-confirm {
-  padding: 8px 20px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-cancel {
-  background-color: #f3f4f6;
-  color: #374151;
-
-  &:hover {
-    background-color: #e5e7eb;
-  }
-}
-
-.btn-confirm {
-  background-color: var(--color-primary);
-  color: white;
-
-  &:hover {
-    background-color: var(--color-primary-dark);
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-}
 </style>

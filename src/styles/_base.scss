@@ -1,0 +1,289 @@
+// ============================================================================
+// 基础控件样式 —— 按钮 / 表单 / 容器 / 页面骨架 / 空状态 / 标签
+//
+// 约束：
+//   1. 本文件是按钮、输入框、卡片、页面标题栏等基础控件的唯一定义处
+//   2. 页面与组件的 scoped 样式中不得重新定义同名规则，只允许组合使用
+//   3. 所有取值必须来自 _tokens.scss，不得书写颜色 / 字号 / 间距字面量
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 按钮
+//   形态：.btn-primary / .btn-secondary / .btn-ghost / .btn-ghost-danger / .btn-danger
+//   尺寸：.btn-sm (32px) / .btn-md (36px，默认)
+//   修饰：.btn-icon（正方形、仅图标）
+// ----------------------------------------------------------------------------
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  height: 2.25rem; // 36px，等同 .btn-md
+  padding: 0 var(--space-3);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  line-height: 1;
+  white-space: nowrap;
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+
+  // 加载中：保留尺寸，禁止交互
+  &.is-loading {
+    cursor: progress;
+    pointer-events: none;
+    opacity: 0.7;
+  }
+}
+
+// 尺寸
+.btn-md {
+  height: 2.25rem; // 36px
+}
+
+.btn-sm {
+  height: 2rem; // 32px
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
+}
+
+// 形态
+.btn-primary {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--text-on-color);
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-primary-dark);
+    border-color: var(--color-primary-dark);
+  }
+
+  &:active:not(:disabled) {
+    background-color: var(--color-primary-dark);
+    border-color: var(--color-primary-dark);
+  }
+}
+
+.btn-secondary {
+  background-color: transparent;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--text-on-color);
+  }
+
+  &:active:not(:disabled) {
+    background-color: var(--color-primary-dark);
+    border-color: var(--color-primary-dark);
+    color: var(--text-on-color);
+  }
+}
+
+.btn-ghost {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+
+  &:hover:not(:disabled) {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  &:active:not(:disabled) {
+    background-color: var(--bg-active);
+    color: var(--color-primary);
+  }
+}
+
+// 危险色幽灵按钮：静止态即为危险色文字，hover 时加浅红底
+.btn-ghost-danger {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--color-danger);
+
+  &:hover:not(:disabled) {
+    background-color: var(--bg-danger-subtle);
+    color: var(--color-danger-dark);
+  }
+
+  &:active:not(:disabled) {
+    background-color: var(--bg-danger-subtle);
+    color: var(--color-danger-dark);
+  }
+}
+
+.btn-danger {
+  background-color: var(--color-danger);
+  border-color: var(--color-danger);
+  color: var(--text-on-color);
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-danger-dark);
+    border-color: var(--color-danger-dark);
+  }
+
+  &:active:not(:disabled) {
+    background-color: var(--color-danger-dark);
+    border-color: var(--color-danger-dark);
+  }
+}
+
+// 图标按钮修饰：正方形、无内边距
+// 图标按钮没有文字，尺寸不随字号走：默认 36px（配 btn-md），sm 为 28px（16px 图标 + 左右各 6px）
+.btn-icon {
+  width: 2.25rem;
+  padding: 0;
+  gap: 0;
+
+  &.btn-sm {
+    width: 1.75rem;
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 表单控件
+// ----------------------------------------------------------------------------
+.input,
+.select,
+.textarea {
+  width: 100%;
+  height: 2.25rem; // 36px，与 .btn 对齐
+  padding: 0 var(--space-2);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+  color: var(--text-primary);
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+
+  &:disabled {
+    background-color: var(--disabled-bg);
+    color: var(--text-disabled);
+    cursor: not-allowed;
+  }
+
+  &::placeholder {
+    color: var(--text-tertiary);
+  }
+}
+
+.select {
+  cursor: pointer;
+}
+
+.textarea {
+  height: auto;
+  min-height: 4rem;
+  padding: var(--space-2);
+  resize: vertical;
+}
+
+.form-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.form-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+// ----------------------------------------------------------------------------
+// 容器
+// ----------------------------------------------------------------------------
+.card {
+  padding: var(--space-4);
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.card-header {
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-2);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  border-bottom: 1px solid var(--border-color);
+}
+
+// ----------------------------------------------------------------------------
+// 页面骨架
+// ----------------------------------------------------------------------------
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--space-4);
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.page-title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  color: var(--text-primary);
+}
+
+.empty-state {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+// ----------------------------------------------------------------------------
+// 标签
+// ----------------------------------------------------------------------------
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 1.5rem; // 24px
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  white-space: nowrap;
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+}

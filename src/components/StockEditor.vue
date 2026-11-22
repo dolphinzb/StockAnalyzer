@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import Modal from './Modal.vue';
 import type { AddStockInput, WatchlistStock, PositionAPI } from '../types';
 
 // 声明全局 window 类型，包含 positionApi
@@ -125,156 +126,87 @@ function handleClose() {
 </script>
 
 <template>
-  <div class="stock-editor-overlay">
-    <div class="stock-editor">
-      <div class="editor-header">
-        <h3>{{ isEditing ? '编辑股票' : '添加股票' }}</h3>
-        <button class="btn-close" @click="handleClose">×</button>
-      </div>
-
-      <form class="editor-form" @submit.prevent="handleSubmit">
-        <div class="form-group">
-          <label for="stockCode">股票代码</label>
-          <div class="input-with-loading">
-            <input
-              id="stockCode"
-              v-model="stockCode"
-              type="text"
-              :disabled="isEditing"
-              placeholder="如: 600519"
-              @blur="handleStockCodeBlur"
-              @keydown="handleStockCodeEnter"
-            />
-            <span v-if="isLoadingStockName" class="loading-indicator">...</span>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label for="stockName">股票名称</label>
+  <Modal
+    :model-value="true"
+    :title="isEditing ? '编辑股票' : '添加股票'"
+    width="400px"
+    :close-on-overlay-click="false"
+    @update:model-value="handleClose"
+  >
+    <form class="editor-form" @submit.prevent="handleSubmit">
+      <div class="form-item">
+        <label class="form-label" for="stockCode">股票代码</label>
+        <div class="input-with-loading">
           <input
-            id="stockName"
-            v-model="stockName"
+            id="stockCode"
+            v-model="stockCode"
+            class="input"
             type="text"
             :disabled="isEditing"
-            placeholder="如: 贵州茅台"
+            placeholder="如: 600519"
+            @blur="handleStockCodeBlur"
+            @keydown="handleStockCodeEnter"
           />
+          <span v-if="isLoadingStockName" class="loading-indicator">...</span>
         </div>
+      </div>
 
-        <div class="form-group">
-          <label for="buyThreshold">买入阈值</label>
-          <input
-            id="buyThreshold"
-            v-model="buyThreshold"
-            type="number"
-            step="0.01"
-            placeholder="当价格低于此值时触发买入告警"
-          />
-        </div>
+      <div class="form-item">
+        <label class="form-label" for="stockName">股票名称</label>
+        <input
+          id="stockName"
+          v-model="stockName"
+          class="input"
+          type="text"
+          :disabled="isEditing"
+          placeholder="如: 贵州茅台"
+        />
+      </div>
 
-        <div class="form-group">
-          <label for="sellThreshold">卖出阈值</label>
-          <input
-            id="sellThreshold"
-            v-model="sellThreshold"
-            type="number"
-            step="0.01"
-            placeholder="当价格高于此值时触发卖出告警"
-          />
-        </div>
+      <div class="form-item">
+        <label class="form-label" for="buyThreshold">买入阈值</label>
+        <input
+          id="buyThreshold"
+          v-model="buyThreshold"
+          class="input"
+          type="number"
+          step="0.01"
+          placeholder="当价格低于此值时触发买入告警"
+        />
+      </div>
 
-        <div v-if="errorMessage" class="error-message">
-          {{ errorMessage }}
-        </div>
+      <div class="form-item">
+        <label class="form-label" for="sellThreshold">卖出阈值</label>
+        <input
+          id="sellThreshold"
+          v-model="sellThreshold"
+          class="input"
+          type="number"
+          step="0.01"
+          placeholder="当价格高于此值时触发卖出告警"
+        />
+      </div>
 
-        <div class="form-actions">
-          <button type="button" class="btn-cancel" @click="handleClose">取消</button>
-          <button type="submit" class="btn-submit">{{ isEditing ? '保存' : '添加' }}</button>
-        </div>
-      </form>
-    </div>
-  </div>
+      <div v-if="errorMessage" class="error-message">
+        {{ errorMessage }}
+      </div>
+    </form>
+
+    <template #footer>
+      <button type="button" class="btn btn-secondary" @click="handleClose">取消</button>
+      <button type="button" class="btn btn-primary" @click="handleSubmit">
+        {{ isEditing ? '保存' : '添加' }}
+      </button>
+    </template>
+  </Modal>
 </template>
 
 <style scoped lang="scss">
-.stock-editor-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(128, 128, 128, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.stock-editor {
-  background-color: #ffffff;
-  border-radius: 8px;
-  width: 400px;
-  max-width: 90vw;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-}
-
-.editor-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid var(--border-color);
-
-  h3 {
-    margin: 0;
-    font-size: 1.125rem;
-  }
-}
-
-.btn-close {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  color: var(--text-secondary);
-  padding: 0;
-  line-height: 1;
-
-  &:hover {
-    color: var(--text-primary);
-  }
-}
-
+// 弹窗容器、标题栏、按钮、表单控件均由 Modal 与全局基础类提供
 .editor-form {
-  padding: 1rem;
-}
-
-.form-group {
-  margin-bottom: 1rem;
-
-  label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-  }
-
-  input {
-    width: 100%;
-    padding: 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 0.875rem;
-
-    &:focus {
-      outline: none;
-      border-color: var(--color-primary);
-    }
-
-    &:disabled {
-      background-color: var(--bg-secondary);
-      cursor: not-allowed;
-    }
-  }
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
 .input-with-loading {
@@ -282,64 +214,32 @@ function handleClose() {
   display: flex;
   align-items: center;
 
-  input {
+  .input {
     flex: 1;
   }
 
   .loading-indicator {
     position: absolute;
-    right: 0.5rem;
+    right: var(--space-2);
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    font-size: 0.875rem;
     animation: pulse 1.5s ease-in-out infinite;
   }
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.5;
   }
 }
 
 .error-message {
-  color: var(--color-danger, #f44336);
-  font-size: 0.875rem;
-  margin-bottom: 1rem;
-}
-
-.form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
-.btn-cancel,
-.btn-submit {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 4px;
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-
-.btn-cancel {
-  background-color: var(--bg-secondary);
-  color: var(--text-primary);
-
-  &:hover {
-    background-color: var(--bg-hover);
-  }
-}
-
-.btn-submit {
-  background-color: var(--color-primary);
-  color: white;
-
-  &:hover {
-    background-color: var(--color-primary-dark);
-  }
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
 }
 </style>

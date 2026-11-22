@@ -15,6 +15,8 @@ import type { HoldingMarketDetail } from '../../shared/types';
  * 持仓标的配色板
  * 按排序结果循环取色，颜色与账户余额扇区（蓝色 #3b82f6）保持区分
  */
+// 分类调色板：用于为多个持股扇区分配可区分的颜色，不属于语义色，不受设计令牌约束。
+// 注意：tests/unit/holdingsBreakdown.test.ts 直接断言前三项取值，修改此数组会破坏该测试。
 export const HOLDINGS_COLORS: string[] = [
   '#f97316', // 橙
   '#10b981', // 绿

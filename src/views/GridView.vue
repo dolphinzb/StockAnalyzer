@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useToast } from '../composables/useToast';
+import { token } from '../utils/designTokens';
 import type { CalculateOpenInput, CalculatePositionInput, OpenResult, Position, PositionResult } from '../types';
 
 defineOptions({
@@ -143,7 +144,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="grid-view">
+  <div class="page grid-view">
     <div class="tabs">
       <button
         :class="['tab', { active: activeTab === 'trade' }]"
@@ -166,8 +167,8 @@ onMounted(() => {
         </div>
         <div class="form-row">
           <div class="form-item">
-            <label>选择持仓股票</label>
-            <select v-model="form.selectedStock" @change="onStockChange(form.selectedStock)">
+            <label class="form-label">选择持仓股票</label>
+            <select class="select" v-model="form.selectedStock" @change="onStockChange(form.selectedStock)">
               <option value="">请选择持仓股票</option>
               <option
                 v-for="item in holdingList"
@@ -179,16 +180,16 @@ onMounted(() => {
             </select>
           </div>
           <div class="form-item">
-            <label>总金额</label>
-            <input
+            <label class="form-label">总金额</label>
+            <input class="input"
               v-model="form.totalAmount"
               type="number"
               placeholder="请输入总金额"
             />
           </div>
           <div class="form-item">
-            <label>当前股价</label>
-            <input
+            <label class="form-label">当前股价</label>
+            <input class="input"
               v-model="form.currentPrice"
               type="number"
               step="0.01"
@@ -198,8 +199,8 @@ onMounted(() => {
         </div>
         <div class="form-row">
           <div class="form-item">
-            <label>当前持仓数量</label>
-            <input
+            <label class="form-label">当前持仓数量</label>
+            <input class="input"
               v-model="form.currentHoldingCount"
               type="number"
               placeholder="请输入当前持仓数量"
@@ -207,8 +208,8 @@ onMounted(() => {
             />
           </div>
           <div class="form-item">
-            <label>持仓均价</label>
-            <input
+            <label class="form-label">持仓均价</label>
+            <input class="input"
               v-model="form.averageHoldingPrice"
               type="number"
               step="0.01"
@@ -217,8 +218,8 @@ onMounted(() => {
             />
           </div>
           <div class="form-item form-item-buttons">
-            <button class="btn-primary" @click="calculate">计算</button>
-            <button class="btn-secondary" @click="reset">重置</button>
+            <button class="btn btn-primary" @click="calculate">计算</button>
+            <button class="btn btn-secondary" @click="reset">重置</button>
           </div>
         </div>
       </div>
@@ -283,7 +284,7 @@ onMounted(() => {
             <span class="desc-label">浮动盈亏</span>
             <span
               :style="{
-                color: computedProfit > 0 ? '#f56c6c' : (computedProfit < 0 ? '#67c23a' : '#909399'),
+                color: computedProfit > 0 ? token('--color-profit') : (computedProfit < 0 ? token('--color-loss') : token('--text-tertiary')),
                 fontWeight: 'bold'
               }"
             >
@@ -346,16 +347,16 @@ onMounted(() => {
         </div>
         <div class="form-row">
           <div class="form-item">
-            <label>总金额</label>
-            <input
+            <label class="form-label">总金额</label>
+            <input class="input"
               v-model="openForm.totalAmount"
               type="number"
               placeholder="请输入总金额"
             />
           </div>
           <div class="form-item">
-            <label>开仓股价</label>
-            <input
+            <label class="form-label">开仓股价</label>
+            <input class="input"
               v-model="openForm.openPrice"
               type="number"
               step="0.01"
@@ -363,8 +364,8 @@ onMounted(() => {
             />
           </div>
           <div class="form-item form-item-buttons">
-            <button class="btn-primary" @click="calculateOpen">计算</button>
-            <button class="btn-secondary" @click="resetOpen">重置</button>
+            <button class="btn btn-primary" @click="calculateOpen">计算</button>
+            <button class="btn btn-secondary" @click="resetOpen">重置</button>
           </div>
         </div>
       </div>
@@ -443,134 +444,69 @@ onMounted(() => {
 </template>
 
 <style scoped lang="scss">
+// 页面骨架、卡片、按钮、表单控件均由全局基础类提供，此处只保留该页特有布局
 .grid-view {
-  padding: 1rem;
-  height: 100%;
   overflow: auto;
 }
 
 .tabs {
   display: flex;
   gap: 0;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
   border-bottom: 2px solid var(--border-color);
 }
 
 .tab {
-  padding: 0.75rem 1.5rem;
-  border: none;
-  background: none;
-  color: var(--text-secondary);
-  font-size: 14px;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
   margin-bottom: -2px;
-  transition: all 0.2s;
+  padding: var(--space-3) var(--space-5);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.2s ease;
 
   &:hover {
-    color: var(--text-color);
+    color: var(--text-primary);
   }
 
   &.active {
-    color: var(--primary-color);
-    border-bottom-color: var(--primary-color);
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
   }
 }
 
 .tab-content {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-}
-
-.card {
-  background: var(--card-bg);
-  border-radius: 8px;
-  padding: 1rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.card-header {
-  font-weight: bold;
-  margin-bottom: 1rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--border-color);
+  gap: var(--space-4);
 }
 
 .form-row {
   display: flex;
-  gap: 1rem;
-  margin-bottom: 1rem;
   flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
 
   &:last-child {
     margin-bottom: 0;
   }
 }
 
+// 表单控件最小宽度，避免窄屏下挤压
 .form-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-
-  label {
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-
-  input, select {
-    padding: 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 14px;
-    min-width: 150px;
-    background: var(--input-bg);
-    color: var(--text-color);
-
-    &:disabled {
-      background: var(--disabled-bg);
-      cursor: not-allowed;
-    }
-
-    &:focus {
-      outline: none;
-      border-color: var(--primary-color);
-    }
+  > .input,
+  > .select {
+    min-width: 9.375rem; // 150px
   }
 }
 
 .form-item-buttons {
   flex-direction: row;
   align-items: flex-end;
-  gap: 0.5rem;
-}
-
-.btn-primary {
-  padding: 0.5rem 1rem;
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-
-  &:hover {
-    background: var(--color-primary-dark);
-  }
-}
-
-.btn-secondary {
-  padding: 0.5rem 1rem;
-  background: var(--secondary-bg);
-  color: var(--text-color);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-
-  &:hover {
-    background: var(--hover-bg);
-  }
+  gap: var(--space-2);
 }
 
 .result-card {
@@ -591,164 +527,146 @@ onMounted(() => {
 .metrics-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
-  margin-bottom: 1rem;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
 }
 
 .metric-card {
-  padding: 1rem;
-  background: var(--secondary-bg);
-  border-radius: 6px;
+  padding: var(--space-4);
   text-align: center;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
 
   &.adjust-buy {
-    background: #fef0f0;
-    border: 1px solid #f56c6c;
+    background: var(--bg-danger-subtle);
+    border: 1px solid var(--color-danger);
   }
 
   &.adjust-sell {
-    background: #f0f9eb;
-    border: 1px solid #67c23a;
+    background: var(--bg-success-subtle);
+    border: 1px solid var(--color-success);
   }
 
   &.adjust-none {
-    background: #f4f4f5;
-    border: 1px solid #909399;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color-strong);
   }
 }
 
 .metric-title {
-  font-size: 12px;
+  margin-bottom: var(--space-2);
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
-  margin-bottom: 0.5rem;
 }
 
 .metric-value {
-  font-size: 20px;
-  font-weight: bold;
-  color: var(--text-color);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
 }
 
 .metric-detail {
-  font-size: 12px;
+  margin-top: var(--space-1);
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
-  margin-top: 0.25rem;
 }
 
 .descriptions {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-  padding: 1rem;
-  background: var(--secondary-bg);
-  border-radius: 6px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
 }
 
 .desc-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 0.25rem 0;
+  justify-content: space-between;
+  padding: var(--space-1) 0;
 }
 
 .desc-label {
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
-  font-size: 14px;
 }
 
 .desc-value {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .desc-hint {
-  margin-left: 0.5rem;
-  font-size: 12px;
+  margin-left: var(--space-2);
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 
-.tag {
-  display: inline-block;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: bold;
-
-  &.tag-success {
-    background: #f0f9eb;
-    color: #67c23a;
-  }
-
-  &.tag-warning {
-    background: #fdf6ec;
-    color: #e6a23c;
-  }
-}
-
 .alert {
-  padding: 1rem;
-  border-radius: 6px;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
 
   &.alert-warning {
-    background: #fdf6ec;
-    border: 1px solid #e6a23c;
+    background: var(--bg-warning-subtle);
+    border: 1px solid var(--color-warning);
   }
 
   &.alert-success {
-    background: #f0f9eb;
-    border: 1px solid #67c23a;
+    background: var(--bg-success-subtle);
+    border: 1px solid var(--color-success);
   }
 
   &.alert-info {
-    background: #f4f4f5;
-    border: 1px solid #909399;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color-strong);
   }
 }
 
 .alert-title {
-  font-weight: bold;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-2);
+  font-weight: var(--font-weight-semibold);
 }
 
 .alert-content {
-  font-size: 14px;
-  line-height: 1.8;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-loose);
 
   div {
-    margin: 0.25rem 0;
+    margin: var(--space-1) 0;
   }
 }
 
 .strategy-card {
-  background: #f9f9f9;
-  border-radius: 6px;
-  padding: 1rem;
-  margin-top: 1rem;
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
 }
 
 .strategy-title {
-  font-weight: bold;
-  margin-bottom: 0.5rem;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  font-weight: var(--font-weight-semibold);
 }
 
 .strategy-content {
-  font-size: 14px;
-  line-height: 1.8;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-loose);
 
   p {
-    margin: 0.5rem 0;
+    margin: var(--space-2) 0;
   }
 
   ul {
-    margin: 0.5rem 0;
-    padding-left: 1.5rem;
+    margin: var(--space-2) 0;
+    padding-left: var(--space-5);
 
     li {
-      margin: 0.25rem 0;
+      margin: var(--space-1) 0;
     }
   }
 }

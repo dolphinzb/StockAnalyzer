@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './ui/AppIcon.vue';
 import { computed, ref, watch } from 'vue';
 import type { BatchDownloadState, BatchStockStatus } from '../stores/watchlist';
 import { KLINE_PERIODS, KLINE_PERIOD_LABELS, type KlineBatchStockResult, type KlinePeriod } from '../types';
@@ -131,11 +132,12 @@ function getRowStatus(stockCode: string): RowStatusView {
   if (item.status === 'success') {
     const parts = buildCountParts(item.result);
     const text = parts.length > 0 ? parts.join(' · ') : '成功';
-    return { status: 'success', text: `✓ ${text}`, title: text };
+    // 图标由模板按 status 渲染，文案不再拼接字符
+    return { status: 'success', text, title: text };
   }
 
   const error = item.error || item.result?.error || '未知错误';
-  return { status: 'failed', text: `✗ ${error}`, title: error };
+  return { status: 'failed', text: error, title: error };
 }
 
 /** 弹窗打开时重置勾选与参数 */
@@ -267,6 +269,16 @@ function handleConfirm() {
               :title="getRowStatus(stock.stockCode).title"
             >
               <span v-if="getRowStatus(stock.stockCode).status === 'downloading'" class="spinner"></span>
+              <AppIcon
+                v-else-if="getRowStatus(stock.stockCode).status === 'success'"
+                name="check"
+                :size="16"
+              />
+              <AppIcon
+                v-else-if="getRowStatus(stock.stockCode).status === 'failed'"
+                name="close"
+                :size="16"
+              />
               {{ getRowStatus(stock.stockCode).text }}
             </span>
           </li>
@@ -308,10 +320,10 @@ function handleConfirm() {
       </span>
 
       <div class="dialog-actions">
-        <button class="btn-cancel" :disabled="isRunning" @click="handleCancel">
+        <button class="btn btn-secondary" :disabled="isRunning" @click="handleCancel">
           {{ isRunning ? '下载中' : '关闭' }}
         </button>
-        <button class="btn-confirm" :disabled="!canSubmit" @click="handleConfirm">{{ confirmText }}</button>
+        <button class="btn btn-primary" :disabled="!canSubmit" @click="handleConfirm">{{ confirmText }}</button>
       </div>
     </div>
   </Modal>
@@ -321,36 +333,36 @@ function handleConfirm() {
 .batch-download-dialog {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .stock-select-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  gap: var(--space-2);
+  border: 1px solid var(--border-color-light);
+  border-radius: var(--radius-md);
   overflow: hidden;
 
   .stock-select-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 12px;
-    background-color: #f9fafb;
-    border-bottom: 1px solid #e5e7eb;
+    padding: var(--space-2) var(--space-3);
+    background-color: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color-light);
   }
 
   .selected-count {
-    font-size: 13px;
-    color: #6b7280;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
   }
 
   .empty-hint {
     margin: 0;
-    padding: 16px 12px;
-    font-size: 13px;
-    color: #6b7280;
+    padding: var(--space-4) var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
     text-align: center;
   }
 }
@@ -367,23 +379,23 @@ function handleConfirm() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
-  border-bottom: 1px solid #f3f4f6;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--bg-tertiary);
 
   &:last-child {
     border-bottom: none;
   }
 
   &:hover {
-    background-color: #f9fafb;
+    background-color: var(--bg-secondary);
   }
 }
 
 .stock-select {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   cursor: pointer;
   min-width: 0;
 
@@ -397,14 +409,14 @@ function handleConfirm() {
 
   .stock-code {
     font-family: monospace;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
-    color: #111827;
+    color: var(--text-primary);
   }
 
   .stock-name {
-    font-size: 13px;
-    color: #6b7280;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -414,16 +426,16 @@ function handleConfirm() {
 .stock-status {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   flex-shrink: 0;
   max-width: 55%;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 
   &.status-pending {
-    color: #9ca3af;
+    color: var(--text-tertiary);
   }
 
   &.status-downloading {
@@ -431,11 +443,11 @@ function handleConfirm() {
   }
 
   &.status-success {
-    color: #16a34a;
+    color: var(--color-success);
   }
 
   &.status-failed {
-    color: #ef4444;
+    color: var(--color-danger);
   }
 }
 
@@ -444,7 +456,7 @@ function handleConfirm() {
   height: 12px;
   border: 2px solid currentColor;
   border-top-color: transparent;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   animation: spin 0.8s linear infinite;
 }
 
@@ -461,34 +473,34 @@ function handleConfirm() {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .adjust-type-section,
 .period-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 
   .section-label {
-    font-size: 14px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
-    color: #374151;
+    color: var(--text-primary);
   }
 
   .checkbox-group,
   .radio-group {
     display: flex;
-    gap: 16px;
+    gap: var(--space-4);
   }
 
   .radio-item {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-2);
     cursor: pointer;
-    font-size: 14px;
-    color: #374151;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
 
     input[type="radio"] {
       width: 16px;
@@ -510,10 +522,10 @@ function handleConfirm() {
 .checkbox-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   cursor: pointer;
-  font-size: 14px;
-  color: #374151;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
 
   input[type="checkbox"] {
     width: 16px;
@@ -532,61 +544,24 @@ function handleConfirm() {
 }
 
 .error-message {
-  font-size: 12px;
-  color: #ef4444;
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
 }
 
 .summary-line {
-  font-size: 13px;
-  color: #16a34a;
+  font-size: var(--font-size-sm);
+  color: var(--color-success);
 
   &.summary-failed {
-    color: #ef4444;
+    color: var(--color-danger);
   }
 }
 
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
-  margin-top: 8px;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
 }
 
-.btn-cancel,
-.btn-confirm {
-  padding: 8px 20px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-cancel {
-  background-color: #f3f4f6;
-  color: #374151;
-
-  &:hover:not(:disabled) {
-    background-color: #e5e7eb;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-}
-
-.btn-confirm {
-  background-color: var(--color-primary);
-  color: white;
-
-  &:hover:not(:disabled) {
-    background-color: var(--color-primary-dark);
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-}
 </style>

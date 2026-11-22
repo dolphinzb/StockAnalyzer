@@ -65,17 +65,17 @@ function handleDeleteRecord(id: number) {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
 .list-header {
   display: grid;
   grid-template-columns: $position-summary-columns;
-  gap: 0.5rem;
-  padding: 0.5rem;
+  gap: var(--space-2);
+  padding: var(--space-2);
   background-color: var(--bg-header);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;

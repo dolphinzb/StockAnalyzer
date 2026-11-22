@@ -96,7 +96,7 @@ function getSignedAmount(detail: TradeDetail): number {
 
 <style scoped lang="scss">
 .historical-trade-detail {
-  padding: 1rem;
+  padding: var(--space-4);
   background-color: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
 }
@@ -105,42 +105,42 @@ function getSignedAmount(detail: TradeDetail): number {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.75rem;
+  margin-bottom: var(--space-3);
 
   h4 {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--font-size-sm);
     font-weight: 600;
   }
 }
 
 .detail-count {
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 
 .detail-table {
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
 .table-header {
   display: grid;
-  grid-template-columns: 100px 70px 80px 70px 90px 70px;
+  grid-template-columns: 100px 80px 92px 76px 110px 80px;
   background-color: var(--bg-tertiary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--text-secondary);
-  padding: 0.5rem;
+  padding: var(--space-2);
   border-bottom: 1px solid var(--border-color);
 }
 
 .table-row {
   display: grid;
-  grid-template-columns: 100px 70px 80px 70px 90px 70px;
-  padding: 0.5rem;
-  font-size: 0.875rem;
+  grid-template-columns: 100px 80px 92px 76px 110px 80px;
+  padding: var(--space-2);
+  font-size: var(--font-size-sm);
   border-bottom: 1px solid var(--border-color);
 
   &:last-child {
@@ -148,7 +148,7 @@ function getSignedAmount(detail: TradeDetail): number {
   }
 
   &:hover {
-    background-color: var(--hover-bg);
+    background-color: var(--bg-hover);
   }
 }
 

@@ -3,7 +3,7 @@
     <!-- 工具栏 -->
     <div class="list-toolbar">
       <h2>资金明细</h2>
-      <button class="btn-add" @click="$emit('add')">
+      <button class="btn btn-primary" @click="$emit('add')">
         + 新增记录
       </button>
     </div>
@@ -24,7 +24,7 @@
       </div>
       <button
         v-if="store.hasFilter"
-        class="btn-clear-filter"
+        class="btn btn-ghost-danger btn-sm"
         @click="store.clearFilter"
       >
         清除筛选
@@ -39,7 +39,7 @@
     <!-- 空状态 -->
     <div v-else-if="store.isEmpty" class="empty-state">
       <p>暂无资金明细</p>
-      <button class="btn-add-first" @click="$emit('add')">添加第一条记录</button>
+      <button class="btn btn-primary" @click="$emit('add')">添加第一条记录</button>
     </div>
 
     <!-- 记录列表 - 表格形式 -->
@@ -146,13 +146,13 @@ defineEmits<{
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
+  padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--border-color);
   background-color: var(--bg-secondary);
 
   h2 {
     margin: 0;
-    font-size: 20px;
+    font-size: var(--font-size-xl);
     font-weight: 600;
     color: var(--text-primary);
   }
@@ -161,15 +161,15 @@ defineEmits<{
 .filter-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 20px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
   background-color: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
   flex-wrap: wrap;
 }
 
 .filter-label {
-  font-size: 14px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -177,16 +177,16 @@ defineEmits<{
 
 .filter-types {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
   flex: 1;
 }
 
 .filter-type-btn {
-  padding: 4px 12px;
-  font-size: 13px;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-sm);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background-color: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -200,40 +200,7 @@ defineEmits<{
   &.active {
     background-color: var(--color-primary);
     border-color: var(--color-primary);
-    color: white;
-  }
-}
-
-.btn-clear-filter {
-  padding: 4px 12px;
-  font-size: 13px;
-  border: 1px solid var(--color-danger, #f44336);
-  border-radius: 4px;
-  background-color: transparent;
-  color: var(--color-danger, #f44336);
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-
-  &:hover {
-    background-color: var(--color-danger, #f44336);
-    color: white;
-  }
-}
-
-.btn-add {
-  padding: 8px 16px;
-  background-color: var(--color-primary);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-
-  &:hover {
-    background-color: var(--color-primary-dark);
+    color: var(--text-on-color);
   }
 }
 
@@ -244,47 +211,33 @@ defineEmits<{
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px;
+  padding: var(--space-6);
   color: var(--text-secondary);
 
   p {
-    margin-bottom: 16px;
-    font-size: 16px;
+    margin-bottom: var(--space-4);
+    font-size: var(--font-size-md);
   }
 }
 
-.btn-add-first {
-  padding: 10px 20px;
-  background-color: var(--color-primary);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-
-  &:hover {
-    background-color: var(--color-primary-dark);
-  }
-}
 
 .records-table-container {
   flex: 1;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
 .records-table-header {
   display: grid;
-  grid-template-columns: 100px 120px 120px 120px 100px;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
+  grid-template-columns: 112px 120px 130px 130px 100px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
   background-color: var(--bg-secondary);
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-color);
 }
@@ -300,12 +253,12 @@ defineEmits<{
 
 .loading-more {
   text-align: center;
-  padding: 16px;
+  padding: var(--space-4);
   color: var(--text-secondary);
 
   p {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--font-size-sm);
   }
 }
 
@@ -313,30 +266,30 @@ defineEmits<{
   position: fixed;
   bottom: 20px;
   right: 20px;
-  background-color: #fee2e2;
-  color: #991b1b;
-  padding: 12px 16px;
-  border-radius: 6px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background-color: var(--bg-danger-subtle);
+  color: var(--color-danger-dark);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
 
   p {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--font-size-sm);
   }
 
   button {
     background: none;
     border: none;
-    color: #991b1b;
+    color: var(--color-danger-dark);
     cursor: pointer;
-    font-size: 14px;
+    font-size: var(--font-size-sm);
     text-decoration: underline;
 
     &:hover {
-      color: #7f1d1d;
+      color: var(--color-danger-dark);
     }
   }
 }

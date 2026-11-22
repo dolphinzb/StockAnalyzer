@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './ui/AppIcon.vue';
 import { computed } from 'vue';
 import { useWatchlistStore } from '../stores/watchlist';
 import type { PriceUpdate, WatchlistStock } from '../types';
@@ -109,16 +110,27 @@ function getChangeColorClass(value: number | null): string {
     </span>
     <span class="col-actions">
       <button
-        class="btn-kline"
-        :class="{ 'btn-loading': store.isDownloading(stock.stockCode) }"
+        class="btn btn-ghost btn-icon btn-sm"
+        :class="{ 'is-loading': store.isDownloading(stock.stockCode) }"
         :disabled="store.isDownloading(stock.stockCode)"
+        :title="store.isDownloading(stock.stockCode) ? '下载中' : '下载K线'"
+        aria-label="下载K线"
         @click="handleDownloadKline"
       >
         <span v-if="store.isDownloading(stock.stockCode)" class="spinner"></span>
-        {{ store.isDownloading(stock.stockCode) ? '下载中' : '下载K线' }}
+        <AppIcon v-else name="download" :size="16" />
       </button>
-      <button class="btn-edit" @click="handleEdit">编辑</button>
-      <button class="btn-delete" @click="handleDelete">删除</button>
+      <button class="btn btn-ghost btn-icon btn-sm" title="编辑" aria-label="编辑" @click="handleEdit">
+        <AppIcon name="edit" :size="16" />
+      </button>
+      <button
+        class="btn btn-ghost-danger btn-icon btn-sm"
+        title="删除"
+        aria-label="删除"
+        @click="handleDelete"
+      >
+        <AppIcon name="trash" :size="16" />
+      </button>
     </span>
   </div>
 </template>
@@ -129,11 +141,13 @@ function getChangeColorClass(value: number | null): string {
 .stock-item {
   display: grid;
   grid-template-columns: $stock-list-columns;
-  gap: 0.375rem;
-  padding: 0.75rem 1rem;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
   align-items: center;
   border-bottom: 1px solid var(--border-color);
-  font-size: 0.875rem;
+  // 列表主内容与全局正文同档（16px）
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-tight);
 
   &:last-child {
     border-bottom: none;
@@ -169,7 +183,7 @@ function getChangeColorClass(value: number | null): string {
 
   &:hover {
     opacity: 1;
-    color: #3b82f6;
+    color: var(--color-info);
   }
 
   &:active {
@@ -183,29 +197,29 @@ function getChangeColorClass(value: number | null): string {
   transition: color 0.2s;
 
   &:hover {
-    color: #3b82f6;
+    color: var(--color-info);
     text-decoration: underline;
   }
 }
 
 .price-sell {
-  color: #e53935;
+  color: var(--color-profit);
   font-weight: 600;
 }
 
 .price-buy {
-  color: #43a047;
+  color: var(--color-loss);
   font-weight: 600;
 }
 
 /* A股红涨绿跌 */
 .price-up {
-  color: #e53935;
+  color: var(--color-profit);
   font-weight: 600;
 }
 
 .price-down {
-  color: #43a047;
+  color: var(--color-loss);
   font-weight: 600;
 }
 
@@ -233,9 +247,9 @@ function getChangeColorClass(value: number | null): string {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: #ccc;
+    background-color: var(--border-color);
     transition: 0.3s;
-    border-radius: 22px;
+    border-radius: var(--radius-pill);
 
     &:before {
       position: absolute;
@@ -244,14 +258,14 @@ function getChangeColorClass(value: number | null): string {
       width: 16px;
       left: 3px;
       bottom: 3px;
-      background-color: white;
+      background-color: var(--bg-primary);
       transition: 0.3s;
-      border-radius: 50%;
+      border-radius: var(--radius-circle);
     }
   }
 
   input:checked + .slider {
-    background-color: var(--color-success, #4caf50);
+    background-color: var(--color-success, var(--color-success));
   }
 
   input:checked + .slider:before {
@@ -261,69 +275,29 @@ function getChangeColorClass(value: number | null): string {
 
 .col-actions {
   display: flex;
-  gap: 0.375rem;
+  gap: var(--space-1);
   justify-content: center;
-}
 
-.btn-kline,
-.btn-edit,
-.btn-delete {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.75rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.btn-kline {
-  background-color: #3b82f6;
-  color: white;
-
-  &:hover {
-    background-color: #2563eb;
-  }
-
-  &.btn-loading {
-    opacity: 0.7;
-    cursor: not-allowed;
-    display: flex;
-    align-items: center;
-    gap: 4px;
+  // 操作按钮按内容宽度显示，不被 grid 列宽压缩
+  > .btn {
+    flex-shrink: 0;
   }
 }
 
 /** 加载动画 spinner */
 .spinner {
   display: inline-block;
-  width: 12px;
-  height: 12px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
-  border-radius: 50%;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--border-on-color-subtle);
+  border-top-color: var(--color-primary);
+  border-radius: var(--radius-circle);
   animation: spin 0.6s linear infinite;
 }
 
 @keyframes spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-.btn-edit {
-  background-color: var(--color-primary);
-  color: white;
-
-  &:hover {
-    background-color: var(--color-primary-dark);
-  }
-}
-
-.btn-delete {
-  background-color: var(--color-danger, #f44336);
-  color: white;
-
-  &:hover {
-    background-color: var(--color-danger-dark);
   }
 }
 </style>

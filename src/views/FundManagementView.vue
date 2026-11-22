@@ -59,10 +59,10 @@
     >
       <p>确定要删除这条资金明细吗？此操作不可恢复。</p>
       <template #footer>
-        <button class="btn-cancel" @click="showDeleteConfirm = false">
+        <button class="btn btn-secondary" @click="showDeleteConfirm = false">
           取消
         </button>
-        <button class="btn-delete-confirm" @click="confirmDelete">
+        <button class="btn btn-danger" @click="confirmDelete">
           删除
         </button>
       </template>
@@ -138,47 +138,49 @@ const confirmDelete = async () => {
 </script>
 
 <style scoped lang="scss">
+// 带标签页的页面骨架：标签栏需要贴边，因此根容器不加内边距，内边距由各标签内容自己提供
 .fund-management-view {
-  height: 100%;
   display: flex;
   flex-direction: column;
+  height: 100%;
 }
 
 .tab-navigation {
   display: flex;
-  border-bottom: 2px solid #e5e7eb;
-  background-color: #f9fafb;
+  background-color: var(--bg-secondary);
+  border-bottom: 2px solid var(--border-color);
 }
 
 .tab-button {
-  padding: 12px 24px;
+  padding: var(--space-3) var(--space-5);
+  margin-bottom: -2px;
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
   background: none;
   border: none;
-  font-size: 14px;
-  font-weight: 500;
-  color: #6b7280;
-  cursor: pointer;
-  transition: all 0.2s;
   border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
 
   &:hover {
-    color: #111827;
-    background-color: #f3f4f6;
+    color: var(--text-primary);
+    background-color: var(--bg-tertiary);
   }
 
   &.active {
-    color: #3b82f6;
-    border-bottom-color: #3b82f6;
-    background-color: white;
+    color: var(--color-primary);
+    background-color: var(--bg-primary);
+    border-bottom-color: var(--color-primary);
   }
 }
 
 .tab-content {
-  flex: 1;
-  overflow-y: auto;
   display: flex;
+  flex: 1;
   flex-direction: column;
+  overflow-y: auto;
 }
 
 .placeholder-content {
@@ -186,38 +188,7 @@ const confirmDelete = async () => {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #6b7280;
-  font-size: 16px;
-}
-
-.btn-cancel,
-.btn-delete-confirm {
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-cancel {
-  background-color: white;
-  color: #6b7280;
-  border: 1px solid #d1d5db;
-
-  &:hover {
-    background-color: #f9fafb;
-    border-color: #9ca3af;
-  }
-}
-
-.btn-delete-confirm {
-  background-color: #ef4444;
-  color: white;
-  border: none;
-
-  &:hover {
-    background-color: #dc2626;
-  }
+  font-size: var(--font-size-md);
+  color: var(--text-secondary);
 }
 </style>

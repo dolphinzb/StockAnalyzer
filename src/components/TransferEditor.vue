@@ -66,10 +66,10 @@
 
     <!-- 操作按钮 -->
     <template #footer>
-      <button type="button" class="btn-cancel" @click="handleClose">
+      <button type="button" class="btn btn-secondary" @click="handleClose">
         取消
       </button>
-      <button type="submit" class="btn-submit" :disabled="isSubmitting" @click="handleSubmit">
+      <button type="submit" class="btn btn-primary" :disabled="isSubmitting" @click="handleSubmit">
         {{ isSubmitting ? '保存中...' : '保存' }}
       </button>
     </template>
@@ -227,77 +227,42 @@ const handleClose = () => {
 .transfer-form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-5);
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
 
   label {
-    font-size: 14px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
-    color: #374151;
+    color: var(--text-primary);
   }
 }
 
 .form-input {
-  padding: 8px 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 14px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color-strong);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
   transition: all 0.2s;
 
   &:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--color-info);
+    box-shadow: 0 0 0 3px var(--focus-ring);
   }
 
   &::placeholder {
-    color: #9ca3af;
+    color: var(--text-tertiary);
   }
 }
 
 .error-text {
-  font-size: 12px;
-  color: #ef4444;
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
 }
 
-.btn-cancel,
-.btn-submit {
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-cancel {
-  background-color: white;
-  color: #6b7280;
-  border: 1px solid #d1d5db;
-
-  &:hover {
-    background-color: #f9fafb;
-    border-color: #9ca3af;
-  }
-}
-
-.btn-submit {
-  background-color: #3b82f6;
-  color: white;
-  border: none;
-
-  &:hover:not(:disabled) {
-    background-color: #2563eb;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-}
 </style>

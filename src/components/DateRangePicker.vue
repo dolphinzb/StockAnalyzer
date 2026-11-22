@@ -75,44 +75,44 @@ watch(
 .date-range-picker {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .date-inputs {
   display: flex;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .input-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 
   label {
-    font-size: 14px;
-    color: #6b7280;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
     font-weight: 500;
     white-space: nowrap;
   }
 }
 
 .date-input {
-  padding: 8px 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 14px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color-strong);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
   transition: all 0.2s;
 
   &:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--color-info);
+    box-shadow: 0 0 0 3px var(--focus-ring);
   }
 }
 
 .error-message {
-  font-size: 12px;
-  color: #ef4444;
-  margin-top: 4px;
+  margin-top: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
 }
 </style>

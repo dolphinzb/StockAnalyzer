@@ -371,7 +371,7 @@ onBeforeUnmount(() => {
 .kline-chart-dialog {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 /* 顶部工具栏：周期切换 + 复权方式切换 */
@@ -380,40 +380,40 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 /* 周期 / 复权方式切换 */
 .adjust-switcher {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .adjust-label {
-  font-size: 13px;
-  color: #666;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
 }
 
 .adjust-btn {
-  padding: 4px 12px;
-  font-size: 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  background: white;
-  color: #374151;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-xs);
+  border: 1px solid var(--border-color-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
   cursor: pointer;
   transition: all 0.2s;
 
   &:hover {
-    border-color: #3b82f6;
-    color: #3b82f6;
+    border-color: var(--color-info);
+    color: var(--color-info);
   }
 
   &.active {
-    background: #3b82f6;
-    border-color: #3b82f6;
-    color: white;
+    background: var(--color-info);
+    border-color: var(--color-info);
+    color: var(--text-on-color);
   }
 }
 
@@ -422,9 +422,9 @@ onBeforeUnmount(() => {
   position: relative;
   width: 100%;
   height: 450px;
-  border: 1px solid #e5e7eb;
-  border-radius: 4px;
-  background: white;
+  border: 1px solid var(--border-color-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
   overflow: hidden;
 }
 
@@ -445,18 +445,18 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  color: #6b7280;
-  font-size: 14px;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
 }
 
 .spinner-large {
   display: inline-block;
   width: 32px;
   height: 32px;
-  border: 3px solid #e5e7eb;
-  border-top-color: #3b82f6;
-  border-radius: 50%;
+  border: 3px solid var(--border-color-light);
+  border-top-color: var(--color-info);
+  border-radius: var(--radius-circle);
   animation: spin 0.8s linear infinite;
 }
 
@@ -474,22 +474,22 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #9ca3af;
-  font-size: 14px;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
 }
 
 .error-msg {
-  color: #ef4444;
+  color: var(--color-danger);
 }
 
 /* 交易标注 Tooltip */
 .trade-tooltip {
   position: absolute;
-  background: rgba(0, 0, 0, 0.85);
-  color: white;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12px;
+  background: var(--chart-tooltip-bg);
+  color: var(--text-on-color);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-xs);
   pointer-events: none;
   z-index: 10;
   white-space: nowrap;
@@ -503,30 +503,30 @@ onBeforeUnmount(() => {
 
   .tooltip-type {
     font-weight: 600;
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
 
-    &.type-buy { color: #22c55e; }
-    &.type-sell { color: #ef4444; }
-    &.type-dividend { color: #3b82f6; }
+    &.type-buy { color: var(--color-buy); }
+    &.type-sell { color: var(--color-sell); }
+    &.type-dividend { color: var(--color-info); }
   }
 
   .tooltip-detail {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    font-size: 11px;
-    color: #d1d5db;
+    font-size: var(--font-size-xs);
+    color: var(--border-color-strong);
   }
 }
 
 /* K线数据 Tooltip（悬停某一交易日显示） */
 .kline-tooltip {
   position: absolute;
-  background: rgba(0, 0, 0, 0.85);
-  color: white;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12px;
+  background: var(--chart-tooltip-bg);
+  color: var(--text-on-color);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-xs);
   pointer-events: none;
   z-index: 10;
   white-space: nowrap;
@@ -540,29 +540,29 @@ onBeforeUnmount(() => {
 
   .tooltip-date {
     font-weight: 600;
-    margin-bottom: 4px;
-    color: #f3f4f6;
+    margin-bottom: var(--space-1);
+    color: var(--bg-tertiary);
   }
 
   .tooltip-row {
     display: flex;
     justify-content: space-between;
-    gap: 16px;
-    font-size: 11px;
+    gap: var(--space-4);
+    font-size: var(--font-size-xs);
     line-height: 1.7;
-    color: #d1d5db;
+    color: var(--border-color-strong);
   }
 
   /* 涨跌着色（与K线涨跌色一致：涨红/跌绿/平灰） */
-  &.trend-up .trend-value { color: #e53935; }
-  &.trend-down .trend-value { color: #43a047; }
-  &.trend-flat .trend-value { color: #9e9e9e; }
+  &.trend-up .trend-value { color: var(--color-profit); }
+  &.trend-down .trend-value { color: var(--color-loss); }
+  &.trend-flat .trend-value { color: var(--text-tertiary); }
 }
 
 /* 操作提示 */
 .chart-hint {
-  font-size: 12px;
-  color: #9ca3af;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
   text-align: center;
 }
 </style>

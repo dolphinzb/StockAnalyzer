@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue';
+import AppIcon from './ui/AppIcon.vue';
+import { getCurrentInstance, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Position } from '../types';
 import TradeRecordItem from './TradeRecordItem.vue';
 
 /** 每页加载的记录条数 */
 const PAGE_SIZE = 20;
+/** 哨兵距离可视区底部的触发余量（px） */
+const LOAD_MORE_THRESHOLD = 80;
 
 const props = defineProps<{
   position: Position;
@@ -28,10 +31,10 @@ const currentPage = ref(1);
 const hasMore = ref(false);
 /** 是否正在加载更多记录（追加加载） */
 const isLoadingMore = ref(false);
-/** 交易记录列表容器的引用，用于监听滚动事件 */
-const recordsListRef = ref<HTMLElement | null>(null);
-/** 交易记录列表的动态最大高度（px） */
-const scrollContainerMaxHeight = ref('400px');
+/** 记录列表所在的滚动容器（持仓列表主体） */
+let scrollRoot: HTMLElement | null = null;
+/** 组件实例：getCurrentInstance 只能在 setup 同步阶段取到，需提前缓存 */
+const instance = getCurrentInstance();
 
 /**
  * 监听展开/收起状态变化
@@ -102,20 +105,37 @@ async function loadTradeRecords(page: number) {
 }
 
 /**
- * 处理交易记录列表容器的滚动事件
- * 当滚动到底部且还有更多记录时，自动加载下一页（FR-015）
+ * 取当前实例渲染出来的哨兵元素
+ * 记录列表随展开状态在 v-else 分支重建，直接从组件根元素内查询最可靠
  */
-function handleScroll(event: Event) {
-  const container = event.target as HTMLElement;
-  if (!container || !hasMore.value || isLoadingMore.value) {
-    return;
-  }
+function currentSentinel(): HTMLElement | null {
+  const root = instance?.vnode.el as HTMLElement | null;
+  return root?.querySelector<HTMLElement>('.load-more-tip') ?? null;
+}
 
-  // 判断是否滚动到底部（距离底部不超过50px时触发加载）
-  const { scrollTop, scrollHeight, clientHeight } = container;
-  if (scrollHeight - scrollTop - clientHeight <= 50) {
-    loadTradeRecords(currentPage.value + 1);
+/**
+ * 哨兵滚入可视区时追加下一页（FR-015）
+ * 交易记录随持仓列表统一滚动，不再有第二层滚动容器
+ */
+function checkLoadMore() {
+  if (!props.isExpanded) return;
+  if (!hasMore.value || isLoadingMore.value) return;
+
+  const sentinel = currentSentinel();
+  if (!sentinel) return;
+
+  // 首次触发时再绑定滚动容器，避免依赖挂载时机
+  if (!scrollRoot) {
+    scrollRoot = (instance?.vnode.el as HTMLElement | null)?.closest('.list-body') ?? null;
+    scrollRoot?.addEventListener('scroll', checkLoadMore, { passive: true });
   }
+  if (!scrollRoot) return;
+
+  const rootRect = scrollRoot.getBoundingClientRect();
+  const sentinelRect = sentinel.getBoundingClientRect();
+  if (sentinelRect.top - rootRect.bottom > LOAD_MORE_THRESHOLD) return;
+
+  loadTradeRecords(currentPage.value + 1);
 }
 
 function formatDate(dateStr: string | null): string {
@@ -152,26 +172,21 @@ function handleToggle() {
   emit('toggle', props.position.stockCode);
 }
 
-/**
- * 根据窗口高度动态计算交易记录列表的最大高度
- * 计算方式：窗口高度 - 页面顶部预留区域（标题栏+表头+边距等约180px）- 持仓摘要行高度（约40px）- 列表底部边距（约20px）
- * 最小高度限制为200px，确保至少能显示几条记录
- */
-function updateScrollContainerMaxHeight() {
-  const reservedHeight = 200;
-  const minHeight = 200;
-  const availableHeight = window.innerHeight - reservedHeight;
-  const calculatedHeight = Math.max(availableHeight, minHeight);
-  scrollContainerMaxHeight.value = `${calculatedHeight}px`;
-}
-
 onMounted(() => {
-  updateScrollContainerMaxHeight();
-  window.addEventListener('resize', updateScrollContainerMaxHeight);
+  // 记录列表随持仓列表统一滚动：监听最近的列表主体容器
+  scrollRoot = (instance?.vnode.el as HTMLElement | null)?.closest('.list-body') ?? null;
+  scrollRoot?.addEventListener('scroll', checkLoadMore, { passive: true });
 });
 
 onUnmounted(() => {
-  window.removeEventListener('resize', updateScrollContainerMaxHeight);
+  scrollRoot?.removeEventListener('scroll', checkLoadMore);
+  scrollRoot = null;
+});
+
+/** 展开或记录条数变化后检查一次，记录不足一屏时也能继续补齐 */
+watch([() => props.isExpanded, () => tradeRecords.value.length], async () => {
+  await nextTick();
+  checkLoadMore();
 });
 </script>
 
@@ -179,14 +194,16 @@ onUnmounted(() => {
   <div class="position-item">
     <div class="position-summary" @click="handleToggle">
       <span class="col-code">{{ position.stockCode }}</span>
-      <span class="col-name">{{ position.stockName }}</span>
+      <span class="col-name" :title="position.stockName">{{ position.stockName }}</span>
       <span class="col-date">{{ formatDate(position.lastTradeDate) }}</span>
       <span class="col-count">{{ position.holdingCount }}</span>
       <span class="col-cost">{{ formatPrice(position.holdingPrice) }}</span>
       <span class="col-current">{{ formatPrice(position.currentPrice) }}</span>
       <span class="col-profit" :class="getProfitClass(position.profitAmount)">{{ formatProfitAmount(position.profitAmount) }}</span>
       <span class="col-ratio" :class="getProfitClass(position.profitAmount)">{{ formatProfitRatio(position.profitRatio) }}</span>
-      <span class="col-arrow" :class="{ expanded: isExpanded }">▼</span>
+      <span class="col-arrow" :class="{ expanded: isExpanded }">
+        <AppIcon name="chevron-down" :size="16" />
+      </span>
     </div>
 
     <div v-if="isExpanded" class="trade-records">
@@ -194,8 +211,8 @@ onUnmounted(() => {
       <div v-if="isLoadingRecords" class="loading">加载中...</div>
       <!-- 无交易记录 -->
       <div v-else-if="tradeRecords.length === 0" class="empty-records">暂无交易记录</div>
-      <!-- 交易记录列表（支持无限滚动） -->
-      <div v-else class="records-scroll-container" ref="recordsListRef" :style="{ maxHeight: scrollContainerMaxHeight }" @scroll="handleScroll">
+      <!-- 交易记录列表（随持仓列表统一滚动，末尾哨兵触发分页加载） -->
+      <div v-else class="records-container">
         <div class="records-list">
           <div class="record-header">
             <span>股票代码</span>
@@ -216,15 +233,19 @@ onUnmounted(() => {
             @delete="emit('deleteRecord', $event)"
           />
         </div>
-        <!-- 加载更多提示（FR-016） -->
-        <div v-if="isLoadingMore" class="load-more-tip">加载中...</div>
-        <div v-else-if="!hasMore" class="load-more-tip">已加载全部</div>
+        <!-- 加载更多哨兵与提示：滚入可视区时自动加载下一页（FR-015） -->
+        <div class="load-more-tip">
+          <template v-if="isLoadingMore">加载中...</template>
+          <template v-else-if="!hasMore">已加载全部</template>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped lang="scss">
+@use '../styles/position-grid' as *;
+
 .position-item {
   border-bottom: 1px solid var(--border-color);
 
@@ -235,15 +256,15 @@ onUnmounted(() => {
 
 .position-summary {
   display: grid;
-  grid-template-columns: 80px 90px 80px 70px 80px 80px 90px 70px 40px;
-  gap: 0.5rem;
-  padding: 0.5rem;
+  grid-template-columns: $position-summary-columns;
+  gap: var(--space-2);
+  padding: var(--space-2);
   cursor: pointer;
   align-items: center;
   transition: background-color 0.2s;
 
   &:hover {
-    background-color: var(--hover-bg);
+    background-color: var(--bg-hover);
   }
 }
 
@@ -259,7 +280,8 @@ onUnmounted(() => {
 }
 
 .col-date {
-  font-size: 0.85rem;
+  text-align: right;
+  font-family: monospace;
 }
 
 .col-count,
@@ -273,7 +295,7 @@ onUnmounted(() => {
 
 .col-arrow {
   text-align: center;
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   transition: transform 0.2s;
 
@@ -283,51 +305,51 @@ onUnmounted(() => {
 }
 
 .profit-positive {
-  color: #e53935;
+  color: var(--color-profit);
 }
 
 .profit-negative {
-  color: #43a047;
+  color: var(--color-loss);
 }
 
 .trade-records {
-  padding: 0.5rem;
+  padding: var(--space-2);
   background-color: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
 }
 
 .loading,
 .empty-records {
-  padding: 1rem;
+  padding: var(--space-4);
   text-align: center;
   color: var(--text-secondary);
 }
 
-/* 交易记录滚动容器：设置纵向滚动条，最大高度通过JS动态计算（FR-015） */
-.records-scroll-container {
-  overflow-y: auto;
+/* 交易记录容器：不再单独滚动，随持仓列表统一滚动，避免出现双层滚动条 */
+.records-container {
+  min-width: 0;
 }
 
 .records-list {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 /* 加载更多提示样式（FR-016） */
 .load-more-tip {
-  padding: 0.5rem;
+  padding: var(--space-2);
   text-align: center;
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: var(--font-size-xs);
 }
 
 .record-header {
   display: grid;
-  grid-template-columns: 80px 90px 80px 100px 90px 90px 90px 100px 60px;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  font-size: 0.75rem;
+  grid-template-columns: $position-record-columns;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   font-weight: 500;
 

@@ -1,16 +1,19 @@
 import { ref } from 'vue';
 
+/** 提示等级：与 ToastNotification 的样式一一对应 */
+export type ToastType = 'success' | 'warning' | 'error' | 'info';
+
 interface Toast {
   id: number;
   message: string;
-  type: 'success' | 'error' | 'info';
+  type: ToastType;
 }
 
 const toasts = ref<Toast[]>([]);
 let nextId = 0;
 
 export function useToast() {
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info', duration = 3000) => {
+  const showToast = (message: string, type: ToastType = 'info', duration = 3000) => {
     const id = nextId++;
     toasts.value.push({ id, message, type });
     if (duration > 0) {

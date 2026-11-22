@@ -125,8 +125,8 @@ const handleClick = (viewId: ViewId) => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 8px 0;
-  gap: 4px;
+  padding: var(--space-2) 0;
+  gap: var(--space-1);
   // 允许收缩：否则 min-height:auto 会把底部版本块顶出可视区
   flex: 1;
   min-height: 0;
@@ -141,9 +141,9 @@ const handleClick = (viewId: ViewId) => {
 .app-version {
   // 侧边栏仅 56px，版本号允许折成两行（v1.0.0 / (dev)），不裁切
   flex-shrink: 0;
-  padding: 4px 2px 8px;
+  padding: var(--space-1) 2px var(--space-2);
   text-align: center;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.2;
   color: var(--text-secondary);
   word-break: break-all;
@@ -159,7 +159,7 @@ const handleClick = (viewId: ViewId) => {
   height: 44px;
   border: none;
   background: transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -168,18 +168,19 @@ const handleClick = (viewId: ViewId) => {
   transition: all 0.15s ease;
 
   &:hover {
-    background-color: var(--hover-bg);
-    color: var(--text-color);
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   &.active {
-    background-color: var(--active-bg);
-    color: var(--primary-color);
+    background-color: var(--bg-active);
+    color: var(--color-primary);
   }
 }
 
+// 导航图标尺寸与 AppIcon 的 20px 规格对齐
 .nav-icon {
-  width: 22px;
-  height: 22px;
+  width: 1.25rem;
+  height: 1.25rem;
 }
 </style>

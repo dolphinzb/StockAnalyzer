@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppIcon from './ui/AppIcon.vue';
+
 defineProps<{
   loading: boolean;
 }>();
@@ -16,43 +18,25 @@ function handleClick() {
 
 <template>
   <button
-    class="refresh-button"
-    :class="{ loading }"
+    class="btn btn-secondary"
+    :class="{ 'is-loading': loading }"
     :disabled="loading"
     @click="handleClick"
   >
-    <span class="icon">⟳</span>
-    <span class="text">{{ loading ? '刷新中...' : '刷新' }}</span>
+    <span class="icon"><AppIcon name="refresh" :size="16" /></span>
+    <span>{{ loading ? '刷新中...' : '刷新' }}</span>
   </button>
 </template>
 
 <style scoped lang="scss">
-.refresh-button {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.875rem;
-  transition: all 0.2s;
+// 按钮外观由全局 .btn / .btn-secondary 提供，此处只处理图标旋转
+.is-loading .icon {
+  display: inline-flex;
+  animation: spin 1s linear infinite;
+}
 
-  &:hover:not(:disabled) {
-    background-color: var(--bg-hover);
-  }
-
-  &:disabled {
-    cursor: not-allowed;
-    opacity: 0.7;
-  }
-
-  &.loading {
-    .icon {
-      animation: spin 1s linear infinite;
-    }
-  }
+.icon {
+  display: inline-flex;
 }
 
 @keyframes spin {
@@ -62,9 +46,5 @@ function handleClick() {
   to {
     transform: rotate(360deg);
   }
-}
-
-.icon {
-  font-size: 1rem;
 }
 </style>

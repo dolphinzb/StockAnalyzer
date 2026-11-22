@@ -118,8 +118,8 @@ const handleBackup = async () => {
 </script>
 
 <template>
-  <div class="settings-view">
-    <h2>设置</h2>
+  <div class="page settings-view">
+    <h2 class="page-title">设置</h2>
 
     <div v-if="isLoading" class="loading">加载中...</div>
 
@@ -132,6 +132,7 @@ const handleBackup = async () => {
             <input
               id="morningStart"
               v-model="localConfig.trading.morningStart"
+              class="input"
               type="time"
               required
             />
@@ -141,6 +142,7 @@ const handleBackup = async () => {
             <input
               id="morningEnd"
               v-model="localConfig.trading.morningEnd"
+              class="input"
               type="time"
               required
             />
@@ -150,6 +152,7 @@ const handleBackup = async () => {
             <input
               id="afternoonStart"
               v-model="localConfig.trading.afternoonStart"
+              class="input"
               type="time"
               required
             />
@@ -159,6 +162,7 @@ const handleBackup = async () => {
             <input
               id="afternoonEnd"
               v-model="localConfig.trading.afternoonEnd"
+              class="input"
               type="time"
               required
             />
@@ -173,6 +177,7 @@ const handleBackup = async () => {
           <input
             id="interval"
             v-model.number="localConfig.polling.interval"
+            class="input"
             type="number"
             min="1"
             max="30"
@@ -188,6 +193,7 @@ const handleBackup = async () => {
           <label for="provider">API 提供商</label>
           <select
             id="provider"
+            class="select"
             :value="localConfig.api.provider"
             @change="handleProviderChange"
           >
@@ -205,6 +211,7 @@ const handleBackup = async () => {
           <input
             id="apiUrl"
             v-model="localConfig.api.url"
+            class="input"
             type="text"
             readonly
             aria-readonly="true"
@@ -268,173 +275,121 @@ const handleBackup = async () => {
 </template>
 
 <style scoped lang="scss">
+// 页面骨架、按钮、表单控件均由全局基础类提供，此处只保留该页特有布局
 .settings-view {
-  padding: 1.5rem;
   max-width: 800px;
   margin: 0 auto;
 
-  h2 {
-    font-size: 1.75rem;
-    margin-bottom: 1.5rem;
-    color: var(--text-primary);
+  .page-title {
+    margin-bottom: var(--space-5);
   }
 }
 
 .loading {
+  padding: var(--space-6);
+  font-size: var(--font-size-sm);
   text-align: center;
-  padding: 2rem;
   color: var(--text-secondary);
 }
 
 .settings-form {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: var(--space-5);
 }
 
 .settings-section {
+  padding: var(--space-5);
   background: var(--bg-secondary);
-  border-radius: 8px;
-  padding: 1.25rem;
+  border-radius: var(--radius-lg);
 
   h3 {
-    font-size: 1.1rem;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
+    padding-bottom: var(--space-2);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     border-bottom: 1px solid var(--border-color);
-    padding-bottom: 0.5rem;
   }
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 1rem;
-
-  @media (max-width: 600px) {
-    grid-template-columns: 1fr;
-  }
+  gap: var(--space-4);
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1);
 
   label {
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    font-weight: 500;
   }
 
-  input,
-  select {
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 0.9375rem;
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    transition: border-color 0.2s, box-shadow 0.2s;
-
-    &:focus {
-      outline: none;
-      border-color: var(--color-primary);
-      box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
-    }
-  }
-
-  input[type="number"] {
-    max-width: 120px;
+  // 轮询间隔为短数字，不撑满整行
+  input[type='number'] {
+    max-width: 7.5rem;
   }
 
   .form-hint {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
   }
 }
 
 .form-actions {
   display: flex;
-  gap: 1rem;
-  margin-top: 0.5rem;
-}
-
-.btn {
-  padding: 0.625rem 1.5rem;
-  border: none;
-  border-radius: 4px;
-  font-size: 0.9375rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s, opacity 0.2s;
-
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-}
-
-.btn-primary {
-  background: var(--color-primary);
-
-  &:hover:not(:disabled) {
-    background: var(--color-primary-hover, #3595f5);
-  }
-}
-
-.btn-secondary {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-
-  &:hover:not(:disabled) {
-    background: var(--border-color);
-  }
+  gap: var(--space-4);
+  margin-top: var(--space-2);
 }
 
 .message {
-  padding: 0.75rem 1rem;
-  border-radius: 4px;
-  margin-top: 1rem;
-  font-size: 0.875rem;
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-sm);
 }
 
 .message-success {
-  background: rgba(103, 194, 58, 0.1);
-  color: #67c23a;
-  border: 1px solid #67c23a;
+  background: var(--bg-success-subtle);
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
 }
 
 .message-error {
-  background: rgba(245, 108, 108, 0.1);
-  color: #f56c6c;
-  border: 1px solid #f56c6c;
+  background: var(--bg-danger-subtle);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
 }
 
 .backup-section {
-  margin-top: 1rem;
+  margin-top: var(--space-4);
 
   .backup-description {
-    font-size: 0.875rem;
+    margin-bottom: var(--space-4);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-base);
     color: var(--text-secondary);
-    margin-bottom: 1rem;
-    line-height: 1.5;
   }
 }
 
 .about-section {
-  margin-top: 1rem;
+  margin-top: var(--space-4);
 
   .about-list {
-    margin: 0 0 1rem;
+    margin: 0 0 var(--space-4);
   }
 
   .about-row {
     display: flex;
-    gap: 0.75rem;
-    padding: 0.35rem 0;
-    font-size: 0.875rem;
-    line-height: 1.5;
+    gap: var(--space-3);
+    padding: var(--space-1) 0;
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-base);
 
     dt {
       flex: 0 0 4.5rem;
@@ -454,15 +409,15 @@ const handleBackup = async () => {
   }
 
   .about-placeholder {
-    font-size: 0.875rem;
+    margin-bottom: var(--space-4);
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    margin-bottom: 1rem;
   }
 
   .about-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 }
 </style>

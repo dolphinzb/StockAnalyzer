@@ -52,11 +52,11 @@ function handleToggle(recordId: string): void {
 </script>
 
 <template>
-  <div class="historical-trades-view">
-    <header class="view-header">
-      <h2>历史开仓记录</h2>
+  <div class="page historical-trades-view">
+    <header class="page-header">
+      <h2 class="page-title">历史开仓记录</h2>
       <button
-        class="refresh-button"
+        class="btn btn-secondary"
         :disabled="isRefreshing || historicalTradesStore.isLoading"
         @click="handleRefresh"
       >
@@ -89,62 +89,24 @@ function handleToggle(recordId: string): void {
 </template>
 
 <style scoped lang="scss">
-.historical-trades-view {
-  padding: 1rem;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.view-header {
-  margin-bottom: 1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-
-  h2 {
-    font-size: 1.5rem;
-    margin: 0;
-  }
-}
-
-.refresh-button {
-  padding: 0.5rem 1rem;
-  background-color: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--text-color);
-  cursor: pointer;
-  font-size: 0.875rem;
-  transition: all 0.2s ease;
-
-  &:hover:not(:disabled) {
-    background-color: var(--hover-bg);
-    border-color: var(--primary-color);
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-}
-
+// 页面骨架由全局 .page / .page-header / .page-title 提供
 .loading-state,
 .error-state,
 .empty-state {
-  padding: 2rem;
+  padding: var(--space-6);
+  font-size: var(--font-size-sm);
   text-align: center;
   color: var(--text-secondary);
 }
 
 .error-state {
-  color: var(--color-loss);
+  color: var(--color-danger);
 }
 
 .records-list {
   flex: 1;
   overflow-y: auto;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 </style>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppIcon from './ui/AppIcon.vue';
+
 defineProps<{
   content: string;
   isLoading: boolean;
@@ -12,17 +14,17 @@ defineProps<{
 <template>
   <div class="log-viewer">
     <div v-if="isLoading" class="loading-state">
-      <span class="loading-icon">⟳</span>
+      <span class="loading-icon"><AppIcon name="refresh" :size="20" /></span>
       <span>加载中...</span>
     </div>
 
     <div v-else-if="error" class="error-state">
-      <span class="error-icon">⚠</span>
+      <span class="error-icon"><AppIcon name="warning" :size="20" /></span>
       <span>{{ error }}</span>
     </div>
 
     <div v-else-if="!content" class="empty-state">
-      <span class="empty-icon">📄</span>
+      <span class="empty-icon"><AppIcon name="file" :size="20" /></span>
       <span>{{ emptyText ?? '日志文件为空' }}</span>
     </div>
 
@@ -32,14 +34,14 @@ defineProps<{
 
 <style scoped lang="scss">
 .log-viewer {
-  width: 100%;
-  height: 100%;
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  overflow: hidden;
+  border-radius: var(--radius-sm);
 }
 
 .loading-state,
@@ -49,37 +51,37 @@ defineProps<{
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   height: 100%;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
-  font-size: 0.875rem;
 }
 
 .loading-icon {
-  font-size: 1.5rem;
+  display: inline-flex;
   animation: spin 1s linear infinite;
 }
 
 .error-icon {
-  font-size: 1.5rem;
-  color: var(--error-color);
+  display: inline-flex;
+  color: var(--color-danger);
 }
 
 .empty-icon {
-  font-size: 2rem;
-  opacity: 0.5;
+  display: inline-flex;
+  color: var(--text-tertiary);
 }
 
 .log-content {
   flex: 1;
   margin: 0;
-  padding: 1rem;
+  padding: var(--space-4);
   overflow: auto;
   font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  color: var(--text-color);
-  background-color: var(--bg-color);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
   white-space: pre-wrap;
   word-break: break-all;
   user-select: text;

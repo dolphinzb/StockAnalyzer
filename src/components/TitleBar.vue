@@ -58,7 +58,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 32px;
+  height: 2.25rem;
   background-color: var(--title-bar-bg);
   border-bottom: 1px solid var(--border-color);
   -webkit-app-region: drag;
@@ -67,12 +67,12 @@ onMounted(async () => {
 
 .title-bar-drag {
   flex: 1;
-  padding-left: 12px;
+  padding-left: var(--space-3);
 }
 
 .title {
-  font-size: 13px;
-  color: var(--text-color);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
 }
 
 .window-controls {
@@ -82,10 +82,10 @@ onMounted(async () => {
 
 .control-btn {
   width: 46px;
-  height: 32px;
+  height: 2.25rem;
   border: none;
   background: transparent;
-  color: var(--text-color);
+  color: var(--text-primary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -93,12 +93,12 @@ onMounted(async () => {
   transition: background-color 0.15s;
 
   &:hover {
-    background-color: var(--hover-bg);
+    background-color: var(--bg-hover);
   }
 
   &.close:hover {
-    background-color: #e81123;
-    color: white;
+    background-color: var(--color-danger);
+    color: var(--text-on-color);
   }
 }
 </style>

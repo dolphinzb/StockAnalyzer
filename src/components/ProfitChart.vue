@@ -93,10 +93,9 @@ const loadAnnualChart = async () => {
     }));
 
     console.log('[ProfitChart] 年度图表数据:', data);
+    // 正负柱颜色由 useProfitChart 的默认值（令牌 --color-profit / --color-loss）提供，此处不再重复指定
     annualChart.drawChart(data, {
       title: '年度盈亏',
-      colorPositive: '#ef4444',
-      colorNegative: '#10b981',
     });
     console.log('[ProfitChart] 年度图表绘制完成');
   } catch (error) {
@@ -124,10 +123,9 @@ const loadMonthlyChart = async () => {
     }));
 
     console.log('[ProfitChart] 月度图表数据:', data);
+    // 正负柱颜色由 useProfitChart 的默认值（令牌 --color-profit / --color-loss）提供，此处不再重复指定
     monthlyChart.drawChart(data, {
       title: '月度盈亏',
-      colorPositive: '#ef4444',
-      colorNegative: '#10b981',
     });
     console.log('[ProfitChart] 月度图表绘制完成');
   } catch (error) {
@@ -238,25 +236,25 @@ onBeforeUnmount(() => {
 .profit-chart {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin-top: 20px;
+  gap: var(--space-5);
+  margin-top: var(--space-5);
 }
 
 .chart-container {
   position: relative;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color-light);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
   height: 340px;
   box-sizing: border-box;
   overflow: hidden;
 
   h3 {
-    margin: 0 0 12px 0;
-    font-size: 16px;
+    margin: 0 0 var(--space-3) 0;
+    font-size: var(--font-size-md);
     font-weight: 600;
-    color: #374151;
+    color: var(--text-primary);
     word-break: break-word;
     overflow-wrap: anywhere;
     white-space: normal;
@@ -275,39 +273,39 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--chart-tooltip-bg-light);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  color: #6b7280;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
 }
 
 .tooltip {
   position: fixed;
-  background: rgba(0, 0, 0, 0.85);
-  color: white;
-  padding: 8px 12px;
-  border-radius: 4px;
-  font-size: 12px;
+  background: var(--chart-tooltip-bg);
+  color: var(--text-on-color);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
   pointer-events: none;
   z-index: 1000;
   transform: translate(-50%, -100%);
-  margin-top: -10px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  margin-top: -var(--space-3);
+  box-shadow: var(--shadow-md);
 
   div:first-child {
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
     font-weight: 500;
   }
 
   .positive {
-    color: #ef4444;
+    color: var(--color-profit);
     font-weight: 600;
   }
 
   .negative {
-    color: #10b981;
+    color: var(--color-loss);
     font-weight: 600;
   }
 }

@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import PositionList from '../components/PositionList.vue';
 import TradeEditor from '../components/TradeEditor.vue';
+import { useToast } from '../composables/useToast';
 import { usePositionStore } from '../stores/position';
 
 defineOptions({
@@ -9,6 +10,7 @@ defineOptions({
 });
 
 const positionStore = usePositionStore();
+const { showToast } = useToast();
 const isLoading = ref(false);
 const showEditor = ref(false);
 const expandedStockCode = ref<string | null>(null);
@@ -105,36 +107,13 @@ async function handleSaveTrade(data: any) {
   }
 }
 
-/** Toast通知相关状态 */
-const toastMessage = ref('');
-const toastType = ref<'info' | 'warning' | 'error'>('info');
-const toastVisible = ref(false);
-let toastTimer: ReturnType<typeof setTimeout> | null = null;
-
-/**
- * 显示Toast通知
- * @param message 通知消息
- * @param type 通知类型
- * @param duration 显示时长（毫秒），默认3000
- */
-function showToast(message: string, type: 'info' | 'warning' | 'error' = 'info', duration: number = 3000) {
-  toastMessage.value = message;
-  toastType.value = type;
-  toastVisible.value = true;
-  if (toastTimer) {
-    clearTimeout(toastTimer);
-  }
-  toastTimer = setTimeout(() => {
-    toastVisible.value = false;
-  }, duration);
-}
 </script>
 
 <template>
-  <div class="position-view">
-    <header class="position-header">
-      <h2>持仓</h2>
-      <button class="btn-add" @click="handleAddTrade">新增交易</button>
+  <div class="page position-view">
+    <header class="page-header">
+      <h2 class="page-title">持仓</h2>
+      <button class="btn btn-primary" @click="handleAddTrade">新增交易</button>
     </header>
 
     <div v-if="isLoading" class="loading">加载中...</div>
@@ -157,97 +136,16 @@ function showToast(message: string, type: 'info' | 'warning' | 'error' = 'info',
       @save="handleSaveTrade"
       @close="handleCloseEditor"
     />
-
-    <!-- Toast通知组件，用于显示资金明细同步失败等非阻塞提示 -->
-    <Transition name="toast">
-      <div v-if="toastVisible" class="toast" :class="`toast-${toastType}`">
-        {{ toastMessage }}
-      </div>
-    </Transition>
   </div>
 </template>
 
 <style scoped lang="scss">
-.position-view {
-  padding: 1rem;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.position-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-
-  h2 {
-    font-size: 1.5rem;
-    margin: 0;
-  }
-}
-
-.btn-add {
-  padding: 0.5rem 1rem;
-  background-color: var(--color-primary);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.875rem;
-
-  &:hover {
-    opacity: 0.9;
-  }
-}
-
+// 页面骨架与提示均由全局提供（.page / .page-header / .page-title / ToastNotification）
 .loading,
 .empty-state {
-  padding: 2rem;
+  padding: var(--space-6);
+  font-size: var(--font-size-sm);
   text-align: center;
   color: var(--text-secondary);
-}
-
-/* Toast通知样式 */
-.toast {
-  position: fixed;
-  top: 1rem;
-  right: 1rem;
-  padding: 0.75rem 1.25rem;
-  border-radius: 6px;
-  font-size: 0.875rem;
-  z-index: 9999;
-  max-width: 400px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.toast-warning {
-  background-color: #fff3e0;
-  color: #e65100;
-  border: 1px solid #ffb74d;
-}
-
-.toast-error {
-  background-color: #ffebee;
-  color: #c62828;
-  border: 1px solid #ef9a9a;
-}
-
-.toast-info {
-  background-color: #e3f2fd;
-  color: #1565c0;
-  border: 1px solid #90caf9;
-}
-
-/* Toast过渡动画 */
-.toast-enter-active,
-.toast-leave-active {
-  transition: all 0.3s ease;
-}
-
-.toast-enter-from,
-.toast-leave-to {
-  opacity: 0;
-  transform: translateX(100%);
 }
 </style>

@@ -17,6 +17,7 @@
 import { onUnmounted, ref, type Ref } from 'vue';
 import type { KlineData, KlinePeriod, PatternDirection, PatternHit, TradeRecord } from '../../shared/types';
 import { getPricePrecision } from '../utils/formatPrice';
+import { token } from '../utils/designTokens';
 
 /** 绘制配置常量 */
 const CHART_CONFIG = {
@@ -42,37 +43,37 @@ const CHART_CONFIG = {
   /** 交易标注字体大小 */
   MARKER_FONT_SIZE: 11,
   /** 买入标注颜色 */
-  COLOR_BUY: '#22c55e',
+  get COLOR_BUY(): string { return token('--color-buy'); },
   /** 卖出标注颜色 */
-  COLOR_SELL: '#ef4444',
+  get COLOR_SELL(): string { return token('--color-sell'); },
   /** 分红标注颜色 */
-  COLOR_DIVIDEND: '#3b82f6',
+  get COLOR_DIVIDEND(): string { return token('--color-dividend'); },
   /** 涨（收盘>开盘）颜色 */
-  COLOR_UP: '#e53935',
+  get COLOR_UP(): string { return token('--color-profit'); },
   /** 跌（收盘<开盘）颜色 */
-  COLOR_DOWN: '#43a047',
+  get COLOR_DOWN(): string { return token('--color-loss'); },
   /** 平（收盘=开盘）颜色 */
-  COLOR_FLAT: '#9e9e9e',
+  get COLOR_FLAT(): string { return token('--text-tertiary'); },
   /** 坐标轴和网格线颜色 */
-  COLOR_AXIS: '#e0e0e0',
+  get COLOR_AXIS(): string { return token('--border-color'); },
   /** 坐标轴文字颜色 */
-  COLOR_AXIS_TEXT: '#666666',
+  get COLOR_AXIS_TEXT(): string { return token('--text-secondary'); },
   /** 成交量柱颜色（涨） */
-  COLOR_VOLUME_UP: 'rgba(229, 57, 53, 0.5)',
+  get COLOR_VOLUME_UP(): string { return token('--chart-volume-up'); },
   /** 成交量柱颜色（跌） */
-  COLOR_VOLUME_DOWN: 'rgba(67, 160, 71, 0.5)',
+  get COLOR_VOLUME_DOWN(): string { return token('--chart-volume-down'); },
   /** tooltip 背景颜色 */
-  COLOR_TOOLTIP_BG: 'rgba(0, 0, 0, 0.8)',
+  get COLOR_TOOLTIP_BG(): string { return token('--chart-tooltip-bg'); },
   /** tooltip 文字颜色 */
-  COLOR_TOOLTIP_TEXT: '#ffffff',
+  get COLOR_TOOLTIP_TEXT(): string { return token('--chart-tooltip-text'); },
   /** K线数据tooltip锚点X钳制半宽（防止tooltip被容器左右边缘裁剪） */
   KLINE_TOOLTIP_HALF_WIDTH: 90,
-  /** 形态标注 - 看涨（绿色，置于蜡烛下方，远离 B 标注） */
-  COLOR_PATTERN_BULLISH: '#10b981',
-  /** 形态标注 - 看跌（红色，置于蜡烛上方，远离 S/D 标注） */
-  COLOR_PATTERN_BEARISH: '#f43f5e',
+  /** 形态标注 - 看涨（绿色信号色，置于蜡烛下方，远离 B 标注；不是涨跌色） */
+  get COLOR_PATTERN_BULLISH(): string { return token('--color-success'); },
+  /** 形态标注 - 看跌（红色信号色，置于蜡烛上方，远离 S/D 标注） */
+  get COLOR_PATTERN_BEARISH(): string { return token('--color-danger'); },
   /** 形态标注 - 转折预警（琥珀色，置于蜡烛上方更高位置） */
-  COLOR_PATTERN_WARNING: '#f59e0b',
+  get COLOR_PATTERN_WARNING(): string { return token('--color-warning'); },
   /** 形态标注图元垂直半高（▲/▼/◆ 上下各约6px），用于边界钳制防止图元越出画布不可见 */
   PATTERN_GLYPH_HALF_HEIGHT: 6,
   /** 拖动灵敏度（鼠标移动1px对应的数据偏移量） */

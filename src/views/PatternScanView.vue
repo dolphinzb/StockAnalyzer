@@ -287,14 +287,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="pattern-scan-view">
+  <div class="page pattern-scan-view">
     <!-- 顶部：标题 + 股票选择 + 复权 + 检测 -->
-    <header class="scan-header">
-      <h2>形态检测</h2>
+    <header class="page-header">
+      <h2 class="page-title">形态检测</h2>
       <div class="header-controls">
         <label class="control-label">
           <span>股票</span>
-          <select :value="store.currentStock?.stockCode ?? ''" @change="handleStockChange">
+          <select class="select" :value="store.currentStock?.stockCode ?? ''" @change="handleStockChange">
             <option value="" disabled>请选择股票</option>
             <option v-for="stock in watchlistStore.stocks" :key="stock.id" :value="stock.stockCode">
               {{ stock.stockName }} ({{ stock.stockCode }})
@@ -321,7 +321,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <button class="run-btn" :disabled="!store.currentStock || store.isDetecting" @click="handleRunDetection">
+        <button class="btn btn-primary" :disabled="!store.currentStock || store.isDetecting" @click="handleRunDetection">
           {{ store.isDetecting ? '检测中…' : '检测' }}
         </button>
       </div>
@@ -347,7 +347,7 @@ onBeforeUnmount(() => {
       <div class="filter-group">
         <label class="control-label">
           <span>方向</span>
-          <select :value="store.filters.direction" @change="handleDirectionChange">
+          <select class="select" :value="store.filters.direction" @change="handleDirectionChange">
             <option v-for="opt in directionOptions" :key="opt.value" :value="opt.value">
               {{ opt.label }}
             </option>
@@ -356,7 +356,7 @@ onBeforeUnmount(() => {
 
         <label class="control-label">
           <span>形态</span>
-          <select :value="store.filters.patternCodes" multiple size="1" @change="handlePatternChange">
+          <select class="select" :value="store.filters.patternCodes" multiple size="1" @change="handlePatternChange">
             <option value="">全部形态</option>
             <option v-for="opt in patternOptions" :key="opt.code" :value="opt.code">
               {{ opt.name }}（{{ opt.candleCount }}根 · {{ directionLabel(opt.direction) }}）
@@ -364,31 +364,31 @@ onBeforeUnmount(() => {
           </select>
         </label>
 
-        <button class="reset-btn" @click="handleResetFilters">重置筛选</button>
+        <button class="btn btn-ghost btn-sm" @click="handleResetFilters">重置筛选</button>
       </div>
     </section>
 
     <!-- 结果列表 -->
     <section class="result-section">
-      <div v-if="store.currentStock === null" class="empty-state">
+      <div v-if="store.currentStock === null" class="result-empty">
         <p>请先在上方选择一只股票开始形态检测</p>
       </div>
 
-      <div v-else-if="store.isDetecting" class="empty-state">
+      <div v-else-if="store.isDetecting" class="result-empty">
         <span class="spinner"></span>
         <span>正在加载 K 线并检测形态…</span>
       </div>
 
-      <div v-else-if="store.errorMessage" class="empty-state error">
+      <div v-else-if="store.errorMessage" class="result-empty is-error">
         <p>检测失败：{{ store.errorMessage }}</p>
       </div>
 
-      <div v-else-if="store.isInsufficientState" class="empty-state">
+      <div v-else-if="store.isInsufficientState" class="result-empty">
         <p>数据不足，无法检测</p>
         <p class="hint">当前 K 线根数 {{ store.klines.length }}，至少需要 20 根才能完成形态识别（MA10 计算）。</p>
       </div>
 
-      <div v-else-if="store.isEmptyState" class="empty-state">
+      <div v-else-if="store.isEmptyState" class="result-empty">
         <p>近期未发现蜡烛图形态信号</p>
         <p class="hint">可尝试切换复权类型、调整日期窗口或放宽筛选。</p>
       </div>
@@ -428,7 +428,7 @@ onBeforeUnmount(() => {
             </tr>
           </tbody>
         </table>
-        <div v-if="sortedHits.length === 0 && store.hasEnoughKlines" class="empty-state inline">
+        <div v-if="sortedHits.length === 0 && store.hasEnoughKlines" class="result-empty is-inline">
           <p>当前筛选条件下无命中</p>
         </div>
       </div>
@@ -480,100 +480,65 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped lang="scss">
+// 页面骨架、主操作按钮、重置按钮、下拉框均由全局基础类提供
 .pattern-scan-view {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 1rem;
-  gap: 0.75rem;
+  gap: var(--space-3);
   overflow: auto;
-}
-
-/* 顶部栏 */
-.scan-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-
-  h2 {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
-  }
 }
 
 .header-controls {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .control-label {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 
-  select {
-    min-width: 120px;
-    padding: 4px 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background: white;
-    font-size: 13px;
+  // 下拉框按内容宽度显示
+  > .select {
+    width: auto;
+    min-width: 7.5rem;
   }
 }
 
-.adjust-switcher {
+// 复权切换与日期预设属于分段选择控件，与操作按钮形态不同，保留自定义样式
+.adjust-switcher,
+.date-presets {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
-.adjust-btn {
-  padding: 4px 10px;
+.adjust-btn,
+.preset-btn {
+  padding: var(--space-1) var(--space-2);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+  background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background: white;
-  font-size: 12px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
 
   &:hover:not(:disabled) {
-    border-color: var(--primary-color);
-    color: var(--primary-color);
+    color: var(--color-primary);
+    border-color: var(--color-primary);
   }
 
   &.active {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-color);
+    background: var(--color-primary);
+    border-color: var(--color-primary);
   }
 
   &:disabled {
-    opacity: 0.5;
     cursor: not-allowed;
-  }
-}
-
-.run-btn {
-  padding: 6px 18px;
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-
-  &:hover:not(:disabled) {
-    background: var(--color-primary-dark);
-  }
-
-  &:disabled {
     opacity: 0.5;
-    cursor: not-allowed;
   }
 }
 
@@ -581,63 +546,23 @@ onBeforeUnmount(() => {
 .filter-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.25rem;
   align-items: center;
-  padding: 0.5rem 0.75rem;
+  gap: var(--space-5);
+  padding: var(--space-2) var(--space-3);
   background: var(--bg-secondary);
-  border-radius: 6px;
   border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
 }
 
 .filter-group {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .filter-label {
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
-}
-
-.date-presets {
-  display: flex;
-  gap: 4px;
-}
-
-.preset-btn {
-  padding: 4px 10px;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background: white;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s;
-
-  &:hover {
-    border-color: var(--primary-color);
-    color: var(--primary-color);
-  }
-
-  &.active {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
-    color: white;
-  }
-}
-
-.reset-btn {
-  padding: 4px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background: white;
-  font-size: 12px;
-  cursor: pointer;
-
-  &:hover {
-    border-color: var(--primary-color);
-    color: var(--primary-color);
-  }
 }
 
 /* 结果列表 */
@@ -649,125 +574,131 @@ onBeforeUnmount(() => {
   max-height: 220px;
   overflow-y: auto;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .result-table {
   width: 100%;
+  font-size: var(--font-size-sm);
   border-collapse: collapse;
-  font-size: 13px;
 
   thead {
     position: sticky;
     top: 0;
-    background: var(--bg-secondary);
     z-index: 1;
+    background: var(--bg-secondary);
   }
 
   th,
   td {
-    padding: 8px 12px;
+    padding: var(--space-2) var(--space-3);
     text-align: left;
     border-bottom: 1px solid var(--border-color);
   }
 
   th {
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-secondary);
-    font-size: 12px;
   }
 
   tbody tr {
     cursor: pointer;
-    transition: background 0.1s;
+    transition: background-color 0.1s ease;
 
     &:hover {
-      background: var(--hover-bg);
+      background: var(--bg-hover);
     }
 
     &.focused {
-      background: var(--active-bg);
+      background: var(--bg-active);
     }
   }
 }
 
 .col-strength {
-  width: 180px;
+  width: 11.25rem; // 180px
 }
 
 .dir-tag {
   display: inline-block;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 500;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-pill);
 
   &.dir-bullish {
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
+    background: var(--bg-success-subtle);
+    color: var(--color-success);
   }
   &.dir-bearish {
-    background: rgba(244, 63, 94, 0.15);
-    color: #f43f5e;
+    background: var(--bg-danger-subtle);
+    color: var(--color-danger);
   }
   &.dir-warning {
-    background: rgba(245, 158, 11, 0.15);
-    color: #f59e0b;
+    background: var(--bg-warning-subtle);
+    color: var(--color-warning);
   }
 }
 
 .strength-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .strength-bar {
   flex: 1;
   height: 6px;
-  background: var(--border-color);
-  border-radius: 3px;
   overflow: hidden;
+  background: var(--border-color);
+  border-radius: var(--radius-sm);
 }
 
 .strength-fill {
   display: block;
   height: 100%;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 
-  &.dir-bullish { background: #10b981; }
-  &.dir-bearish { background: #f43f5e; }
-  &.dir-warning { background: #f59e0b; }
+  &.dir-bullish {
+    background: var(--color-success);
+  }
+  &.dir-bearish {
+    background: var(--color-danger);
+  }
+  &.dir-warning {
+    background: var(--color-warning);
+  }
 }
 
 .strength-num {
-  width: 40px;
-  text-align: right;
+  width: 2.5rem;
+  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
+  text-align: right;
   color: var(--text-secondary);
-  font-size: 12px;
 }
 
-/* 空态 */
-.empty-state {
+/* 空态（本页结果区内嵌空态，与全局 .empty-state 的整页居中语义不同） */
+.result-empty {
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
-  padding: 2rem;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
   color: var(--text-secondary);
-  gap: 0.5rem;
 
-  &.error p {
-    color: var(--error-color);
+  &.is-error p {
+    color: var(--color-danger);
   }
 
-  &.inline {
-    padding: 1rem;
+  &.is-inline {
+    padding: var(--space-4);
   }
 
   .hint {
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     opacity: 0.8;
   }
@@ -775,11 +706,11 @@ onBeforeUnmount(() => {
 
 .spinner {
   display: inline-block;
-  width: 20px;
-  height: 20px;
+  width: 1.25rem;
+  height: 1.25rem;
   border: 2px solid var(--border-color);
-  border-top-color: var(--primary-color);
-  border-radius: 50%;
+  border-top-color: var(--color-primary);
+  border-radius: var(--radius-circle);
   animation: spin 0.8s linear infinite;
 }
 
@@ -791,20 +722,20 @@ onBeforeUnmount(() => {
 
 /* K 线图区 */
 .chart-section {
-  flex: 1;
   display: flex;
+  flex: 1;
   flex-direction: column;
-  min-height: 320px;
+  min-height: 20rem; // 320px
 }
 
 .chart-container {
   position: relative;
   flex: 1;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: white;
+  min-height: 20rem; // 320px
   overflow: hidden;
-  min-height: 320px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
 }
 
 .kline-canvas {
@@ -819,28 +750,28 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
-  font-size: 14px;
 }
 
 .chart-hint {
+  margin-top: var(--space-2);
+  font-size: var(--font-size-xs);
   text-align: center;
-  font-size: 12px;
   color: var(--text-secondary);
-  margin-top: 0.5rem;
 }
 
 /* 形态 Tooltip */
 .pattern-tooltip {
   position: absolute;
-  background: rgba(0, 0, 0, 0.85);
-  color: white;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  pointer-events: none;
-  z-index: 10;
+  z-index: var(--z-dropdown);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--chart-tooltip-text);
   white-space: nowrap;
+  pointer-events: none;
+  background: var(--chart-tooltip-bg);
+  border-radius: var(--radius-md);
   /* 默认显示在标注上方（锚定元素底边）；由 placement-* 类切换方向 */
   transform: translate(-50%, calc(-100% - 14px));
 
@@ -850,20 +781,26 @@ onBeforeUnmount(() => {
   }
 
   .tooltip-name {
-    font-weight: 600;
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
+    font-weight: var(--font-weight-semibold);
 
-    &.dir-bullish { color: #10b981; }
-    &.dir-bearish { color: #f43f5e; }
-    &.dir-warning { color: #f59e0b; }
+    &.dir-bullish {
+      color: var(--color-success);
+    }
+    &.dir-bearish {
+      color: var(--color-danger);
+    }
+    &.dir-warning {
+      color: var(--color-warning);
+    }
   }
 
   .tooltip-detail {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    font-size: 11px;
-    color: #d1d5db;
+    font-size: var(--font-size-xs);
+    color: var(--text-disabled);
   }
 }
 </style>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import Modal from './Modal.vue';
 import type { PositionAPI } from '../types';
 
 declare global {
@@ -163,234 +164,130 @@ function handleClose() {
 </script>
 
 <template>
-  <div class="trade-editor-overlay">
-    <div class="trade-editor">
-      <div class="editor-header">
-        <h3>{{ record ? '编辑交易记录' : '新增交易记录' }}</h3>
-        <button class="btn-close" @click="handleClose">×</button>
+  <Modal
+    :model-value="true"
+    :title="record ? '编辑交易记录' : '新增交易记录'"
+    width="400px"
+    :close-on-overlay-click="false"
+    @update:model-value="handleClose"
+  >
+    <form class="editor-form" @submit.prevent="handleSubmit">
+      <div class="form-item">
+        <label class="form-label" for="stockCode">股票代码</label>
+        <div class="input-with-loading">
+          <input
+            id="stockCode"
+            v-model="stockCode"
+            class="input"
+            type="text"
+            placeholder="如: 600519"
+            :disabled="!!record"
+            @blur="handleStockCodeBlur"
+            @keydown="handleStockCodeEnter"
+          />
+          <span v-if="isLoadingStockName" class="loading-indicator">...</span>
+        </div>
       </div>
 
-      <form class="editor-form" @submit.prevent="handleSubmit">
-        <div class="form-group">
-          <label for="stockCode">股票代码</label>
-          <div class="input-with-loading">
-            <input
-              id="stockCode"
-              v-model="stockCode"
-              type="text"
-              placeholder="如: 600519"
-              :disabled="!!record"
-              @blur="handleStockCodeBlur"
-              @keydown="handleStockCodeEnter"
-            />
-            <span v-if="isLoadingStockName" class="loading-indicator">...</span>
-          </div>
-        </div>
+      <div class="form-item">
+        <label class="form-label" for="stockName">股票名称</label>
+        <input
+          id="stockName"
+          v-model="stockName"
+          class="input"
+          type="text"
+          placeholder="如: 贵州茅台"
+        />
+      </div>
 
-        <div class="form-group">
-          <label for="stockName">股票名称</label>
-          <input
-            id="stockName"
-            v-model="stockName"
-            type="text"
-            placeholder="如: 贵州茅台"
-          />
-        </div>
+      <div class="form-item">
+        <label class="form-label" for="tradeType">交易类型</label>
+        <select id="tradeType" v-model="tradeType" class="select">
+          <option value="BUY">买入</option>
+          <option value="SELL">卖出</option>
+          <option value="DIVIDEND">股息</option>
+        </select>
+      </div>
 
-        <div class="form-group">
-          <label for="tradeType">交易类型</label>
-          <select id="tradeType" v-model="tradeType">
-            <option value="BUY">买入</option>
-            <option value="SELL">卖出</option>
-            <option value="DIVIDEND">股息</option>
-          </select>
-        </div>
+      <div class="form-item">
+        <label class="form-label" for="tradeDate">交易日期</label>
+        <input id="tradeDate" v-model="tradeDate" class="input" type="date" />
+      </div>
 
-        <div class="form-group">
-          <label for="tradeDate">交易日期</label>
-          <input
-            id="tradeDate"
-            v-model="tradeDate"
-            type="date"
-          />
-        </div>
+      <div class="form-item">
+        <label class="form-label" for="tradePrice">交易价格</label>
+        <input
+          id="tradePrice"
+          v-model="tradePrice"
+          class="input"
+          type="text"
+          inputmode="decimal"
+          placeholder="如: 1800.0000"
+          @input="validatePriceInput"
+        />
+      </div>
 
-        <div class="form-group">
-          <label for="tradePrice">交易价格</label>
-          <input
-            id="tradePrice"
-            v-model="tradePrice"
-            type="text"
-            inputmode="decimal"
-            placeholder="如: 1800.0000"
-            @input="validatePriceInput"
-          />
-        </div>
+      <div class="form-item">
+        <label class="form-label" for="tradeCount">交易数量</label>
+        <input
+          id="tradeCount"
+          v-model="tradeCount"
+          class="input"
+          type="number"
+          step="1"
+          placeholder="如: 100"
+        />
+        <span v-if="tradeType === 'DIVIDEND'" class="helper-text">股息类型数量请输入0</span>
+      </div>
 
-        <div class="form-group">
-          <label for="tradeCount">交易数量</label>
-          <input
-            id="tradeCount"
-            v-model="tradeCount"
-            type="number"
-            step="1"
-            placeholder="如: 100"
-          />
-          <span v-if="tradeType === 'DIVIDEND'" class="helper-text">股息类型数量请输入0</span>
-        </div>
+      <div v-if="errorMessage" class="error-message">
+        {{ errorMessage }}
+      </div>
+    </form>
 
-        <div v-if="errorMessage" class="error-message">
-          {{ errorMessage }}
-        </div>
-
-        <div class="form-actions">
-          <button type="button" class="btn-cancel" @click="handleClose">取消</button>
-          <button type="submit" class="btn-submit">保存</button>
-        </div>
-      </form>
-    </div>
-  </div>
+    <template #footer>
+      <button type="button" class="btn btn-secondary" @click="handleClose">取消</button>
+      <button type="button" class="btn btn-primary" @click="handleSubmit">保存</button>
+    </template>
+  </Modal>
 </template>
 
 <style scoped lang="scss">
-.trade-editor-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(128, 128, 128, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.trade-editor {
-  background-color: #ffffff;
-  border-radius: 8px;
-  width: 400px;
-  max-width: 90vw;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-}
-
-.editor-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid var(--border-color);
-
-  h3 {
-    margin: 0;
-    font-size: 1.125rem;
-  }
-}
-
-.btn-close {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  color: var(--text-secondary);
-  padding: 0;
-  line-height: 1;
-
-  &:hover {
-    color: var(--text-primary);
-  }
-}
-
+// 弹窗容器、标题栏、按钮、表单控件均由 Modal 与全局基础类提供
 .editor-form {
-  padding: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
-.form-group {
+.input-with-loading {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  align-items: center;
 
-  label {
-    font-size: 0.875rem;
-    font-weight: 500;
+  .input {
+    flex: 1;
+  }
+
+  .loading-indicator {
+    position: absolute;
+    right: var(--space-2);
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
-  }
-
-  input,
-  select {
-    padding: 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 0.875rem;
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-
-    &:focus {
-      outline: none;
-      border-color: var(--color-primary);
-    }
-
-    &:disabled {
-      background-color: var(--bg-secondary);
-      cursor: not-allowed;
-    }
-  }
-
-  select {
-    cursor: pointer;
   }
 }
 
 .helper-text {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
 }
 
 .error-message {
-  padding: 0.5rem;
-  background-color: rgba(229, 57, 53, 0.1);
-  border: 1px solid var(--color-error, #e53935);
-  border-radius: 4px;
-  color: var(--color-error, #e53935);
-  font-size: 0.875rem;
-}
-
-.form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  padding-top: 0.5rem;
-}
-
-.btn-cancel,
-.btn-submit {
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: opacity 0.2s;
-}
-
-.btn-cancel {
-  background-color: transparent;
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-
-  &:hover {
-    background-color: var(--bg-secondary);
-  }
-}
-
-.btn-submit {
-  background-color: var(--color-primary);
-  border: none;
-  color: white;
-
-  &:hover {
-    opacity: 0.9;
-  }
+  padding: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
+  background-color: var(--bg-danger-subtle);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
 }
 </style>

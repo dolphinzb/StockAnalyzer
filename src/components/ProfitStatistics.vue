@@ -6,19 +6,19 @@
     <div class="query-bar">
       <DateRangePicker v-model="dateRange" />
       <div class="shortcuts-group">
-        <button class="btn-shortcut" @click="handleSetThisYear">今年</button>
-        <button class="btn-shortcut" @click="handleSetLastYear">去年</button>
-        <button class="btn-shortcut" @click="handleSetLastYearStart">去年开始</button>
+        <button class="btn btn-secondary btn-sm" @click="handleSetThisYear">今年</button>
+        <button class="btn btn-secondary btn-sm" @click="handleSetLastYear">去年</button>
+        <button class="btn btn-secondary btn-sm" @click="handleSetLastYearStart">去年开始</button>
       </div>
       <button
-        class="btn-calculate"
+        class="btn btn-primary"
         :disabled="!canCalculate || store.isLoading"
         @click="handleCalculate"
       >
         {{ store.isLoading ? '计算中...' : '计算' }}
       </button>
       <button
-        class="btn-reset"
+        class="btn btn-secondary"
         @click="handleReset"
       >
         重置
@@ -247,102 +247,29 @@ const getProfitClass = (profit: number): string => {
 
 <style scoped lang="scss">
 .profit-statistics {
-  padding: 20px;
+  padding: var(--space-5);
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-5);
 
   h2 {
     margin: 0;
-    font-size: 20px;
+    font-size: var(--font-size-xl);
     font-weight: 600;
-    color: #111827;
+    color: var(--text-primary);
   }
 }
 
 .query-bar {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .shortcuts-group {
   display: flex;
-  gap: 8px;
-}
-
-.btn-shortcut {
-  padding: 8px 16px;
-  background-color: white;
-  color: #6b7280;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-  height: 36px;
-
-  &:hover {
-    background-color: #f9fafb;
-    border-color: #9ca3af;
-  }
-
-  &:active {
-    background-color: #f3f4f6;
-  }
-}
-
-.btn-calculate {
-  padding: 8px 24px;
-  background-color: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-  height: 36px;
-
-  &:hover:not(:disabled) {
-    background-color: #2563eb;
-  }
-
-  &:active:not(:disabled) {
-    background-color: #1d4ed8;
-  }
-
-  &:disabled {
-    background-color: #9ca3af;
-    cursor: not-allowed;
-  }
-}
-
-.btn-reset {
-  padding: 8px 24px;
-  background-color: white;
-  color: #6b7280;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-  height: 36px;
-
-  &:hover {
-    background-color: #f9fafb;
-    border-color: #9ca3af;
-  }
-
-  &:active {
-    background-color: #f3f4f6;
-  }
+  gap: var(--space-2);
 }
 
 .loading-state,
@@ -351,24 +278,24 @@ const getProfitClass = (profit: number): string => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #6b7280;
-  font-size: 16px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
 }
 
 .section-title {
-  font-size: 14px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
-  color: #374151;
-  margin-top: 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid #e5e7eb;
+  color: var(--text-primary);
+  margin-top: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border-color-light);
 }
 
 .cards-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-  margin-top: 8px;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
 
   &.six-cards {
     grid-template-columns: repeat(6, 1fr);
@@ -376,88 +303,88 @@ const getProfitClass = (profit: number): string => {
 }
 
 .stat-card {
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color-light);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
   text-align: center;
   transition: all 0.2s;
 
   &:hover {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
     transform: translateY(-2px);
   }
 
   &.highlight {
-    border-color: #3b82f6;
-    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    border-color: var(--color-info);
+    background: linear-gradient(135deg, var(--bg-info-subtle) 0%, var(--bg-info-subtle) 100%);
   }
 }
 
 .stat-label {
-  font-size: 13px;
-  color: #6b7280;
-  margin-bottom: 6px;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
 }
 
 .stat-value {
-  font-size: 22px;
+  font-size: var(--font-size-2xl);
   font-weight: 700;
-  color: #111827;
+  color: var(--text-primary);
 
   &.positive {
-    color: #ef4444; // 红色 - 盈利
+    color: var(--color-profit); // 红色 - 盈利
   }
 
   &.negative {
-    color: #10b981; // 绿色 - 亏损
+    color: var(--color-loss); // 绿色 - 亏损
   }
 
   &.zero {
-    color: #111827; // 黑色 - 持平
+    color: var(--text-primary); // 黑色 - 持平
   }
 }
 
 .stat-formula {
-  font-size: 11px;
-  color: #9ca3af;
-  margin-top: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-top: var(--space-2);
 }
 
 .stat-sub {
-  font-size: 11px;
-  color: #9ca3af;
-  margin-top: 4px;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-top: var(--space-1);
 }
 
 .error-message {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  background-color: #fee2e2;
-  color: #991b1b;
-  padding: 12px 16px;
-  border-radius: 6px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background-color: var(--bg-danger-subtle);
+  color: var(--color-danger-dark);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
 
   p {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--font-size-sm);
   }
 
   button {
     background: none;
     border: none;
-    color: #991b1b;
+    color: var(--color-danger-dark);
     cursor: pointer;
-    font-size: 14px;
+    font-size: var(--font-size-sm);
     text-decoration: underline;
 
     &:hover {
-      color: #7f1d1d;
+      color: var(--color-danger-dark);
     }
   }
 }

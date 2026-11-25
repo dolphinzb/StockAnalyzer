@@ -1013,6 +1013,76 @@ export interface KlineAPI {
   onBatchDownloadProgress(callback: (payload: KlineBatchProgressPayload) => void): () => void;
 }
 
+// ==================== 全市场行情库（market_data.db） ====================
+
+/** 同步控制状态（meta.sync_control_state） */
+export type MarketSyncState = 'idle' | 'running' | 'completed' | 'failed';
+
+/** 同步运行模式 */
+export type MarketSyncMode = 'full' | 'incremental';
+
+/** 同步数据类型 */
+export type MarketDataKind =
+  | 'active_codes'
+  | 'delisted_codes'
+  | 'calendar'
+  | 'raw_daily'
+  | 'qfq_daily'
+  | 'hfq_daily';
+
+/** 失败任务（页面失败任务表） */
+export interface MarketFailedTask {
+  /** 任务键：`<stock_code>:<data_kind>` 或 `__MARKET__:<data_kind>` */
+  taskKey: string;
+  stockCode: string | null;
+  stockName: string | null;
+  dataKind: MarketDataKind;
+  /** 已自动重试次数 */
+  retryCount: number;
+  lastError: string | null;
+  /** 下次重试时间（ISO 字符串），无排期时为 null */
+  nextRetryAt: string | null;
+}
+
+/** 行情库同步状态（market:sync:status 返回体） */
+export interface MarketSyncStatus {
+  state: MarketSyncState;
+  mode: MarketSyncMode | null;
+  total: number;
+  pending: number;
+  running: number;
+  success: number;
+  failed: number;
+  /** 所有待补任务起点的最小值（YYYY-MM-DD） */
+  earliestMissingDate: string | null;
+  /** 最新交易日（YYYY-MM-DD） */
+  latestTradeDate: string | null;
+  /** 待补任务数 */
+  incrementalTaskCount: number;
+  currentTaskKey: string | null;
+  currentStockCode: string | null;
+  currentStockName: string | null;
+  lastError: string | null;
+  /** 状态更新时间（ISO 字符串） */
+  updatedAt: string;
+  /** 失败任务列表（最多 50 条） */
+  failedTasks: MarketFailedTask[];
+}
+
+/** 同步控制命令返回体 */
+export interface MarketSyncControlResult {
+  success: boolean;
+  error?: string;
+}
+
+/** 行情库管理 API（preload 暴露） */
+export interface MarketDataAPI {
+  getStatus(): Promise<MarketSyncStatus>;
+  startFullBackfill(): Promise<MarketSyncControlResult>;
+  runIncremental(): Promise<MarketSyncControlResult>;
+  retryFailed(): Promise<MarketSyncControlResult>;
+}
+
 /**
  * 网格仿真间距类型
  * fixed: 固定金额等差网格；percentage: 等比网格（每档按上一档 × (1+spacing)）

@@ -299,4 +299,9 @@ export const SCHEMAS = {
       period: v.optional(v.enumOf('input.period', KLINE_PERIODS), undefined),
     }),
   ],
+  // 行情库同步控制通道均为无入参命令，参数由主进程内部决定
+  marketSyncStatus: [],
+  marketSyncStart: [],
+  marketSyncIncremental: [],
+  marketSyncRetryFailed: [],
 } satisfies Record<string, readonly Validator[]>;

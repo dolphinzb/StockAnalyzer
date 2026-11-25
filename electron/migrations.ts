@@ -33,19 +33,23 @@ export interface MigrationResult {
   baselineApplied: boolean;
 }
 
+/** 迁移目录类型：业务库目录 / 全市场行情库目录 */
+export type MigrationDirKind = 'migrations' | 'market-migrations';
+
 /**
  * 定位迁移目录（按候选路径依次探测）
- * 1. 编译产物相邻：dist-electron/electron/../sql/migrations（源码直跑时等价于仓库 sql/migrations）
+ * 1. 编译产物相邻：dist-electron/electron/../sql/<kind>（源码直跑时等价于仓库 sql/<kind>）
  * 2. 上两级：兼容更深的目录层级
  * 3. 应用资源目录：预留给未来的 extraResources 打包方式
+ * @param kind 迁移目录名，默认业务库 `migrations`
  * @returns 存在的迁移目录绝对路径
  * @throws 全部候选路径都不存在时抛错，并列出尝试过的路径
  */
-export function getMigrationsDir(): string {
+export function getMigrationsDir(kind: MigrationDirKind = 'migrations'): string {
   const candidates = [
-    join(__dirname, '..', 'sql', 'migrations'),
-    join(__dirname, '..', '..', 'sql', 'migrations'),
-    ...(process.resourcesPath ? [join(process.resourcesPath, 'sql', 'migrations')] : []),
+    join(__dirname, '..', 'sql', kind),
+    join(__dirname, '..', '..', 'sql', kind),
+    ...(process.resourcesPath ? [join(process.resourcesPath, 'sql', kind)] : []),
   ];
 
   for (const dir of candidates) {
@@ -55,6 +59,14 @@ export function getMigrationsDir(): string {
   }
 
   throw new Error(`未找到数据库迁移目录，已尝试以下路径:\n${candidates.join('\n')}`);
+}
+
+/**
+ * 定位全市场行情库 `market_data.db` 的迁移目录
+ * @returns `sql/market-migrations` 的绝对路径
+ */
+export function getMarketMigrationsDir(): string {
+  return getMigrationsDir('market-migrations');
 }
 
 /**

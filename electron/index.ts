@@ -30,6 +30,12 @@ import {
   type UpdateStockInput,
   type UpdateTradeInput
 } from './database';
+import { closeMarketDatabase, initMarketDatabase } from './marketDatabase';
+import {
+  getMarketSyncService,
+  recoverInterruptedMarketSync,
+  stopMarketDataSync
+} from './services/marketDataSyncService';
 import {
   setBackupFailureNotifier,
   startBackupScheduler,
@@ -1026,6 +1032,76 @@ handleValidated('kline:download-batch', SCHEMAS.klineDownloadBatch, async (_even
   }
 });
 
+// ==================== 行情库（market_data.db）IPC Handlers ====================
+
+/**
+ * 行情库不可用时的状态兜底：页面能渲染错误，而不是收到未处理的异常
+ */
+function emptyMarketSyncStatus(error: string): import('../shared/types').MarketSyncStatus {
+  return {
+    state: 'failed',
+    mode: null,
+    total: 0,
+    pending: 0,
+    running: 0,
+    success: 0,
+    failed: 0,
+    earliestMissingDate: null,
+    latestTradeDate: null,
+    incrementalTaskCount: 0,
+    currentTaskKey: null,
+    currentStockCode: null,
+    currentStockName: null,
+    lastError: error,
+    updatedAt: new Date().toISOString(),
+    failedTasks: [],
+  };
+}
+
+handleValidated('market:sync:status', SCHEMAS.marketSyncStatus, () => {
+  log.debug('IPC: market:sync:status');
+  try {
+    return getMarketSyncService().getStatus();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('IPC market:sync:status error:', message);
+    return emptyMarketSyncStatus(message);
+  }
+});
+
+handleValidated('market:sync:start', SCHEMAS.marketSyncStart, async () => {
+  log.info('IPC: market:sync:start');
+  try {
+    return await getMarketSyncService().start();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('IPC market:sync:start error:', message);
+    return { success: false, error: message };
+  }
+});
+
+handleValidated('market:sync:incremental', SCHEMAS.marketSyncIncremental, async () => {
+  log.info('IPC: market:sync:incremental');
+  try {
+    return await getMarketSyncService().incremental();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('IPC market:sync:incremental error:', message);
+    return { success: false, error: message };
+  }
+});
+
+handleValidated('market:sync:retry-failed', SCHEMAS.marketSyncRetryFailed, async () => {
+  log.info('IPC: market:sync:retry-failed');
+  try {
+    return await getMarketSyncService().retryFailed();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('IPC market:sync:retry-failed error:', message);
+    return { success: false, error: message };
+  }
+});
+
 /**
  * 获取K线数据
  */
@@ -1108,6 +1184,19 @@ app.whenReady().then(async () => {
     return;
   }
 
+  // 行情库与业务库双轨：初始化失败只影响行情库页面，不阻断自选股等功能
+  try {
+    await initMarketDatabase();
+    recoverInterruptedMarketSync();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('行情库初始化失败:', error);
+    dialog.showErrorBox(
+      '行情库初始化失败',
+      `全市场行情库（market_data.db）不可用，自选股等功能不受影响。\n${message}`
+    );
+  }
+
   fundService = new FundService(getDb());
   currentConfig = loadConfig();
   log.info('Config loaded on startup');
@@ -1151,5 +1240,7 @@ app.on('before-quit', () => {
   stopBackupScheduler(); // 停止数据库备份调度器
   stopKlineDownloadScheduler(); // 停止K线数据自动下载调度器
   stopLogCleanupTimer(); // 停止日志清理定时器
+  stopMarketDataSync(); // 停止行情库同步调度
   closeDatabase();
+  closeMarketDatabase();
 });

@@ -38,8 +38,8 @@ const dateRange = ref<{ startDate: string; endDate: string }>({
 /** 复权类型选择（T101：默认全选，与stock-sdk的adjust参数一致） */
 const adjustTypes = ref<('' | 'qfq')[]>(['', 'qfq']);
 
-/** K线周期（多选，默认仅日线；切换周期不改动日期范围） */
-const periods = ref<KlinePeriod[]>(['d']);
+/** K线周期（多选，默认全选日/周/月；切换周期不改动日期范围） */
+const periods = ref<KlinePeriod[]>([...KLINE_PERIODS]);
 
 /** 是否已全选周期 */
 const allPeriodsSelected = computed(() => KLINE_PERIODS.every(period => periods.value.includes(period)));
@@ -158,7 +158,7 @@ function handleCancel() {
         @change="handleDateChange"
       />
 
-      <!-- 周期选择（多选，默认仅日线） -->
+      <!-- 周期选择（多选，默认全选日/周/月） -->
       <div class="period-section">
         <div class="section-header">
           <label class="section-label">周期：</label>

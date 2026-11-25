@@ -37,8 +37,8 @@ const dateRange = ref<{ startDate: string; endDate: string }>({
 /** 复权类型选择（默认全选） */
 const adjustTypes = ref<('' | 'qfq')[]>(['', 'qfq']);
 
-/** K线周期（多选，默认仅日线；未勾选任何周期时禁止提交） */
-const periods = ref<KlinePeriod[]>(['d']);
+/** K线周期（多选，默认全选日/周/月；未勾选任何周期时禁止提交） */
+const periods = ref<KlinePeriod[]>([...KLINE_PERIODS]);
 
 /** 是否已全选周期 */
 const allPeriodsSelected = computed(() => KLINE_PERIODS.every(period => periods.value.includes(period)));
@@ -142,7 +142,7 @@ watch(
     selectedCodes.value = props.stocks.map(stock => stock.stockCode);
     dateRange.value = { startDate: getToday(), endDate: getToday() };
     adjustTypes.value = ['', 'qfq'];
-    periods.value = ['d'];
+    periods.value = [...KLINE_PERIODS];
     validationError.value = '';
   }
 );

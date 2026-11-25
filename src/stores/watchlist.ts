@@ -11,6 +11,8 @@ export interface BatchStockItemState {
   stockCode: string;
   stockName: string;
   status: BatchStockStatus;
+  /** 该股本次要下载的周期（来自进度事件，用于展示） */
+  periods?: KlinePeriod[];
   result?: KlineBatchStockResult;
   error?: string;
 }
@@ -157,7 +159,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
    * @param startDate 开始日期 (YYYYMMDD)
    * @param endDate 结束日期 (YYYYMMDD)
    * @param adjustTypes 复权类型数组（可选，默认 ['', 'qfq']）
-   * @param period K线周期（单选，默认 'd' 日线）
+   * @param periods K线周期数组（默认 ['d']；支持多选）
    * @returns 下载结果
    */
   async function downloadKline(
@@ -165,7 +167,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     startDate: string,
     endDate: string,
     adjustTypes?: ('' | 'qfq')[],
-    period: KlinePeriod = 'd'
+    periods: KlinePeriod[] = ['d']
   ): Promise<KlineDownloadResult> {
     // 设置下载中状态
     downloadStatusMap.value.set(stockCode, { isDownloading: true, result: null });
@@ -178,7 +180,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
         startDate,
         endDate,
         adjustTypes,
-        period,
+        periods,
       });
       downloadStatusMap.value.set(stockCode, { isDownloading: false, result });
       downloadStatusMap.value = new Map(downloadStatusMap.value);
@@ -270,6 +272,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
         stockCode: result.stockCode,
         stockName: result.stockName || initialItems.get(result.stockCode)?.stockName || '',
         status: result.success ? 'success' : 'failed',
+        periods: result.periods ?? initialItems.get(result.stockCode)?.periods,
         result,
         error: result.error,
       });
@@ -309,6 +312,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
         stockCode: payload.stockCode,
         stockName: payload.stockName || existing?.stockName || '',
         status: 'downloading',
+        periods: payload.periods,
       });
       downloadStatusMap.value.set(payload.stockCode, { isDownloading: true });
       downloadStatusMap.value = new Map(downloadStatusMap.value);
@@ -321,6 +325,7 @@ export const useWatchlistStore = defineStore('watchlist', () => {
       stockCode: payload.stockCode,
       stockName: payload.stockName || existing?.stockName || '',
       status: result?.success ? 'success' : 'failed',
+      periods: result?.periods ?? payload.periods,
       result,
       error: result?.error,
     });

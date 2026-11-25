@@ -45,12 +45,14 @@ import {
 import type { KlineBatchStockResult, KlineDownloadResult } from '../../shared/types';
 
 /**
- * 构造单只下载结果
+ * 构造单只下载结果（默认单周期日线）
  * @param overrides 覆盖字段
  */
 function createDownloadResult(overrides: Partial<KlineDownloadResult> = {}): KlineDownloadResult {
   return {
     success: true,
+    periods: ['d'],
+    byPeriod: [{ period: 'd', success: true }],
     ...overrides,
   };
 }
@@ -71,7 +73,9 @@ function createBatchResult(overrides: Partial<KlineBatchStockResult> = {}): Klin
 describe('buildBatchStockResult', () => {
   it('双复权均返回数据时判定成功并保留各类型条数', () => {
     const result = buildBatchStockResult(
-      createDownloadResult({ unadjustedCount: 5, adjustedCount: 7 }),
+      createDownloadResult({
+        byPeriod: [{ period: 'd', success: true, unadjustedCount: 5, adjustedCount: 7 }],
+      }),
       '000001',
       '平安银行',
       ['', 'qfq']
@@ -85,19 +89,30 @@ describe('buildBatchStockResult', () => {
 
   it('接口未抛错但所有复权类型均返回0条时判定失败', () => {
     const result = buildBatchStockResult(
-      createDownloadResult({ unadjustedCount: 0, adjustedCount: 0 }),
+      createDownloadResult({
+        success: false,
+        byPeriod: [{
+          period: 'd',
+          success: false,
+          unadjustedCount: 0,
+          adjustedCount: 0,
+          error: '未获取到K线数据',
+        }],
+      }),
       '600519',
       '贵州茅台',
       ['', 'qfq']
     );
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe('未获取到K线数据');
+    expect(result.error).toBe('日线: 未获取到K线数据');
   });
 
   it('只请求前复权且有条数时判定成功，且不写入不复权条数', () => {
     const result = buildBatchStockResult(
-      createDownloadResult({ unadjustedCount: 3, adjustedCount: 4 }),
+      createDownloadResult({
+        byPeriod: [{ period: 'd', success: true, adjustedCount: 4 }],
+      }),
       '510050',
       '上证50ETF',
       ['qfq']
@@ -111,10 +126,13 @@ describe('buildBatchStockResult', () => {
   it('一种复权失败但另一种有数据时判定成功，同时透传失败原因', () => {
     const result = buildBatchStockResult(
       createDownloadResult({
-        unadjustedCount: 0,
-        unadjustedError: '接口超时',
-        adjustedCount: 6,
-        adjustedError: undefined,
+        byPeriod: [{
+          period: 'd',
+          success: true,
+          unadjustedCount: 0,
+          unadjustedError: '接口超时',
+          adjustedCount: 6,
+        }],
       }),
       '300750',
       '宁德时代',
@@ -122,7 +140,7 @@ describe('buildBatchStockResult', () => {
     );
 
     expect(result.success).toBe(true);
-    expect(result.unadjustedError).toBe('接口超时');
+    expect(result.unadjustedError).toBe('日线: 接口超时');
     expect(result.error).toBeUndefined();
   });
 
@@ -130,8 +148,14 @@ describe('buildBatchStockResult', () => {
     const result = buildBatchStockResult(
       {
         success: false,
-        unadjustedError: '网络错误',
-        adjustedError: '限流',
+        periods: ['d'],
+        byPeriod: [{
+          period: 'd',
+          success: false,
+          unadjustedError: '网络错误',
+          adjustedError: '限流',
+          error: '不复权: 网络错误; 前复权: 限流',
+        }],
       },
       '000858',
       '五粮液',
@@ -139,10 +163,10 @@ describe('buildBatchStockResult', () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe('不复权: 网络错误; 前复权: 限流');
+    expect(result.error).toBe('日线: 不复权: 网络错误; 前复权: 限流');
   });
 
-  it('接口异常（error 字段）在无具体复权错误时透传', () => {
+  it('接口异常（error 字段）在缺少按周期明细时按周期兜底', () => {
     const result = buildBatchStockResult(
       { success: false, error: '网络不可用' },
       '159915',
@@ -151,7 +175,7 @@ describe('buildBatchStockResult', () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe('网络不可用');
+    expect(result.error).toBe('日线: 网络不可用');
   });
 });
 

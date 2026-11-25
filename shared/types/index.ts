@@ -849,11 +849,13 @@ export interface KlineData {
 }
 
 /**
- * K线数据下载结果
- * 代表一次K线数据下载操作的返回结果（支持双复权类型）
+ * K线数据下载结果中单个周期的明细
+ * 多周期下载时按周期分别记录条数与失败原因，是成败判定与结果展示的事实来源
  */
-export interface KlineDownloadResult {
-  /** 是否成功（至少一种复权类型成功即为true） */
+export interface KlineDownloadPeriodResult {
+  /** 本明细对应的K线周期 */
+  period: KlinePeriod;
+  /** 该周期是否成功（所选复权类型中至少一种返回条数大于 0） */
   success: boolean;
   /** 不复权数据条数 */
   unadjustedCount?: number;
@@ -863,9 +865,32 @@ export interface KlineDownloadResult {
   unadjustedError?: string;
   /** 前复权失败原因 */
   adjustedError?: string;
+  /** 该周期的失败原因（汇总展示用） */
+  error?: string;
+}
+
+/**
+ * K线数据下载结果
+ * 代表一次K线数据下载操作的返回结果（支持多周期 + 双复权类型）
+ */
+export interface KlineDownloadResult {
+  /** 是否成功（所有所选周期均成功即为true） */
+  success: boolean;
+  /** 本次实际下载的周期（按日线 → 周线 → 月线顺序） */
+  periods?: KlinePeriod[];
+  /** 按周期的下载明细（判定与展示以此为准） */
+  byPeriod?: KlineDownloadPeriodResult[];
+  /** 不复权数据条数（所有所选周期的合计） */
+  unadjustedCount?: number;
+  /** 前复权数据条数（所有所选周期的合计） */
+  adjustedCount?: number;
+  /** 不复权失败原因（所有所选周期的合计，按周期前缀拼接） */
+  unadjustedError?: string;
+  /** 前复权失败原因（所有所选周期的合计，按周期前缀拼接） */
+  adjustedError?: string;
   /** 兼容旧版：总数据条数（已废弃，使用unadjustedCount + adjustedCount） */
   count?: number;
-  /** 兼容旧版：失败原因（已废弃，使用unadjustedError/adjustedError） */
+  /** 失败原因（按周期拼接） */
   error?: string;
 }
 
@@ -882,8 +907,8 @@ export interface KlineDownloadInput {
   endDate: string;
   /** 复权类型数组（可选，默认 ['', 'qfq']，与stock-sdk的adjust参数一致） */
   adjustTypes?: ('' | 'qfq')[];
-  /** K线周期（可选，默认 'd' 日线） */
-  period?: KlinePeriod;
+  /** K线周期数组（可选，默认 ['d']；支持多选，按日线 → 周线 → 月线顺序执行） */
+  periods?: KlinePeriod[];
 }
 
 /**
@@ -899,8 +924,8 @@ export interface KlineBatchDownloadInput {
   endDate: string;
   /** 复权类型数组（可选，默认 ['', 'qfq']，与stock-sdk的adjust参数一致） */
   adjustTypes?: ('' | 'qfq')[];
-  /** K线周期（单选，可选，默认 'd' 日线） */
-  period?: KlinePeriod;
+  /** K线周期数组（可选，默认 ['d']；支持多选，按日线 → 周线 → 月线顺序执行） */
+  periods?: KlinePeriod[];
 }
 
 /**
@@ -924,19 +949,23 @@ export interface KlineBatchStockResult {
   stockCode: string;
   /** 股票名称 */
   stockName: string;
-  /** 本次下载的K线周期 */
+  /** 本次任务周期的回显（已废弃，多周期以 periods / byPeriod 为准） */
   period?: KlinePeriod;
-  /** 是否成功（所选复权类型中至少一种返回条数大于0） */
+  /** 本次下载的K线周期（按日线 → 周线 → 月线顺序） */
+  periods?: KlinePeriod[];
+  /** 按周期的下载明细（成败判定与展示以此为准） */
+  byPeriod?: KlineDownloadPeriodResult[];
+  /** 是否成功（所有所选周期均成功） */
   success: boolean;
-  /** 不复权数据条数 */
+  /** 不复权数据条数（所有所选周期的合计） */
   unadjustedCount?: number;
-  /** 前复权数据条数 */
+  /** 前复权数据条数（所有所选周期的合计） */
   adjustedCount?: number;
-  /** 不复权失败原因 */
+  /** 不复权失败原因（所有所选周期的合计，按周期前缀拼接） */
   unadjustedError?: string;
-  /** 前复权失败原因 */
+  /** 前复权失败原因（所有所选周期的合计，按周期前缀拼接） */
   adjustedError?: string;
-  /** 失败原因（汇总展示用） */
+  /** 失败原因（按周期拼接，汇总展示用） */
   error?: string;
 }
 
@@ -973,8 +1002,8 @@ export interface KlineBatchProgressPayload {
   stockCode: string;
   /** 股票名称 */
   stockName?: string;
-  /** 本次批量任务的K线周期 */
-  period?: KlinePeriod;
+  /** 该股本次要下载的K线周期（按日线 → 周线 → 月线顺序） */
+  periods: KlinePeriod[];
   /** 该股本次实际的下载起始日（YYYYMMDD，自动增量下载时可能与整批 startDate 不同） */
   startDate?: string;
   /** 单只结果（phase === 'completed' 时提供） */

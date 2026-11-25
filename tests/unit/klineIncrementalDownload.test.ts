@@ -10,7 +10,11 @@ const sdkState = vi.hoisted(() => ({
 const dbState = vi.hoisted(() => ({
   latest: new Map<string, { unadjusted: string | null; adjusted: string | null }>(),
   fail: false,
+  watchlist: [] as { stockCode: string; stockName: string }[],
 }));
+
+// 记录自动下载实际写入的周期与复权类型，用于验证「按周期分层执行」
+const savedCalls = vi.hoisted(() => [] as { period: string; adjust: string }[]);
 
 vi.mock('electron', () => ({
   BrowserWindow: {
@@ -43,8 +47,11 @@ vi.mock('stock-sdk', () => ({
 }));
 
 vi.mock('../../electron/database', () => ({
-  getWatchlist: () => [],
-  saveKlineData: () => 0,
+  getWatchlist: () => dbState.watchlist,
+  saveKlineData: (_code: string, _klines: unknown[], adjust: string, period: string) => {
+    savedCalls.push({ period, adjust });
+    return 0;
+  },
   getChartData: () => [],
   getLatestTradeDates: () => {
     if (dbState.fail) {
@@ -63,7 +70,8 @@ import {
   getLastTradingDay,
   isPastDailyScheduleTime,
   isPeriodComplete,
-  localDateYmd
+  localDateYmd,
+  performAutoDownload
 } from '../../electron/services/klineDownloadService';
 
 /**
@@ -90,6 +98,8 @@ beforeEach(() => {
   sdkState.fail = false;
   dbState.latest = new Map();
   dbState.fail = false;
+  dbState.watchlist = [];
+  savedCalls.length = 0;
 });
 
 afterEach(() => {
@@ -318,5 +328,26 @@ describe('computeNextScheduleTarget（调度最小间隔）', () => {
     const target = computeNextScheduleTarget(new Date(2026, 10, 21, 10, 0, 0, 0));
 
     expectLocal(target, 2026, 10, 23, 15, 10);
+  });
+});
+
+describe('performAutoDownload（自动下载仍按周期分层执行）', () => {
+  it('按 日线 → 周线 → 月线 依次下载，每个周期独立写入各自表', async () => {
+    // 20:00 本地时间，确保 UTC 日期与本地日期一致（避免时区导致的交易日判断偏差）
+    freezeTo(2026, 10, 17, 20, 0);
+    sdkState.calendar = ['2026-11-17'];
+    dbState.watchlist = [{ stockCode: '000001', stockName: '平安银行' }];
+
+    await performAutoDownload();
+
+    // 1 只股票 × 3 周期 × 2 复权 = 6 次写入；自动下载开启重试，
+    // 本次数据源返回 0 条会触发一次周期级重试，因此每个周期各 4 次写入
+    expect(savedCalls.map(call => call.period)).toEqual([
+      'd', 'd', 'd', 'd',
+      'w', 'w', 'w', 'w',
+      'm', 'm', 'm', 'm',
+    ]);
+    // 周期顺序固定为 日线 → 周线 → 月线，周期内复权顺序为 不复权 → 前复权
+    expect(savedCalls.slice(0, 4).map(call => call.adjust)).toEqual(['', 'qfq', '', 'qfq']);
   });
 });

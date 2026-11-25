@@ -296,7 +296,10 @@ export const SCHEMAS = {
       startDate: v.date('input.startDate', 'YYYYMMDD'),
       endDate: v.date('input.endDate', 'YYYYMMDD'),
       adjustTypes: v.optional(v.arrayOf('input.adjustTypes', v.enumOf('adjustTypes[]', ADJUST_TYPES)), undefined),
-      period: v.optional(v.enumOf('input.period', KLINE_PERIODS), undefined),
+      periods: v.optional(
+        v.arrayOf('input.periods', v.enumOf('periods[]', KLINE_PERIODS), { minLength: 1, maxLength: 3 }),
+        undefined
+      ),
     }),
   ],
 } satisfies Record<string, readonly Validator[]>;

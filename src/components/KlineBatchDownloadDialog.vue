@@ -2,7 +2,8 @@
 import AppIcon from './ui/AppIcon.vue';
 import { computed, ref, watch } from 'vue';
 import type { BatchDownloadState, BatchStockStatus } from '../stores/watchlist';
-import { KLINE_PERIODS, KLINE_PERIOD_LABELS, type KlineBatchStockResult, type KlinePeriod } from '../types';
+import { KLINE_PERIODS, KLINE_PERIOD_LABELS, type KlinePeriod } from '../types';
+import { formatPeriodCounts } from '../utils/klinePeriodSummary';
 import DateRangePicker from './DateRangePicker.vue';
 import Modal from './Modal.vue';
 
@@ -16,7 +17,7 @@ const props = defineProps<Props>();
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
-  download: [payload: { stockCodes: string[]; startDate: string; endDate: string; adjustTypes: ('' | 'qfq')[]; period: KlinePeriod }];
+  download: [payload: { stockCodes: string[]; startDate: string; endDate: string; adjustTypes: ('' | 'qfq')[]; periods: KlinePeriod[] }];
 }>();
 
 /** 计算默认日期：当日 */
@@ -36,8 +37,16 @@ const dateRange = ref<{ startDate: string; endDate: string }>({
 /** 复权类型选择（默认全选） */
 const adjustTypes = ref<('' | 'qfq')[]>(['', 'qfq']);
 
-/** K线周期（单选，默认日线；三个选项互斥，始终有选中项） */
-const period = ref<KlinePeriod>('d');
+/** K线周期（多选，默认仅日线；未勾选任何周期时禁止提交） */
+const periods = ref<KlinePeriod[]>(['d']);
+
+/** 是否已全选周期 */
+const allPeriodsSelected = computed(() => KLINE_PERIODS.every(period => periods.value.includes(period)));
+
+/** 是否部分勾选周期（用于全选复选框半选状态） */
+const partiallySelectedPeriods = computed(
+  () => periods.value.length > 0 && !allPeriodsSelected.value
+);
 
 /** 验证错误信息 */
 const validationError = ref('');
@@ -61,6 +70,7 @@ const canSubmit = computed(() => {
   if (!startDate || !endDate) return false;
   if (startDate > endDate) return false;
   if (endDate > getToday()) return false;
+  if (periods.value.length === 0) return false;
   if (adjustTypes.value.length === 0) return false;
 
   return true;
@@ -98,24 +108,8 @@ interface RowStatusView {
 }
 
 /**
- * 构建单只成功的条数文案（仅展示本次请求的复权类型）
- * @param result 单只下载结果
- */
-function buildCountParts(result?: KlineBatchStockResult): string[] {
-  if (!result) return [];
-
-  const parts: string[] = [];
-  if (result.unadjustedCount !== undefined) {
-    parts.push(`不复权 ${result.unadjustedCount} 条`);
-  }
-  if (result.adjustedCount !== undefined) {
-    parts.push(`前复权 ${result.adjustedCount} 条`);
-  }
-  return parts;
-}
-
-/**
  * 获取单只股票的状态展示信息
+ * 成功时按周期展示各复权类型条数（行内截断、title 完整），失败时展示失败周期与原因
  * @param stockCode 股票代码
  */
 function getRowStatus(stockCode: string): RowStatusView {
@@ -130,10 +124,9 @@ function getRowStatus(stockCode: string): RowStatusView {
   }
 
   if (item.status === 'success') {
-    const parts = buildCountParts(item.result);
-    const text = parts.length > 0 ? parts.join(' · ') : '成功';
+    const { short, full } = formatPeriodCounts(item.result?.byPeriod);
     // 图标由模板按 status 渲染，文案不再拼接字符
-    return { status: 'success', text, title: text };
+    return { status: 'success', text: short, title: full };
   }
 
   const error = item.error || item.result?.error || '未知错误';
@@ -149,10 +142,17 @@ watch(
     selectedCodes.value = props.stocks.map(stock => stock.stockCode);
     dateRange.value = { startDate: getToday(), endDate: getToday() };
     adjustTypes.value = ['', 'qfq'];
-    period.value = 'd';
+    periods.value = ['d'];
     validationError.value = '';
   }
 );
+
+/** 处理周期全选切换 */
+function handleToggleAllPeriods(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked;
+  periods.value = checked ? [...KLINE_PERIODS] : [];
+  validationError.value = '';
+}
 
 /** 处理全选切换 */
 function handleToggleAll(event: Event) {
@@ -208,6 +208,11 @@ function handleConfirm() {
     return;
   }
 
+  if (periods.value.length === 0) {
+    validationError.value = '请至少选择一个周期';
+    return;
+  }
+
   if (adjustTypes.value.length === 0) {
     validationError.value = '请至少选择一种复权类型';
     return;
@@ -221,7 +226,8 @@ function handleConfirm() {
     startDate: startDate.replace(/-/g, ''),
     endDate: endDate.replace(/-/g, ''),
     adjustTypes: [...adjustTypes.value],
-    period: period.value,
+    // 周期按固定顺序（日→周→月）去重后传递，执行顺序不依赖勾选顺序
+    periods: KLINE_PERIODS.filter(period => periods.value.includes(period)),
   });
 }
 </script>
@@ -290,10 +296,23 @@ function handleConfirm() {
         <DateRangePicker :model-value="dateRange" @change="handleDateChange" />
 
         <div class="period-section">
-          <label class="section-label">周期：</label>
-          <div class="radio-group">
-            <label v-for="p in KLINE_PERIODS" :key="p" class="radio-item">
-              <input type="radio" :value="p" v-model="period" />
+          <div class="period-header">
+            <label class="section-label">周期：</label>
+            <label class="select-all">
+              <input
+                type="checkbox"
+                :checked="allPeriodsSelected"
+                :indeterminate.prop="partiallySelectedPeriods"
+                :disabled="isRunning"
+                @change="handleToggleAllPeriods"
+              />
+              <span>全选</span>
+            </label>
+            <span class="selected-count">已选 {{ periods.length }} / 共 {{ KLINE_PERIODS.length }}</span>
+          </div>
+          <div class="checkbox-group">
+            <label v-for="p in KLINE_PERIODS" :key="p" class="checkbox-item">
+              <input type="checkbox" :value="p" v-model="periods" :disabled="isRunning" />
               <span>{{ KLINE_PERIOD_LABELS[p] }}</span>
             </label>
           </div>
@@ -488,13 +507,20 @@ function handleConfirm() {
     color: var(--text-primary);
   }
 
-  .checkbox-group,
-  .radio-group {
+  .checkbox-group {
     display: flex;
     gap: var(--space-4);
   }
+}
 
-  .radio-item {
+.period-section {
+  .period-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .select-all {
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -502,7 +528,7 @@ function handleConfirm() {
     font-size: var(--font-size-sm);
     color: var(--text-primary);
 
-    input[type="radio"] {
+    input[type="checkbox"] {
       width: 16px;
       height: 16px;
       cursor: pointer;
@@ -516,6 +542,11 @@ function handleConfirm() {
     &:hover {
       color: var(--color-primary);
     }
+  }
+
+  .selected-count {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
   }
 }
 

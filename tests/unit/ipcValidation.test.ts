@@ -163,7 +163,33 @@ describe('关键通道 schema', () => {
     expect(() => validateArgs('kline:download-batch', SCHEMAS.klineDownloadBatch, [undefined])).toThrow(/input: 必须是对象/);
     const valid = { stockCodes: ['000001'], startDate: '20260101', endDate: '20261114' };
     expect(() => validateArgs('kline:download-batch', SCHEMAS.klineDownloadBatch, [valid])).not.toThrow();
-    expect(() => validateArgs('kline:download-batch', SCHEMAS.klineDownloadBatch, [{ ...valid, period: 'x' }])).toThrow(/input.period/);
+  });
+
+  it('kline:download-batch 的 periods 支持缺省、多元素，并拒绝空数组与非法元素', () => {
+    const valid = { stockCodes: ['000001'], startDate: '20260101', endDate: '20261114' };
+
+    // 缺省：不传 periods 视为合法（主进程按日线兜底）
+    expect(() => validateArgs('kline:download-batch', SCHEMAS.klineDownloadBatch, [valid])).not.toThrow();
+
+    // 合法多元素
+    expect(() => validateArgs('kline:download-batch', SCHEMAS.klineDownloadBatch, [
+      { ...valid, periods: ['d', 'w', 'm'] },
+    ])).not.toThrow();
+
+    // 空数组：未选周期，拒绝
+    expect(() => validateArgs('kline:download-batch', SCHEMAS.klineDownloadBatch, [
+      { ...valid, periods: [] },
+    ])).toThrow(/input\.periods/);
+
+    // 非法元素（字段名为 periods[]）
+    expect(() => validateArgs('kline:download-batch', SCHEMAS.klineDownloadBatch, [
+      { ...valid, periods: ['d', 'y'] },
+    ])).toThrow(/periods/);
+
+    // 超出周期数量上限
+    expect(() => validateArgs('kline:download-batch', SCHEMAS.klineDownloadBatch, [
+      { ...valid, periods: ['d', 'w', 'm', 'd'] },
+    ])).toThrow(/periods/);
   });
 
   it('watchlist:add 拒绝空代码与非法字符', () => {

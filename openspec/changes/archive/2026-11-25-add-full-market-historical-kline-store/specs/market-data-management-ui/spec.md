@@ -86,11 +86,19 @@
 
 ### Requirement: 页面轮询同步状态并及时停止
 
-系统 SHALL 在页面挂载时立即查询一次 `market:sync:status`，并在页面可见期间每 1 秒轮询；页面卸载时必须清除轮询定时器。
+系统 SHALL 在页面挂载时立即查询一次 `market:sync:status`。轮询间隔 MUST 随状态自适应：`state = running` 时为 1 秒，其它状态为 5 秒；每次查询结束后 MUST 按最新状态重排下一次轮询。页面卸载时必须清除轮询定时器。
 
 #### Scenario: 页面挂载
 - **WHEN** 行情库页面挂载
-- **THEN** 系统立即发起一次状态查询，并启动 1 秒轮询
+- **THEN** 系统立即发起一次状态查询，并按当前状态启动自适应轮询（非运行态 5 秒）
+
+#### Scenario: 同步进入运行态
+- **WHEN** 状态查询返回 `state = running`
+- **THEN** 下一次轮询在 1 秒后发起
+
+#### Scenario: 同步结束进入非运行态
+- **WHEN** 状态查询返回 `idle / completed / failed`
+- **THEN** 下一次轮询在 5 秒后发起
 
 #### Scenario: 页面卸载
 - **WHEN** 用户离开行情库页面

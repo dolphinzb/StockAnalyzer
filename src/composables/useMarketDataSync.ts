@@ -17,8 +17,19 @@ declare global {
   }
 }
 
-/** 轮询间隔（毫秒） */
-const POLL_INTERVAL_MS = 1000;
+/** 同步运行中的轮询间隔（毫秒） */
+const POLL_INTERVAL_RUNNING_MS = 1000;
+/** 非运行态的轮询间隔（毫秒） */
+const POLL_INTERVAL_IDLE_MS = 5000;
+
+/**
+ * 按同步状态选择轮询间隔
+ * - `running`：1 秒，及时反映当前股票与任务进度
+ * - 其它状态：5 秒，空闲时减少无意义的查询
+ */
+export function pollIntervalOf(state: MarketSyncStatus['state'] | null | undefined): number {
+  return state === 'running' ? POLL_INTERVAL_RUNNING_MS : POLL_INTERVAL_IDLE_MS;
+}
 
 /** 控制命令类型 */
 export type MarketControlAction = 'start' | 'incremental' | 'retry';
@@ -30,15 +41,36 @@ export function useMarketDataSync() {
   const loadError = ref<string | null>(null);
   const { showToast } = useToast();
 
-  let timer: ReturnType<typeof setInterval> | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let polling = false;
 
   const api = (): MarketDataAPI | undefined => window.marketDataAPI;
 
-  /** 立即查询一次状态 */
+  /**
+   * 按最新状态安排下一次轮询
+   * 每次查询结束后重排，因此状态从 idle/failed/completed 切到 running（或反之）时
+   * 下一次间隔会自动在 1 秒 / 5 秒之间切换。
+   */
+  function reschedule(): void {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (!polling) {
+      return;
+    }
+    timer = setTimeout(() => {
+      timer = null;
+      void refresh();
+    }, pollIntervalOf(status.value?.state));
+  }
+
+  /** 立即查询一次状态，并按最新状态重排轮询 */
   async function refresh(): Promise<void> {
     const target = api();
     if (!target) {
       loadError.value = '行情库接口不可用，请重启应用';
+      reschedule();
       return;
     }
     try {
@@ -46,21 +78,22 @@ export function useMarketDataSync() {
       loadError.value = null;
     } catch (error) {
       loadError.value = error instanceof Error ? error.message : String(error);
+    } finally {
+      reschedule();
     }
   }
 
-  /** 启动 1 秒轮询（重复调用不会叠加定时器） */
+  /** 启动自适应轮询（重复调用不会叠加定时器） */
   function startPolling(): void {
-    stopPolling();
-    timer = setInterval(() => {
-      void refresh();
-    }, POLL_INTERVAL_MS);
+    polling = true;
+    reschedule();
   }
 
   /** 清除轮询定时器 */
   function stopPolling(): void {
+    polling = false;
     if (timer !== null) {
-      clearInterval(timer);
+      clearTimeout(timer);
       timer = null;
     }
   }

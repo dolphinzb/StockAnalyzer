@@ -28,7 +28,7 @@
 - [x] 4.1 定义 `task_key` 生成规则、`data_kind` 枚举与 `meta.sync_control_state`，写入 `sync_state`
 - [x] 4.2 实现 raw/qfq/hfq 日线全量回填任务生成，起始日期统一为 `19900101`
 - [x] 4.3 实现手动增量任务生成：仅 `is_active = 1`，每只证券每种 `data_kind` 从 `last_success_date` 的下一个交易日补到最新交易日，计算 `earliestMissingDate / latestTradeDate / incrementalTaskCount`，不注册自动调度器
-- [x] 4.4 实现基于 `sync_state` 的任务调度器：并发默认 3/上限 5，另加 1 秒滑动窗口 RPS 默认 3/上限 5；所有请求含重试都计入限速
+- [x] 4.4 实现基于 `sync_state` 的任务调度器：并发默认 10/上限 15，另加 1 秒滑动窗口 RPS 默认 3（东财建议值）/上限 20；所有请求含重试都计入限速
 - [x] 4.5 实现失败重试：最多 3 次，基础 1000ms、指数因子 2、最大 60000ms、0～500ms 抖动，支持 `Retry-After`；重启时保留任务但不自动继续，`running` 回退 `pending`，控制状态置 `idle`
 - [x] 4.6 新增 `MarketSyncStatus` 类型（`state / mode / counts / earliestMissingDate / latestTradeDate / incrementalTaskCount / current / lastError / updatedAt`）与 IPC 入参 schema 校验
 - [x] 4.7 实现 `market:sync:status` IPC，返回总数、待处理、运行中、成功、失败、当前任务、当前证券和最近错误
@@ -36,13 +36,15 @@
 - [x] 4.9 实现 `market:sync:retry-failed`：只把 `failed` 改为 `pending`、`retry_count = 0`、`next_retry_at = now`；不重置 `success`，不重新生成全量任务，不影响已完成股票
 - [x] 4.10 实现 `market:sync:incremental`：手动触发增量补跑，未完成全量回填或存在未完成全量任务时拒绝
 - [x] 4.11 实现全量/增量互斥：`sync_mode` 为 `full` 或 `incremental`，一个运行中时拒绝另一种启动
-- [x] 4.12 单元测试：调度器并发上限，默认 3、最大 5、配置 10 时实际不超过 5
-- [x] 4.13 单元测试：1 秒滑动窗口 RPS，快速响应和重试场景下任意 1 秒窗口不超过 3 次请求
+- [x] 4.12 单元测试：调度器并发上限，默认 10、最大 15、配置 100 时实际不超过 15
+- [x] 4.13 单元测试：1 秒滑动窗口 RPS，快速响应和重试场景下任意 1 秒窗口不超过 3 次请求；RPS 配置 100 时收敛到 20
 - [x] 4.14 单元测试：指数退避 1s/2s/4s、最大 60s、抖动、`Retry-After`，以及 3 次重试后置为 `failed`
 - [x] 4.15 单元测试：断点续跑，`running` 回退 `pending`、控制状态 `idle`、重启不自动执行、用户继续后只执行未完成任务
 - [x] 4.16 单元测试：部分失败重试只重置 `failed`，`success` 任务和已完成股票数据保持不变
 - [x] 4.17 单元测试：重复调用 `start` 不重复生成任务；增量任务从各自 `last_success_date` 接续并正确计算 `earliestMissingDate`
 - [x] 4.18 单元测试：全量与增量互斥，运行中拒绝另一种模式
+- [x] 4.19 SDK 内部 rateLimit 由 `meta.sync_rps` 解析后传入（默认 3 req/s），与服务层滑动窗口一致，避免成为比它更低的瓶颈；单元测试验证构造参数透传
+- [x] 4.20 失败诊断：展开异常 cause 链，HTTP 适配器补 URL/超时信息，SDK 适配器补代码/复权类型/日期区间；写入 `last_error` 与日志，单元测试覆盖 `fetch failed` 场景
 
 ## 5. 行情写入、复权因子与派生周期
 
@@ -69,7 +71,8 @@
 
 - [x] 7.1 扩展 `ViewId` 为 `market-data`，在 `App.vue` 注册 `MarketDataView`，在侧边栏增加“行情库”入口
 - [x] 7.2 新增 `MarketDataView.vue`：状态卡片、任务统计、当前任务/证券、最近错误、失败任务表，以及全量回填和增量更新两个操作区
-- [x] 7.3 新增 `useMarketDataSync.ts`：挂载立即查询、1 秒轮询、卸载清理、控制命令封装与错误提示
+- [x] 7.3 新增 `useMarketDataSync.ts`：挂载立即查询、自适应轮询（`running` 1 秒 / 其它 5 秒，每次查询后按最新状态重排）、卸载清理、控制命令封装与错误提示
+- [x] 7.8 单元测试：轮询间隔随状态自适应切换，停止轮询后不再发起状态查询
 - [x] 7.4 扩展 `shared/types` 与 preload，暴露 `market:sync:status/start/incremental/retry-failed`
 - [x] 7.5 实现首次打开显示“未开始”且不自动执行全量或增量；展示最早缺失日期、最新交易日、待补任务数，并按状态禁用开始/重试按钮
 - [x] 7.6 实现失败任务列表与“重试失败”操作，展示重试次数、最近错误和下次重试时间
@@ -85,5 +88,5 @@
 - [ ] 8.6 回归现有自选股下载、图表展示、资金估值和形态识别，确认读取路径未被切换
 - [ ] 8.7 输出验收报告，确认双轨运行状态并列出后续分析层切换的待办
 - [ ] 8.8 模拟部分股票或数据类型失败，验证重试只重置失败任务，已完成股票和成功任务的数据不变
-- [ ] 8.9 验证任意 1 秒窗口请求数不超过 RPS，失败退避按约 1s/2s/4s 递增，3 次重试后任务置为 `failed`
+- [ ] 8.9 验证任意 1 秒窗口请求数不超过 RPS（默认 3），失败退避按约 1s/2s/4s 递增，3 次重试后任务置为 `failed`；观察源站是否出现 429 或 `UND_ERR_SOCKET` 并记录对应的 `meta.sync_rps` 值
 - [ ] 8.10 选取近期发生除权除息的股票，执行增量后确认前复权历史被整体重标定、拼接处无假跳空，后复权历史因子未变化

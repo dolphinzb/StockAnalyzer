@@ -304,7 +304,7 @@ function sseUrl(options: { isDelisted: boolean; pageNo: number; stockType: strin
   const params = new URLSearchParams({
     sqlId: SSE_SQL_ID,
     STOCK_TYPE: options.stockType,
-    COMPANY_STATUS: options.isDelisted ? '3' : '2,4,5,7,8',
+    COMPANY_STATUS: options.isDelisted ? '3' : '2',
     REG_PROVINCE: '',
     CSRC_CODE: '',
     STOCK_CODE: '',
@@ -350,13 +350,14 @@ export async function fetchSseSecurities(deps: UniverseDeps, isDelisted: boolean
 
 /**
  * 拉取深交所名录
- * @param isDelisted true 时使用 `CATALOGID=1793_ssgs / TABKEY=tab2`（终止上市）
+ * - 在市 A 股列表：`CATALOGID=1110 / TABKEY=tab1`
+ * - 终止上市：`CATALOGID=1793_ssgs / TABKEY=tab2`
  */
 export async function fetchSzseSecurities(
   deps: UniverseDeps,
   isDelisted: boolean
 ): Promise<ParsedSecurity[]> {
-  const catalogId = '1793_ssgs';
+  const catalogId = isDelisted ? '1793_ssgs' : '1110';
   const tabKey = isDelisted ? 'tab2' : 'tab1';
   const collected: ParsedSecurity[] = [];
 
@@ -373,10 +374,16 @@ export async function fetchSzseSecurities(
       headers: { ...SZSE_HEADERS },
     });
     const payload = parseJsonPayload(text);
-    const blocks = toRecordRows(payload);
-    const block = blocks.find(
-      item => item.tabkey === tabKey && Array.isArray(item.data) && (item.data as unknown[]).length > 0
-    ) ?? blocks.find(item => Array.isArray(item.data) && (item.data as unknown[]).length > 0);
+    const blocks = toRecordRows(payload).filter(
+      item => Array.isArray(item.data) && (item.data as unknown[]).length > 0
+    );
+    // tabkey 位于 metadata 内，顶层没有该字段；仅当目标块缺失且响应只有一个非空块时才回退，
+    // 避免把 B 股列表或终止上市清单当成在市 A 股列表。
+    const tabOf = (item: Record<string, unknown>): unknown =>
+      (item.metadata as Record<string, unknown> | undefined)?.tabkey ?? item.tabkey;
+    const block =
+      blocks.find(item => tabOf(item) === tabKey) ??
+      (blocks.length === 1 ? blocks[0] : undefined);
 
     if (!block) {
       break;

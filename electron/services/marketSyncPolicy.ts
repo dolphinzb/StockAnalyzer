@@ -8,13 +8,24 @@
 /** 全量回填统一起点（早于 A 股首个交易日，由数据源按上市日截断） */
 export const BACKFILL_START_DATE = '19900101';
 
-/** 并发默认值与上限 */
-export const DEFAULT_CONCURRENCY = 3;
-export const MAX_CONCURRENCY = 5;
+/**
+ * 并发默认值与上限
+ *
+ * 全量回填约 1.7 万个任务，并发太小会显著拉长总耗时；并发只负责同时在途的任务数，
+ * 真实请求速率仍由下方滑动窗口独立约束。
+ */
+export const DEFAULT_CONCURRENCY = 10;
+export const MAX_CONCURRENCY = 15;
 
-/** 请求速率默认值与上限（req/s） */
+/**
+ * 请求速率默认值与上限（req/s）
+ *
+ * 默认 3 req/s，对应 333ms 最小请求间隔。
+ * 注意：HTTP 请求由匀速限流器按最小间隔放行，而不是允许短时突发。
+ * 上限 20 保留为可配置天花板。
+ */
 export const DEFAULT_RPS = 3;
-export const MAX_RPS = 5;
+export const MAX_RPS = 20;
 
 /** 自动重试：最多 3 次重试（初始请求 + 3 次重试） */
 export const MAX_AUTO_RETRIES = 3;
@@ -26,6 +37,9 @@ export const RETRY_JITTER_MS = 500;
 
 /** 1 秒滑动窗口的窗口长度 */
 export const RATE_WINDOW_MS = 1000;
+
+/** 默认最小请求间隔：333ms，对应 3 req/s */
+export const DEFAULT_REQUEST_INTERVAL_MS = 333;
 
 /**
  * 并发数归一化：非法值回落默认值，超过上限收敛到上限
@@ -45,6 +59,14 @@ export function clampRequestsPerSecond(value?: number | null): number {
     return DEFAULT_RPS;
   }
   return Math.min(Math.floor(value), MAX_RPS);
+}
+
+/**
+ * 把 RPS 换算为最小请求间隔（毫秒）
+ * 默认 3 req/s 向下取整为 333ms。
+ */
+export function intervalMsForRps(value?: number | null): number {
+  return Math.floor(1000 / clampRequestsPerSecond(value));
 }
 
 /** 限速器接口 */
@@ -95,6 +117,58 @@ export function createSlidingWindowRateLimiter(options: {
         const wait = timestamps[0] + windowMs - current + 1;
         await sleep(wait > 0 ? wait : 1);
       }
+    },
+    countInWindow(): number {
+      const current = now();
+      prune(current);
+      return timestamps.length;
+    },
+  };
+}
+
+/**
+ * 创建匀速限流器：相邻请求至少间隔 intervalMs。
+ *
+ * 与滑动窗口不同，匀速限流器不允许短时突发；适合按最小请求间隔限速的数据源。
+ */
+export function createPacedRateLimiter(options: {
+  intervalMs?: number | null;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+} = {}): RateLimiter {
+  const intervalMs =
+    typeof options.intervalMs === 'number' && Number.isFinite(options.intervalMs) && options.intervalMs > 0
+      ? options.intervalMs
+      : DEFAULT_REQUEST_INTERVAL_MS;
+  const now = options.now ?? (() => Date.now());
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
+  const timestamps: number[] = [];
+  let nextAt = 0;
+  let tail: Promise<void> = Promise.resolve();
+
+  const prune = (current: number): void => {
+    while (timestamps.length > 0 && timestamps[0] <= current - RATE_WINDOW_MS) {
+      timestamps.shift();
+    }
+  };
+
+  return {
+    acquire(): Promise<void> {
+      const task = tail.then(async () => {
+        const current = now();
+        if (current < nextAt) {
+          await sleep(nextAt - current);
+        }
+        const issuedAt = now();
+        nextAt = issuedAt + intervalMs;
+        prune(issuedAt);
+        timestamps.push(issuedAt);
+      });
+      tail = task.then(
+        () => undefined,
+        () => undefined
+      );
+      return task;
     },
     countInWindow(): number {
       const current = now();

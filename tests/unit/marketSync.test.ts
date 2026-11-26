@@ -24,7 +24,9 @@ import {
   type MarketDatabase,
 } from '../../electron/marketDatabase';
 import {
+  createDefaultFetchText,
   createMarketSyncService,
+  describeSyncError,
   detectCorporateAction,
   extractRetryAfterMs,
   isHfqFactorJump,
@@ -37,7 +39,9 @@ import {
   clampRequestsPerSecond,
   computeBackoffDelay,
   computeNextRetryAt,
+  createPacedRateLimiter,
   createSlidingWindowRateLimiter,
+  intervalMsForRps,
   parseRetryAfter,
   runWorkerPool,
 } from '../../electron/services/marketSyncPolicy';
@@ -374,6 +378,53 @@ function seedFactorIncrementalDb(): void {
   }
 }
 
+describe('失败原因展开', () => {
+  it('展开 fetch failed 的 cause 链与错误码', () => {
+    const cause = Object.assign(new Error('read ECONNRESET'), {
+      code: 'ECONNRESET',
+      syscall: 'read',
+    });
+    const failure = new Error('fetch failed') as Error & { cause?: unknown };
+    failure.cause = cause;
+
+    const text = describeSyncError(failure);
+    expect(text).toContain('fetch failed');
+    expect(text).toContain('ECONNRESET');
+    expect(text).toContain('cause:');
+  });
+
+  it('HTTP 错误保留状态码，非 Error 值也能展示', () => {
+    const httpError = Object.assign(new Error('Bad Gateway'), { status: 502 });
+    expect(describeSyncError(httpError)).toContain('HTTP 502');
+    expect(describeSyncError('字符串错误')).toBe('字符串错误');
+  });
+
+  it('网络异常时 HTTP 适配器补上 URL 与底层原因', async () => {
+    const originalFetch = globalThis.fetch;
+    const cause = Object.assign(new Error('getaddrinfo ENOTFOUND'), { code: 'ENOTFOUND' });
+    const failure = new Error('fetch failed') as Error & { cause?: unknown };
+    failure.cause = cause;
+    globalThis.fetch = (async () => {
+      throw failure;
+    }) as unknown as typeof fetch;
+
+    try {
+      const fetchText = createDefaultFetchText(1000);
+      let caught: unknown = null;
+      try {
+        await fetchText({ url: 'https://example.test/kline' });
+      } catch (error) {
+        caught = error;
+      }
+      const text = describeSyncError(caught);
+      expect(text).toContain('https://example.test/kline');
+      expect(text).toContain('ENOTFOUND');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe('除权除息判定', () => {
   it('无事件时相邻点不判定为跳变（含两位小数舍入噪声）', () => {
     expect(
@@ -419,20 +470,28 @@ describe('除权除息判定', () => {
 });
 
 describe('同步策略原语', () => {
-  it('并发默认 3、最大 5，配置 10 时收敛到 5', () => {
-    expect(clampConcurrency(undefined)).toBe(3);
-    expect(clampConcurrency(0)).toBe(3);
+  it('并发默认 10、最大 15，超出上限收敛到 15', () => {
+    expect(clampConcurrency(undefined)).toBe(10);
+    expect(clampConcurrency(0)).toBe(10);
     expect(clampConcurrency(4)).toBe(4);
-    expect(clampConcurrency(10)).toBe(5);
+    expect(clampConcurrency(10)).toBe(10);
+    expect(clampConcurrency(100)).toBe(15);
   });
 
-  it('RPS 默认 3、最大 5', () => {
+  it('RPS 默认 3、最大 20，超出上限收敛到 20', () => {
     expect(clampRequestsPerSecond(undefined)).toBe(3);
-    expect(clampRequestsPerSecond(10)).toBe(5);
+    expect(clampRequestsPerSecond(10)).toBe(10);
+    expect(clampRequestsPerSecond(100)).toBe(20);
+  });
+
+  it('RPS 换算为最小间隔：默认 3 req/s 对应 333ms', () => {
+    expect(intervalMsForRps(undefined)).toBe(333);
+    expect(intervalMsForRps(4)).toBe(250);
+    expect(intervalMsForRps(100)).toBe(50);
   });
 
   it('工作池实际并发不超过配置上限', async () => {
-    for (const limit of [3, 5]) {
+    for (const limit of [5, 10, 15]) {
       let inFlight = 0;
       let maxInFlight = 0;
       let issued = 0;
@@ -476,6 +535,64 @@ describe('同步策略原语', () => {
       expect(inWindow.length).toBeLessThanOrEqual(3);
     }
     expect(issuedAt[3] - issuedAt[0]).toBeGreaterThanOrEqual(1000);
+  });
+
+  it('匀速限流器：相邻请求至少间隔 333ms', async () => {
+    let fakeClock = 0;
+    const limiter = createPacedRateLimiter({
+      intervalMs: 333,
+      now: () => fakeClock,
+      sleep: async ms => {
+        fakeClock += ms;
+      },
+    });
+
+    const issuedAt: number[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      await limiter.acquire();
+      issuedAt.push(fakeClock);
+    }
+
+    expect(issuedAt).toEqual([0, 333, 666, 999]);
+  });
+
+  it('匀速限流器：并发 acquire 仍按 333ms 间隔放行', async () => {
+    let fakeClock = 0;
+    interface Waiter {
+      at: number;
+      resolve: () => void;
+    }
+    let waiters: Waiter[] = [];
+    const limiter = createPacedRateLimiter({
+      intervalMs: 333,
+      now: () => fakeClock,
+      sleep: ms =>
+        new Promise<void>(resolve => {
+          waiters.push({ at: fakeClock + ms, resolve });
+        }),
+    });
+
+    const issuedAt: number[] = [];
+    const tasks = Array.from({ length: 4 }, async () => {
+      await limiter.acquire();
+      issuedAt.push(fakeClock);
+    });
+
+    for (let guard = 0; guard < 20 && issuedAt.length < 4; guard += 1) {
+      if (waiters.length === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        continue;
+      }
+      const due = Math.min(...waiters.map(waiter => waiter.at));
+      fakeClock = Math.max(fakeClock, due);
+      const batch = waiters.filter(waiter => waiter.at === due);
+      waiters = waiters.filter(waiter => waiter.at !== due);
+      batch.forEach(waiter => waiter.resolve());
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    await Promise.all(tasks);
+
+    expect(issuedAt).toEqual([0, 333, 666, 999]);
   });
 
   it('指数退避 1s / 2s / 4s，上限 60s，附加 0～500ms 抖动', () => {

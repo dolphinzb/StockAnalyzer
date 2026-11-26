@@ -22,6 +22,8 @@ import {
   type MarketDatabase,
 } from '../../electron/marketDatabase';
 import {
+  fetchSseSecurities,
+  fetchSzseSecurities,
   inferExchange,
   isAShareCode,
   parseBseRows,
@@ -30,6 +32,8 @@ import {
   parseSzseRows,
   stripHtml,
   syncTradingCalendar,
+  type MarketHttpFetch,
+  type UniverseDeps,
 } from '../../electron/services/marketUniverseService';
 import {
   listTradingCalendar,
@@ -137,6 +141,100 @@ describe('交易所名录字段映射', () => {
     const rows = parseSdkCodes(['sh600519', 'sz000001', 'bj920000', '900901']);
     expect(rows.map(row => row.code)).toEqual(['600519', '000001', '920000']);
     expect(rows.every(row => row.codeSource === 'sdk_active')).toBe(true);
+  });
+});
+
+describe('交易所名录抓取', () => {
+  function makeDeps(fetchText: MarketHttpFetch): UniverseDeps {
+    return {
+      fetchText,
+      sdk: {
+        getHistoryKline: async () => [],
+        getAShareCodeList: async () => [],
+        getTradingCalendar: async () => [],
+      },
+    };
+  }
+
+  it('上交所名录在市状态为 2', async () => {
+    const urls: string[] = [];
+    const rows = await fetchSseSecurities(
+      makeDeps(async request => {
+        urls.push(request.url);
+        const stockType = new URL(request.url).searchParams.get('STOCK_TYPE');
+        return JSON.stringify({
+          result: [
+            {
+              A_STOCK_CODE: stockType === '1' ? '600519' : '688001',
+              COMPANY_ABBR: stockType === '1' ? '贵州茅台' : '华兴源创',
+              LIST_DATE: '20010827',
+            },
+          ],
+          pageHelp: { pageCount: 0, total: 0 },
+        });
+      }),
+      false
+    );
+
+    expect(urls).toHaveLength(2);
+    for (const url of urls) {
+      expect(new URL(url).searchParams.get('COMPANY_STATUS')).toBe('2');
+    }
+    expect(rows.map(row => row.code)).toEqual(['600519', '688001']);
+    expect(rows[0].name).toBe('贵州茅台');
+  });
+
+  it('深交所在市名录读取 1110 的 A 股列表块', async () => {
+    const urls: string[] = [];
+    const rows = await fetchSzseSecurities(
+      makeDeps(async request => {
+        urls.push(request.url);
+        return JSON.stringify([
+          {
+            metadata: { tabkey: 'tab1', pagecount: 1 },
+            data: [{ agdm: '000001', agjc: '<a href="#">平安银行</a>', agssrq: '19910403' }],
+          },
+          { metadata: { tabkey: 'tab2', pagecount: 1 }, data: [] },
+        ]);
+      }),
+      false
+    );
+
+    expect(new URL(urls[0]).searchParams.get('CATALOGID')).toBe('1110');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      code: '000001',
+      name: '平安银行',
+      isActive: true,
+      codeSource: 'szse_name',
+    });
+  });
+
+  it('深交所退市清单读取 1793_ssgs 的终止上市块', async () => {
+    const urls: string[] = [];
+    const rows = await fetchSzseSecurities(
+      makeDeps(async request => {
+        urls.push(request.url);
+        return JSON.stringify([
+          { metadata: { tabkey: 'tab1', pagecount: 1 }, data: [] },
+          {
+            metadata: { tabkey: 'tab2', pagecount: 1 },
+            data: [{ zqdm: '000003', zqjc: 'PT金田A', ssrq: '19910703', zzrq: '20020614' }],
+          },
+        ]);
+      }),
+      true
+    );
+
+    expect(new URL(urls[0]).searchParams.get('CATALOGID')).toBe('1793_ssgs');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      code: '000003',
+      name: 'PT金田A',
+      isActive: false,
+      delistDate: '2002-06-14',
+      codeSource: 'szse_delist',
+    });
   });
 });
 

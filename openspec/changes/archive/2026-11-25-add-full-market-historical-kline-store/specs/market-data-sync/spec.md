@@ -110,21 +110,29 @@
 
 ### Requirement: 同步限速与失败退避可配置
 
-系统 SHALL 同时限制并发数和请求速率。并发默认 3、最大 5；请求速率 MUST 使用 1 秒滑动窗口，默认 3 req/s、最大 5 req/s。所有 HTTP 请求（含重试）MUST 计入请求速率限制；并发数 MUST NOT 作为唯一限速手段。
+系统 SHALL 同时限制并发数和请求速率。并发默认 10、最大 15；请求速率 MUST 使用 1 秒滑动窗口，默认 3 req/s（对齐东方财富 provider 建议值）、最大 20 req/s。所有 HTTP 请求（含重试）MUST 计入请求速率限制；并发数 MUST NOT 作为唯一限速手段。SDK 内部限流 MUST 由 `meta.sync_rps` 解析后传入，与服务层保持一致，不得成为更低的瓶颈。
 
 任务失败时系统 SHALL 最多自动重试 3 次。退避 MUST 使用基础延迟 1000ms、指数因子 2、最大延迟 60000ms，并附加 0～500ms 随机抖动；若响应包含 `Retry-After`，取计算延迟与 `Retry-After` 的较大值。超过最大重试次数后任务 MUST 置为 `failed`，不再自动重试。
 
 #### Scenario: 默认并发
 - **WHEN** 用户未配置并发数并启动全量回填
-- **THEN** 系统最多同时执行 3 个下载任务
+- **THEN** 系统最多同时执行 10 个下载任务
 
 #### Scenario: 并发上限
-- **WHEN** 用户将并发数配置为 10
-- **THEN** 系统实际并发数仍不超过 5
+- **WHEN** 用户将并发数配置为 30
+- **THEN** 系统实际并发数仍不超过 15
 
 #### Scenario: 快速响应仍受 RPS 限制
-- **WHEN** 10 个任务都在 10ms 内完成并立即请求下一个任务
+- **WHEN** 30 个任务都在 10ms 内完成并立即请求下一个任务
 - **THEN** 任意 1 秒窗口内实际 HTTP 请求数不超过 3
+
+#### Scenario: RPS 上限
+- **WHEN** 用户将请求速率配置为 30 req/s
+- **THEN** 任意 1 秒窗口内实际 HTTP 请求数不超过 20
+
+#### Scenario: 日志包含可诊断的失败原因
+- **WHEN** 任务因网络错误失败，顶层异常仅为 `fetch failed`
+- **THEN** 日志与 `sync_state.last_error` MUST 包含请求上下文（URL 或股票代码/复权类型/日期区间）以及底层 cause 的错误码
 
 #### Scenario: 失败退避递增
 - **WHEN** 某任务因网络错误失败且 `retry_count` 从 1 增加到 3

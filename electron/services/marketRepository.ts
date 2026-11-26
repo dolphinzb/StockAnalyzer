@@ -100,7 +100,7 @@ const DERIVED_TABLES: Record<MarketPeriod, string> = {
 /** 派生数据源标识 */
 export const DERIVED_SOURCE = 'derived:kline_daily_raw';
 /** 因子数据源标识 */
-export const FACTOR_SOURCE = 'stock_sdk_qfq_hfq';
+export const FACTOR_SOURCE = 'derived:sohu_hisHq';
 /** Pseudo code 占位（证券名缺失时） */
 export const UNKNOWN_SECURITY_NAME = '未知证券';
 

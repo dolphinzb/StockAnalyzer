@@ -3,7 +3,7 @@
  *
  * 职责：
  * - 任务生成：全量回填任务（证券 × raw/qfq/hfq）与手动增量补跑任务
- * - 调度执行：动态工作池（并发默认 3 / 上限 5）+ 1 秒滑动窗口 RPS（默认 3 / 上限 5）
+ * - 调度执行：动态工作池（并发默认 10 / 上限 15）+ 最小间隔匀速限流（默认 333ms / 3 req/s）
  * - 失败处理：最多 3 次自动重试，指数退避 + 抖动 + Retry-After，超限置 failed
  * - 断点续跑：任务持久化在 sync_state，重启后 running → pending，控制状态 idle，不自动继续
  * - 写入：原始日线 UPSERT、因子全量/局部刷新、周/月派生重建、质量异常记录
@@ -74,8 +74,9 @@ import {
   clampConcurrency,
   clampRequestsPerSecond,
   computeNextRetryAt,
-  createSlidingWindowRateLimiter,
+  createPacedRateLimiter,
   DAILY_KINDS,
+  intervalMsForRps,
   isoToYmd,
   latestTradingDay,
   localTodayIso,
@@ -94,10 +95,11 @@ import {
   type MarketHttpFetch,
   type UniverseScope,
 } from './marketUniverseService';
-import { createStockSdkMarketClient, type MarketKlineItem, type MarketSdkLike } from './marketSdkClient';
+import { createMarketSdkClient, type MarketKlineItem, type MarketSdkLike } from './marketSdkClient';
+import { createSohuKlineClient } from './sohuKlineClient';
 
 /** 原始日线数据源标识 */
-export const DAILY_RAW_SOURCE = 'stock_sdk_history_kline';
+export const DAILY_RAW_SOURCE = 'sohu_hisHq';
 /** 会话内因子缓存上限（防止长时间运行时内存膨胀） */
 const SESSION_CACHE_LIMIT = 500;
 /** 复权事件判定的兜底最小相对阈值（低于此变化无法与舍入噪声区分） */
@@ -206,19 +208,101 @@ const META_CONCURRENCY = 'sync_concurrency';
 const META_RPS = 'sync_rps';
 
 /**
+ * 把异常展开为可读文本
+ *
+ * Node fetch 抛出的 `TypeError: fetch failed` 真正原因在 `error.cause`
+ * （ECONNRESET / ENOTFOUND / ECONNREFUSED / TLS 错误等），只打 message 无法定位。
+ * SDK 的异常也可能在 `code / status / syscall` 上带关键信息，这里一并展开。
+ */
+export function describeSyncError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  const seen = new Set<unknown>();
+  const chain: string[] = [];
+  let current: unknown = error;
+
+  for (let depth = 0; depth < 5 && current !== null && current !== undefined; depth += 1) {
+    if (seen.has(current)) {
+      break;
+    }
+    seen.add(current);
+
+    if (!(current instanceof Error)) {
+      const text = String(current).trim();
+      if (text !== '') {
+        chain.push(text);
+      }
+      break;
+    }
+
+    const details = current as Error & {
+      code?: unknown;
+      status?: unknown;
+      syscall?: unknown;
+      hostname?: unknown;
+      address?: unknown;
+      port?: unknown;
+      cause?: unknown;
+    };
+    const extras: string[] = [];
+    if (typeof details.code === 'string' || typeof details.code === 'number') {
+      extras.push(String(details.code));
+    }
+    if (typeof details.status === 'number') {
+      extras.push(`HTTP ${details.status}`);
+    }
+    if (typeof details.syscall === 'string') {
+      extras.push(details.syscall);
+    }
+    if (typeof details.address === 'string') {
+      extras.push(details.port ? `${details.address}:${details.port}` : details.address);
+    } else if (typeof details.hostname === 'string') {
+      extras.push(details.hostname);
+    }
+
+    const message = current.message || current.name;
+    chain.push(extras.length > 0 ? `${message} [${extras.join(' ')}]` : message);
+    current = details.cause;
+  }
+
+  return chain.join(' <- cause: ');
+}
+
+/**
  * 默认 HTTP 实现（Node/Electron 全局 fetch + 超时 + Retry-After 透出）
  */
 export function createDefaultFetchText(timeoutMs = 30000): MarketHttpFetch {
   return async request => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Awaited<ReturnType<typeof fetch>>;
     try {
-      const response = await fetch(request.url, {
+      response = await fetch(request.url, {
         method: request.method ?? 'GET',
         headers: request.headers,
         body: request.body,
         signal: controller.signal,
       });
+    } catch (error) {
+      // Node fetch 的网络错误 message 通常只是 "fetch failed"，补上 URL 与底层 cause
+      const original = error as (Error & { retryAfterMs?: number; status?: number }) | null;
+      const wrapped = new Error(
+        `${request.method ?? 'GET'} ${request.url} ${
+          controller.signal.aborted ? `请求超时（${timeoutMs}ms）` : '请求失败'
+        }`
+      ) as Error & { cause?: unknown; retryAfterMs?: number; status?: number };
+      wrapped.cause = error;
+      if (typeof original?.retryAfterMs === 'number') {
+        wrapped.retryAfterMs = original.retryAfterMs;
+      }
+      if (typeof original?.status === 'number') {
+        wrapped.status = original.status;
+      }
+      throw wrapped;
+    }
+    try {
       const text = await response.text();
       if (!response.ok) {
         const error = new Error(`HTTP ${response.status} ${response.statusText || ''}`.trim()) as Error & {
@@ -801,7 +885,8 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
    * 因此「初始请求 + 3 次重试」共 4 次请求。
    */
   const handleFailure = (task: MarketTaskRow, error: unknown): void => {
-    const message = error instanceof Error ? error.message : String(error);
+    // 展开 fetch/SDK 异常的 cause 链，避免日志里只有 "fetch failed"
+    const message = describeSyncError(error);
     lastError = message;
     const retryAfterMs = extractRetryAfterMs(error);
 
@@ -884,8 +969,9 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
   const runScheduler = async (): Promise<void> => {
     const concurrency = clampConcurrency(readMetaNumber(META_CONCURRENCY, deps.concurrency));
     const rps = clampRequestsPerSecond(readMetaNumber(META_RPS, deps.requestsPerSecond));
-    limiter = createSlidingWindowRateLimiter({ maxPerSecond: rps, now, sleep });
-    log.info(`行情库同步启动: 并发 ${concurrency}，速率 ${rps} req/s`);
+    const intervalMs = intervalMsForRps(rps);
+    limiter = createPacedRateLimiter({ intervalMs, now, sleep });
+    log.info(`行情库同步启动: 并发 ${concurrency}，速率 ${rps} req/s（最小间隔 ${intervalMs}ms）`);
 
     try {
       for (;;) {
@@ -929,7 +1015,7 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
     stopped = false;
     schedulerPromise = runScheduler()
       .catch(error => {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = describeSyncError(error);
         lastError = message;
         log.error(`行情库同步调度异常: ${message}`);
         setMarketMeta({ [META_CONTROL_STATE]: 'failed' }, db);
@@ -1108,7 +1194,7 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
         startScheduler();
         return { success: true };
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = describeSyncError(error);
         lastError = message;
         setMarketMeta({ [META_CONTROL_STATE]: 'failed' }, db);
         log.error(`启动全量回填失败: ${message}`);
@@ -1159,7 +1245,7 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
         log.info(`增量补跑启动: ${taskKeys.length} 个任务，终点 ${latest}`);
         return { success: true };
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = describeSyncError(error);
         lastError = message;
         log.error(`启动增量补跑失败: ${message}`);
         return { success: false, error: message };
@@ -1184,7 +1270,7 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
         startScheduler();
         return { success: true };
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = describeSyncError(error);
         lastError = message;
         log.error(`重试失败任务失败: ${message}`);
         return { success: false, error: message };
@@ -1222,13 +1308,27 @@ let singleton: MarketSyncService | null = null;
  */
 export function getMarketSyncService(): MarketSyncService {
   if (!singleton) {
+    const db = getMarketDb();
+    // SDK 内部限流与服务层滑动窗口取同一份 meta 配置，避免某一层成为隐形瓶颈
+    const configuredRps = getMarketMeta(META_RPS, db);
+    const sdkRps = configuredRps === null ? undefined : Number(configuredRps);
+
+    const factorReader = (code: string) => ({
+      qfq: readAdjustFactors(db, code, 'qfq'),
+      hfq: readAdjustFactors(db, code, 'hfq'),
+    });
+    const klineClient = createSohuKlineClient({ readFactors: factorReader });
+
     singleton = createMarketSyncService({
-      db: getMarketDb(),
-      sdk: createStockSdkMarketClient(),
+      db,
+      sdk: createMarketSdkClient({
+        requestsPerSecond: clampRequestsPerSecond(sdkRps ?? undefined),
+        klineClient,
+      }),
       fetchText: createDefaultFetchText(),
       // 同步结束只导出元数据快照：全市场因子可达千万行，全量导出会占用大量内存与磁盘
       exportSnapshot: () => {
-        exportMarketSnapshot(getMarketDb(), undefined, { includeFactorRows: false });
+        exportMarketSnapshot(db, undefined, { includeFactorRows: false });
       },
     });
   }

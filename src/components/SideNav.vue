@@ -70,6 +70,12 @@ const navItems: NavItem[] = [
     iconPath: 'M12 2l3 3-3 3-3-3 3-3zM7 14l-3 3 3 3 3-3-3-3zM17 14l-3 3 3 3 3-3-3-3zM12 10l-4 4h8l-4-4z'
   },
   {
+    id: 'securities-directory',
+    label: '股票列表',
+    // 证券名录/列表图标：带行号的清单
+    iconPath: 'M4 6h2M4 12h2M4 18h2M9 6h11M9 12h11M9 18h11'
+  },
+  {
     id: 'market-data',
     label: '行情库',
     // 数据库/存储图标：三层数据盘

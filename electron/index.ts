@@ -2,7 +2,16 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, s
 import log from 'electron-log';
 import fs from 'fs';
 import { join } from 'path';
-import type { AppConfig, KlineBatchDownloadInput, KlineBatchDownloadSummary, KlineDownloadInput, KlinePeriod } from '../shared/types';
+import type {
+  AppConfig,
+  KlineBatchDownloadInput,
+  KlineBatchDownloadSummary,
+  KlineDownloadInput,
+  KlinePeriod,
+  SecuritiesDirectoryPage,
+  SecuritiesDirectoryQuery,
+} from '../shared/types';
+import { IPC_CHANNELS } from '../shared/types';
 import {
   addStock,
   closeDatabase,
@@ -12,7 +21,6 @@ import {
   deleteStock,
   deleteTradeRecord,
   getDb,
-  getEnabledStocks,
   getPositions,
   getTradeRecords,
   getTradeRecordsByStockCode,
@@ -30,12 +38,13 @@ import {
   type UpdateStockInput,
   type UpdateTradeInput
 } from './database';
-import { closeMarketDatabase, initMarketDatabase } from './marketDatabase';
+import { closeMarketDatabase, getMarketDb, initMarketDatabase } from './marketDatabase';
 import {
   getMarketSyncService,
   recoverInterruptedMarketSync,
   stopMarketDataSync
 } from './services/marketDataSyncService';
+import { searchSecurities } from './services/marketRepository';
 import {
   setBackupFailureNotifier,
   startBackupScheduler,
@@ -189,6 +198,7 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let isWindowReady = false;
 let currentConfig: AppConfig | null = null;
 let isQuitting = false;
 let fundService: FundService | null = null;
@@ -270,7 +280,9 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     log.info('Window ready to show');
+    isWindowReady = true;
     mainWindow?.show();
+    mainWindow?.webContents.send(IPC_CHANNELS.WINDOW_READY);
     if (currentConfig) {
       mainWindow?.webContents.send('config:loaded', currentConfig);
       log.info('Config sent to renderer');
@@ -330,6 +342,8 @@ ipcMain.on('window:close', () => {
 ipcMain.handle('window:is-maximized', () => {
   return mainWindow?.isMaximized() ?? false;
 });
+
+ipcMain.handle(IPC_CHANNELS.WINDOW_IS_READY, () => isWindowReady);
 
 ipcMain.handle('config:get', () => {
   log.debug('IPC: config:get');
@@ -433,8 +447,8 @@ ipcMain.handle('watchlist:reorder', (_event, orderedIds: number[]) => {
 ipcMain.handle('prices:refresh', async () => {
   log.info('IPC: prices:refresh');
   try {
-    const stocks = getEnabledStocks();
-    await manualRefresh(stocks);
+    const stocks = getWatchlist();
+    return await manualRefresh(stocks);
   } catch (error) {
     log.error('IPC prices:refresh error:', error);
     throw error;
@@ -1107,6 +1121,17 @@ handleValidated('market:sync:start', SCHEMAS.marketSyncStart, async () => {
   }
 });
 
+handleValidated('market:sync:refresh-universe', SCHEMAS.marketSyncRefreshUniverse, async () => {
+  log.info('IPC: market:sync:refresh-universe');
+  try {
+    return await getMarketSyncService().refreshUniverse();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('IPC market:sync:refresh-universe error:', message);
+    return { success: false, error: message };
+  }
+});
+
 handleValidated('market:sync:incremental', SCHEMAS.marketSyncIncremental, async () => {
   log.info('IPC: market:sync:incremental');
   try {
@@ -1128,6 +1153,20 @@ handleValidated('market:sync:retry-failed', SCHEMAS.marketSyncRetryFailed, async
     return { success: false, error: message };
   }
 });
+
+handleValidated(
+  'market:securities:list',
+  SCHEMAS.marketSecuritiesList,
+  (_event, query: SecuritiesDirectoryQuery): SecuritiesDirectoryPage => {
+    log.debug('IPC: market:securities:list');
+    try {
+      return searchSecurities(getMarketDb(), query);
+    } catch (error) {
+      log.error('IPC market:securities:list error:', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  }
+);
 
 /**
  * 获取K线数据
@@ -1230,7 +1269,7 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
   isQuitting = false;
-  startScheduler(getEnabledStocks);
+  startScheduler(getWatchlist);
   // 自动备份失败时给出用户可见提示，不再只写日志
   setBackupFailureNotifier((reason) => {
     try {

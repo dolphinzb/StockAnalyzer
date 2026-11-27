@@ -1,15 +1,17 @@
 import { BrowserWindow } from 'electron';
 import log from 'electron-log';
 import type { AppConfig, IndexData, IndexDirection, QuoteSnapshot } from '../../shared/types';
-import type { WatchlistStock } from '../database';
-import { loadConfig } from '../database';
+import type { KlineFallbackQuote, WatchlistStock } from '../database';
+import { getLatestKlineQuotes, loadConfig } from '../database';
 import { checkAndTriggerAlert, type PriceUpdate } from './alertService';
+import { getLastTradingDay } from './klineDownloadService';
 import { getProvider, QuoteProviderError } from './quoteProviders';
 import type { QuoteProvider } from './quoteProviders';
 import { toPrefixedCode } from './quoteProviders/code';
 
 // 指数代码常量（带前缀）
 const INDEX_CODES = ['sh000001', 'sh000688', 'sz399001'];
+const QUOTE_TIMEOUT_MS = 5000;
 const INDEX_NAMES: Record<string, string> = {
   'sh000001': '上证指数',
   'sh000688': '科创50',
@@ -28,6 +30,76 @@ export interface PriceResult {
   prevClosePrice: number;
   success: boolean;
   error?: string;
+}
+
+/** 取昨日作为基准，得到交易日历口径的前一交易日（YYYY-MM-DD） */
+export async function getPreviousTradingDay(baseDate: Date = new Date()): Promise<string> {
+  const yesterday = new Date(baseDate);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const ymd = await getLastTradingDay(yesterday);
+  return `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`;
+}
+
+function stripCodePrefix(code: string): string {
+  return code.replace(/^(sh|sz|bj)/, '');
+}
+
+/**
+ * 逐只合并实时行情与日 K 回退，只产出有有效现价的项。
+ * 实时成功且现价 > 0 时用实时值；否则用满足新鲜度条件的该股最新日 K 补齐整行。
+ */
+export function mergeQuoteUpdates(
+  stockResults: PriceResult[],
+  stocks: WatchlistStock[],
+  fallbackQuotes: Map<string, KlineFallbackQuote>,
+  previousTradingDay: string,
+  timestamp: string
+): PriceUpdate[] {
+  const updates: PriceUpdate[] = [];
+  const stockByCode = new Map(stocks.map(stock => [stock.stockCode, stock]));
+
+  for (const result of stockResults) {
+    const stockCode = stripCodePrefix(result.stockCode);
+    if (!stockByCode.has(stockCode)) continue;
+
+    if (result.success && result.price > 0) {
+      const priceChange = result.prevClosePrice !== 0 ? result.price - result.prevClosePrice : 0;
+      const priceChangePercent = result.prevClosePrice !== 0
+        ? Math.round(((result.price - result.prevClosePrice) / result.prevClosePrice) * 10000) / 100
+        : 0;
+      updates.push({
+        stockCode,
+        price: result.price,
+        openPrice: result.openPrice,
+        highPrice: result.highPrice,
+        lowPrice: result.lowPrice,
+        prevClosePrice: result.prevClosePrice,
+        priceChange,
+        priceChangePercent,
+        timestamp,
+      });
+      continue;
+    }
+
+    const kline = fallbackQuotes.get(stockCode);
+    if (!kline || !previousTradingDay || kline.tradeDate < previousTradingDay) continue;
+    const close = kline.close;
+    if (close === null || close <= 0) continue;
+
+    updates.push({
+      stockCode,
+      price: close,
+      openPrice: kline.open,
+      highPrice: kline.high,
+      lowPrice: kline.low,
+      prevClosePrice: kline.changeAmount === null ? null : close - kline.changeAmount,
+      priceChange: kline.changeAmount,
+      priceChangePercent: kline.changePercent,
+      timestamp,
+    });
+  }
+
+  return updates;
 }
 
 let lastRefreshTime: string | null = null;
@@ -79,6 +151,20 @@ function sendRefreshTimeUpdate(time: string): void {
   }
 }
 
+/** 合并后的结果统一进入告警与下发链路；空结果不推送，保留界面已有价格 */
+export function publishQuoteUpdates(stocks: WatchlistStock[], updates: PriceUpdate[]): void {
+  if (updates.length === 0) return;
+
+  const stockByCode = new Map(stocks.map(stock => [stock.stockCode, stock]));
+  for (const update of updates) {
+    const stock = stockByCode.get(update.stockCode);
+    if (stock) {
+      checkAndTriggerAlert(stock, update.price);
+    }
+  }
+  sendPriceUpdate(updates);
+}
+
 export interface StockInfo {
   stockCode: string;
   stockName: string;
@@ -89,7 +175,14 @@ export interface StockInfo {
 /** 按 provider 构造并执行一次请求，返回与 codes 等长的快照数组 */
 async function requestSnapshots(provider: QuoteProvider, codes: string[]): Promise<QuoteSnapshot[]> {
   const request = provider.buildRequest(codes);
-  const response = await fetch(request.url, { headers: request.headers });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), QUOTE_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(request.url, { headers: request.headers, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     throw new QuoteProviderError(provider.id, `HTTP ${response.status}`);
   }
@@ -118,76 +211,43 @@ export async function fetchStockName(stockCode: string): Promise<StockInfo> {
   }
 }
 
-export async function refreshAllEnabledStocks(stocks: WatchlistStock[], config: AppConfig): Promise<void> {
-  const enabledStocks = stocks.filter(s => s.monitorEnabled);
+export async function refreshWatchlistQuotes(stocks: WatchlistStock[], config: AppConfig): Promise<PriceUpdate[]> {
   const now = new Date().toISOString();
 
-  // 始终获取指数数据（无论是否有监控股票）
-  const allCodes = [...enabledStocks.map(s => s.stockCode), ...INDEX_CODES];
+  // 取价范围为全部自选股 + 三项指数；monitor_enabled 只影响告警，不裁剪取价
+  const allCodes = [...stocks.map(s => s.stockCode), ...INDEX_CODES];
   const results = await fetchStockPrices(allCodes, config);
 
   // 分离股票和指数结果（解析后代码保留前缀）
   const stockResults = results.filter(r => !INDEX_CODES.includes(r.stockCode));
   const indexResults = results.filter(r => INDEX_CODES.includes(r.stockCode));
 
-  // log.info(`指数结果数量: ${indexResults.length}`);
-  // log.info(`指数结果详情: ${JSON.stringify(indexResults)}`);
+  const fallbackQuotes = stocks.length > 0
+    ? getLatestKlineQuotes(stocks.map(s => s.stockCode))
+    : new Map();
+  const needsFallback = stockResults.some(r => !r.success || r.price <= 0);
+  const previousTradingDay = needsFallback ? await getPreviousTradingDay() : '';
 
-  // 检查股票价格告警
-  for (const result of stockResults) {
-    if (result.success) {
-      // 去掉前缀后匹配数据库中的股票代码
-      const codeWithoutPrefix = result.stockCode.replace(/^(sh|sz|bj)/, '');
-      const stock = enabledStocks.find(s => s.stockCode === codeWithoutPrefix);
-      if (stock) {
-        checkAndTriggerAlert(stock, result.price);
-      }
-    }
-  }
+  const priceUpdates = mergeQuoteUpdates(stockResults, stocks, fallbackQuotes, previousTradingDay, now);
 
-  // 发送股票价格更新（仅当有股票时）
-  if (stockResults.length > 0) {
-    const priceUpdates = stockResults
-      .filter(r => r.success)
-      .map(r => {
-        const priceChange = r.prevClosePrice !== 0 ? r.price - r.prevClosePrice : 0;
-        const priceChangePercent = r.prevClosePrice !== 0
-          ? Math.round(((r.price - r.prevClosePrice) / r.prevClosePrice) * 10000) / 100
-          : 0;
-        return {
-          // 去掉前缀，与数据库格式一致
-          stockCode: r.stockCode.replace(/^(sh|sz|bj)/, ''),
-          price: r.price,
-          openPrice: r.openPrice,
-          highPrice: r.highPrice,
-          lowPrice: r.lowPrice,
-          prevClosePrice: r.prevClosePrice,
-          priceChange,
-          priceChangePercent,
-          timestamp: now,
-        };
-      });
-    sendPriceUpdate(priceUpdates);
-  }
+  // 回退价与实时价走同一份合并结果进入告警与下发（未监控股由 checkAndTriggerAlert 内部拦截）
+  publishQuoteUpdates(stocks, priceUpdates);
 
   // 解析并发送指数数据更新
   const indexData = parseIndexData(indexResults, now);
 
-  // log.info(`解析后的指数数据: ${JSON.stringify(indexData)}`);
-
   // 检查指数数据是否全部获取失败
   const allIndexFailed = indexResults.length > 0 && indexResults.every(r => !r.success);
   if (allIndexFailed) {
-    // log.info('指数数据全部获取失败，发送错误状态');
     sendIndexUpdate([], 'error', '数据更新失败');
   } else {
-    // log.info('指数数据获取成功，发送正常状态');
     sendIndexUpdate(indexData, 'normal');
   }
 
   lastRefreshTime = now;
   sendRefreshTimeUpdate(now);
   log.debug(`Price refresh completed at ${now}`);
+  return priceUpdates;
 }
 
 export async function fetchStockPrices(stockCodes: string[], config: AppConfig): Promise<PriceResult[]> {
@@ -322,9 +382,9 @@ export function getLastRefreshTime(): string | null {
   return lastRefreshTime;
 }
 
-export async function manualRefresh(stocks: WatchlistStock[]): Promise<void> {
+export async function manualRefresh(stocks: WatchlistStock[]): Promise<PriceUpdate[]> {
   const config = loadConfig();
-  await refreshAllEnabledStocks(stocks, config);
+  return refreshWatchlistQuotes(stocks, config);
 }
 
 export function startScheduler(getStocks: () => WatchlistStock[]): void {
@@ -348,7 +408,7 @@ export function startScheduler(getStocks: () => WatchlistStock[]): void {
       }
 
       const stocks = getStocks();
-      await refreshAllEnabledStocks(stocks, currentConfig);
+      await refreshWatchlistQuotes(stocks, currentConfig);
     } catch (error) {
       log.error('Scheduler error:', error);
     }

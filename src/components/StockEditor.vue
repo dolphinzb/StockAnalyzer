@@ -13,6 +13,9 @@ declare global {
 const props = defineProps<{
   stockId: number | null;
   stock: WatchlistStock | null;
+  /** 创建模式下预填代码与名称（例如从证券名录页加入自选），避免再次反查名称 */
+  initialStockCode?: string;
+  initialStockName?: string;
 }>();
 
 const emit = defineEmits<{
@@ -28,6 +31,9 @@ const errorMessage = ref('');
 const isLoadingStockName = ref(false);
 
 const isEditing = computed(() => props.stockId !== null);
+const hasPrefill = computed(
+  () => !isEditing.value && Boolean(props.initialStockCode || props.initialStockName)
+);
 
 // 自动获取股票名称的事件处理函数
 async function handleStockCodeBlur() {
@@ -44,8 +50,8 @@ async function handleStockCodeEnter(event: KeyboardEvent) {
 // 调用 API 获取股票名称
 async function fetchStockName() {
   const code = stockCode.value.trim();
-  // 编辑模式下不触发自动获取
-  if (!code || isEditing.value) {
+  // 编辑模式与名录预填模式下都不触发反查（名称已随证券记录给出）
+  if (!code || isEditing.value || hasPrefill.value) {
     return;
   }
 
@@ -68,6 +74,11 @@ watch(() => props.stock, (newStock) => {
     stockName.value = newStock.stockName;
     buyThreshold.value = newStock.buyThreshold;
     sellThreshold.value = newStock.sellThreshold;
+  } else if (hasPrefill.value) {
+    stockCode.value = props.initialStockCode ?? '';
+    stockName.value = props.initialStockName ?? '';
+    buyThreshold.value = '';
+    sellThreshold.value = '';
   } else {
     stockCode.value = '';
     stockName.value = '';

@@ -33,17 +33,7 @@ export interface Alert {
   timestamp: string;
 }
 
-export interface PriceUpdate {
-  stockCode: string;
-  price: number;
-  openPrice: number;
-  highPrice: number;
-  lowPrice: number;
-  prevClosePrice: number;
-  priceChange: number;
-  priceChangePercent: number;
-  timestamp: string;
-}
+export type { PriceUpdate } from '../shared/types';
 
 export interface Position {
   stockCode: string;

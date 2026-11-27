@@ -21,6 +21,7 @@ import {
   openMarketDatabase,
   queryMarketRows,
   queryMarketValue,
+  setMarketMeta,
   type MarketDatabase,
 } from '../../electron/marketDatabase';
 import {
@@ -1042,6 +1043,140 @@ describe('手动增量补跑', () => {
     const result = await service.start();
     expect(result.success).toBe(false);
     expect(result.error).toContain('增量更新正在进行中');
+
+    service.stop();
+    fake.releaseAll();
+    await new Promise(resolve => setTimeout(resolve, 20));
+  });
+});
+
+describe('刷新证券池', () => {
+  function seedCompletedDb(): void {
+    seedIncrementalDb({ '600519': '2026-11-24', '000001': '2026-11-24' });
+    insertPendingTasks(
+      db,
+      [
+        { stockCode: null, dataKind: 'active_codes' },
+        { stockCode: null, dataKind: 'delisted_codes' },
+        { stockCode: null, dataKind: 'calendar' },
+      ],
+      1
+    );
+    for (const kind of ['active_codes', 'delisted_codes', 'calendar'] as const) {
+      markTaskSuccess(db, buildTaskKey(null, kind), '2026-11-20', 1);
+    }
+    setMarketMeta({ last_full_backfill_at: 42 }, db);
+  }
+
+  it('重跑证券池任务并补建新股日线任务，不重跑日历和已有证券', async () => {
+    seedCompletedDb();
+    const fake = makeSdk({
+      codes: ['600519', '000001', '430047'],
+      names: { bj430047: '北交所测试' },
+    });
+    service = createMarketSyncService({ db, sdk: fake.sdk, fetchText, now, sleep });
+
+    const result = await service.refreshUniverse();
+    expect(result.success).toBe(true);
+    expect(getMarketMeta('sync_mode', db)).toBe('universe');
+
+    await waitFor(() => !service?.isRunning());
+
+    const status = service.getStatus();
+    expect(status.state).toBe('completed');
+    expect(getMarketMeta('last_universe_refresh_at', db)).not.toBeNull();
+    expect(getMarketMeta('last_full_backfill_at', db)).toBe('42');
+    expect(getTask(db, buildTaskKey(null, 'calendar'))?.lastSuccessDate).toBe('2026-11-20');
+    expect(listTradingCalendar(db)).toEqual(CALENDAR);
+
+    expect(getTask(db, buildTaskKey('430047', 'raw_daily'))?.status).toBe('success');
+    expect(getTask(db, buildTaskKey('600519', 'raw_daily'))?.status).toBe('success');
+    expect(fake.requests.filter(request => request.symbol === 'bj430047')).toHaveLength(1);
+    expect(
+      fake.requests.filter(
+        request => request.symbol === 'sh600519' || request.symbol === 'sz000001'
+      )
+    ).toHaveLength(0);
+
+    const afterRefreshRequests = fake.requests.length;
+    const incremental = await service.incremental();
+    expect(incremental.success).toBe(true);
+    expect(fake.requests).toHaveLength(afterRefreshRequests);
+
+    await service.start();
+    await waitFor(() => !service?.isRunning());
+    expect(getMarketMeta('sync_mode', db)).toBe('full');
+  });
+
+  it('重复刷新不产生重复任务，也不重复下载', async () => {
+    seedCompletedDb();
+    const fake = makeSdk({
+      codes: ['600519', '000001', '430047'],
+      names: { bj430047: '北交所测试' },
+    });
+    service = createMarketSyncService({ db, sdk: fake.sdk, fetchText, now, sleep });
+
+    await service.refreshUniverse();
+    await waitFor(() => !service?.isRunning());
+    const total = countTasks(db).total;
+    const requests = fake.requests.length;
+
+    await service.refreshUniverse();
+    await waitFor(() => !service?.isRunning());
+
+    expect(countTasks(db).total).toBe(total);
+    expect(fake.requests).toHaveLength(requests);
+  });
+
+  it('证券池任务失败时中止，不补建日线任务', async () => {
+    seedCompletedDb();
+    const fake = makeSdk({ codes: [] });
+    service = createMarketSyncService({ db, sdk: fake.sdk, fetchText, now, sleep });
+
+    const result = await service.refreshUniverse();
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('证券池同步失败');
+    expect(getMarketMeta('sync_control_state', db)).toBe('failed');
+    expect(getTask(db, buildTaskKey(null, 'calendar'))?.status).toBe('success');
+    expect(getTask(db, buildTaskKey('430047', 'raw_daily'))).toBeNull();
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it('刷新运行期间拒绝全量回填与增量更新', async () => {
+    seedCompletedDb();
+    const fake = makeSdk({
+      codes: ['600519', '000001', '430047'],
+      names: { bj430047: '北交所测试' },
+      blockKlines: true,
+    });
+    service = createMarketSyncService({ db, sdk: fake.sdk, fetchText, now, sleep });
+
+    await service.refreshUniverse();
+    await waitFor(() => fake.requests.length > 0);
+
+    const full = await service.start();
+    expect(full.success).toBe(false);
+    expect(full.error).toContain('刷新证券池');
+
+    const incremental = await service.incremental();
+    expect(incremental.success).toBe(false);
+    expect(incremental.error).toContain('刷新证券池');
+
+    service.stop();
+    fake.releaseAll();
+    await new Promise(resolve => setTimeout(resolve, 20));
+  });
+
+  it('全量回填运行期间拒绝刷新证券池', async () => {
+    const fake = makeSdk({ blockKlines: true });
+    service = createMarketSyncService({ db, sdk: fake.sdk, fetchText, now, sleep });
+
+    await service.start();
+    await waitFor(() => fake.requests.length > 0);
+
+    const result = await service.refreshUniverse();
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('同步正在进行中');
 
     service.stop();
     fake.releaseAll();

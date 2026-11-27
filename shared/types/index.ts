@@ -31,6 +31,10 @@ export interface WindowAPI {
   close: () => void;
   isMaximized: () => Promise<boolean>;
   onMaximized: (callback: (isMaximized: boolean) => void) => void;
+  /** 主窗口完成 ready-to-show（可显示）后回调，返回取消订阅函数 */
+  onWindowReady: (callback: () => void) => () => void;
+  /** 查询主窗口是否已 ready-to-show，避免渲染进程挂载过晚漏掉事件 */
+  isWindowReady: () => Promise<boolean>;
   /** 获取应用版本与运行环境信息 */
   getAppInfo: () => Promise<AppInfo>;
   /** 打开数据库文件所在目录 */
@@ -155,6 +159,8 @@ export const IPC_CHANNELS = {
   WINDOW_CLOSE: 'window:close',
   WINDOW_IS_MAXIMIZED: 'window:is-maximized',
   WINDOW_MAXIMIZED: 'window:maximized',
+  WINDOW_READY: 'window:ready',
+  WINDOW_IS_READY: 'window:is-ready',
   CONFIG_GET: 'config:get',
   CONFIG_SET: 'config:set',
   CONFIG_LOADED: 'config:loaded',
@@ -401,6 +407,22 @@ export interface BackupAPI {
 }
 
 /**
+ * 单只股票的一轮价格更新。
+ * price 必须是有效正数才会下发；其余价格字段允许为空（日 K 回退时库内可能为 NULL）。
+ */
+export interface PriceUpdate {
+  stockCode: string;
+  price: number;
+  openPrice: number | null;
+  highPrice: number | null;
+  lowPrice: number | null;
+  prevClosePrice: number | null;
+  priceChange: number | null;
+  priceChangePercent: number | null;
+  timestamp: string;
+}
+
+/**
  * 股票观察者API类型 - 通过 preload contextBridge 暴露给渲染进程
  */
 export interface StockWatcherAPI {
@@ -410,9 +432,9 @@ export interface StockWatcherAPI {
   deleteStock(id: number): Promise<void>;
   /** 按完整的有序 id 列表重写自选股顺序，返回重排后的列表 */
   reorderWatchlist(orderedIds: number[]): Promise<any[]>;
-  refreshPrices(): Promise<void>;
+  refreshPrices(): Promise<PriceUpdate[]>;
   getLastRefreshTime(): Promise<string | null>;
-  onPriceUpdate(callback: (prices: any[]) => void): () => void;
+  onPriceUpdate(callback: (prices: PriceUpdate[]) => void): () => void;
   onAlert(callback: (alert: any) => void): () => void;
   onRefreshTimeUpdate(callback: (time: string) => void): () => void;
   onIndexUpdate(callback: (data: { indices: IndexData[]; status: 'normal' | 'error'; errorMessage?: string | null; timestamp: string }) => void): () => void;
@@ -1048,7 +1070,7 @@ export interface KlineAPI {
 export type MarketSyncState = 'idle' | 'running' | 'completed' | 'failed';
 
 /** 同步运行模式 */
-export type MarketSyncMode = 'full' | 'incremental';
+export type MarketSyncMode = 'full' | 'incremental' | 'universe';
 
 /** 同步数据类型 */
 export type MarketDataKind =
@@ -1104,12 +1126,49 @@ export interface MarketSyncControlResult {
   error?: string;
 }
 
+/** 证券名录交易所筛选：ALL 表示不限 */
+export type SecuritiesExchangeFilter = 'ALL' | 'SH' | 'SZ' | 'BJ';
+
+/** 证券名录在市状态筛选：active 仅在市，all 含退市 */
+export type SecuritiesStatusFilter = 'active' | 'all';
+
+/** 证券名录查询入参（各字段均可缺省，由主进程补默认值） */
+export interface SecuritiesDirectoryQuery {
+  keyword?: string;
+  exchange?: SecuritiesExchangeFilter;
+  status?: SecuritiesStatusFilter;
+  /** 从 1 开始 */
+  page?: number;
+  pageSize?: number;
+}
+
+/** 证券名录列表项（不含任何价格字段） */
+export interface SecuritiesDirectoryItem {
+  code: string;
+  name: string;
+  exchange: 'SH' | 'SZ' | 'BJ';
+  listDate: string | null;
+  delistDate: string | null;
+  isActive: boolean;
+  codeSource: string;
+}
+
+/** 证券名录分页结果 */
+export interface SecuritiesDirectoryPage {
+  items: SecuritiesDirectoryItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 /** 行情库管理 API（preload 暴露） */
 export interface MarketDataAPI {
   getStatus(): Promise<MarketSyncStatus>;
   startFullBackfill(): Promise<MarketSyncControlResult>;
+  refreshUniverse(): Promise<MarketSyncControlResult>;
   runIncremental(): Promise<MarketSyncControlResult>;
   retryFailed(): Promise<MarketSyncControlResult>;
+  listSecurities(query?: SecuritiesDirectoryQuery): Promise<SecuritiesDirectoryPage>;
 }
 
 /**

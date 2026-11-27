@@ -1,6 +1,8 @@
 import { BrowserWindow } from 'electron';
 import log from 'electron-log';
 import type { WatchlistStock } from '../database';
+import type { PriceUpdate } from '../../shared/types';
+export type { PriceUpdate };
 
 export interface Alert {
   stockCode: string;
@@ -8,18 +10,6 @@ export interface Alert {
   alertType: 'BUY' | 'SELL';
   triggerPrice: number;
   threshold: number;
-  timestamp: string;
-}
-
-export interface PriceUpdate {
-  stockCode: string;
-  price: number;
-  openPrice: number;
-  highPrice: number;
-  lowPrice: number;
-  prevClosePrice: number;
-  priceChange: number;
-  priceChangePercent: number;
   timestamp: string;
 }
 

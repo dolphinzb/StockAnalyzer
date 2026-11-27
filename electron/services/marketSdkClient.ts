@@ -44,6 +44,12 @@ export interface MarketSdkLike {
 /** SDK rateLimit 第二道保护（与服务层默认 RPS 对齐，避免成为瓶颈） */
 export const SDK_RATE_LIMIT_RPS = 3;
 
+/** 把内部纯代码按交易所转换为 stock-sdk 需要的带市场前缀格式 */
+export function toSdkCode(code: string, exchange: string): string {
+  const prefix = exchange === 'SH' ? 'sh' : exchange === 'BJ' ? 'bj' : 'sz';
+  return `${prefix}${code}`;
+}
+
 /**
  * 给 SDK 异常补上调用上下文（代码、复权类型、日期区间等），原始异常保留在 cause 中
  */

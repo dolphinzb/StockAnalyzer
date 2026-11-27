@@ -15,6 +15,7 @@ import SettingsView from './views/SettingsView.vue'
 import WatchlistView from './views/WatchlistView.vue'
 import FundManagementView from './views/FundManagementView.vue'
 import PatternScanView from './views/PatternScanView.vue'
+import SecuritiesDirectoryView from './views/SecuritiesDirectoryView.vue'
 import MarketDataView from './views/MarketDataView.vue'
 
 const { currentViewId, navigate } = useNavigation()
@@ -28,6 +29,7 @@ const viewComponents = {
   'historical-trades': HistoricalTradesView,
   'fund-management': FundManagementView,
   'pattern-scan': PatternScanView,
+  'securities-directory': SecuritiesDirectoryView,
   'market-data': MarketDataView,
   settings: SettingsView,
   log: LogPage
@@ -42,14 +44,33 @@ const handleNavigate = (viewId: ViewId) => {
 }
 
 let cleanupWatchlist: (() => void) | null = null;
+let stopWindowReadyListener: (() => void) | null = null;
+let coldStartRefreshTriggered = false;
 
-onMounted(() => {
+function triggerColdStartRefresh(): void {
+  if (coldStartRefreshTriggered) return;
+  coldStartRefreshTriggered = true;
+  if (stopWindowReadyListener) {
+    stopWindowReadyListener();
+    stopWindowReadyListener = null;
+  }
+  void watchlistStore.refreshPrices();
+}
+
+onMounted(async () => {
   cleanupWatchlist = watchlistStore.setupEventListeners();
+  stopWindowReadyListener = window.electronAPI.onWindowReady(triggerColdStartRefresh);
+  if (await window.electronAPI.isWindowReady()) {
+    triggerColdStartRefresh();
+  }
 });
 
 onUnmounted(() => {
   if (cleanupWatchlist) {
     cleanupWatchlist();
+  }
+  if (stopWindowReadyListener) {
+    stopWindowReadyListener();
   }
 });
 </script>

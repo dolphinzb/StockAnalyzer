@@ -32,7 +32,7 @@ export function pollIntervalOf(state: MarketSyncStatus['state'] | null | undefin
 }
 
 /** 控制命令类型 */
-export type MarketControlAction = 'start' | 'incremental' | 'retry';
+export type MarketControlAction = 'start' | 'incremental' | 'refresh-universe' | 'retry';
 
 export function useMarketDataSync() {
   const status = ref<MarketSyncStatus | null>(null);
@@ -143,6 +143,11 @@ export function useMarketDataSync() {
     return runControl('start', target => target.startFullBackfill(), '已启动全量回填');
   }
 
+  /** 刷新证券池 */
+  function refreshUniverse(): Promise<MarketSyncControlResult> {
+    return runControl('refresh-universe', target => target.refreshUniverse(), '已启动刷新证券池');
+  }
+
   /** 手动增量补跑 */
   function runIncremental(): Promise<MarketSyncControlResult> {
     return runControl('incremental', target => target.runIncremental(), '已启动增量更新');
@@ -180,6 +185,7 @@ export function useMarketDataSync() {
     refresh,
     manualRefresh,
     startFullBackfill,
+    refreshUniverse,
     runIncremental,
     retryFailed,
     startPolling,

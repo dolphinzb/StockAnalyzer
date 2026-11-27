@@ -97,7 +97,7 @@ import {
   type MarketHttpFetch,
   type UniverseScope,
 } from './marketUniverseService';
-import { createMarketSdkClient, type MarketKlineItem, type MarketSdkLike } from './marketSdkClient';
+import { createMarketSdkClient, toSdkCode, type MarketKlineItem, type MarketSdkLike } from './marketSdkClient';
 import { createSohuKlineClient } from './sohuKlineClient';
 import {
   deriveSohuFactors,
@@ -193,6 +193,8 @@ export interface MarketSyncService {
   start(): Promise<MarketSyncControlResult>;
   /** 手动增量补跑：从各任务 last_success_date 的下一交易日补到最新交易日 */
   incremental(): Promise<MarketSyncControlResult>;
+  /** 刷新证券池：只重跑 active_codes / delisted_codes，并补建新证券日线任务 */
+  refreshUniverse(): Promise<MarketSyncControlResult>;
   /** 只重置 failed 任务并启动调度 */
   retryFailed(): Promise<MarketSyncControlResult>;
   /** 进程启动恢复：running → pending，控制状态 idle，不自动继续 */
@@ -209,7 +211,10 @@ const META_SYNC_MODE = 'sync_mode';
 const META_SYNC_STARTED_AT = 'sync_started_at';
 const META_LAST_FULL = 'last_full_backfill_at';
 const META_LAST_INCREMENTAL = 'last_incremental_at';
+const META_LAST_UNIVERSE = 'last_universe_refresh_at';
 const META_BACKFILL_START = 'backfill_start_date';
+/** 刷新证券池只执行的两个市场级任务（不重跑交易日历） */
+const UNIVERSE_TASK_KINDS: readonly MarketDataKind[] = ['active_codes', 'delisted_codes'];
 const META_CONCURRENCY = 'sync_concurrency';
 const META_RPS = 'sync_rps';
 
@@ -361,8 +366,7 @@ export function extractRetryAfterMs(error: unknown): number | null {
 
 /** 代码前缀（stock-sdk 调用） */
 export function sdkSymbol(code: string, exchange: string): string {
-  const prefix = exchange === 'SH' ? 'sh' : exchange === 'BJ' ? 'bj' : 'sz';
-  return `${prefix}${code}`;
+  return toSdkCode(code, exchange);
 }
 
 /**
@@ -463,7 +467,7 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
 
   const readMode = (): MarketSyncMode | null => {
     const value = getMarketMeta(META_SYNC_MODE, db);
-    return value === 'full' || value === 'incremental' ? value : null;
+    return value === 'full' || value === 'incremental' || value === 'universe' ? value : null;
   };
 
   const readState = (): MarketSyncState => {
@@ -944,8 +948,10 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
     if (state === 'completed') {
       if (mode === 'full') {
         entries[META_LAST_FULL] = nowSec();
-      } else {
+      } else if (mode === 'incremental') {
         entries[META_LAST_INCREMENTAL] = nowSec();
+      } else {
+        entries[META_LAST_UNIVERSE] = nowSec();
       }
     }
     setMarketMeta(entries, db);
@@ -1162,8 +1168,12 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
 
     async start(): Promise<MarketSyncControlResult> {
       if (schedulerPromise) {
-        if (readMode() === 'incremental') {
+        const mode = readMode();
+        if (mode === 'incremental') {
           return { success: false, error: '增量更新正在进行中，请等待完成后再执行全量回填' };
+        }
+        if (mode === 'universe') {
+          return { success: false, error: '刷新证券池正在进行中，请等待完成后再执行全量回填' };
         }
         return { success: true };
       }
@@ -1180,7 +1190,7 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
         } else {
           // 断点续跑：running 回退 pending，控制状态置 running 后继续
           resetInterruptedTasks(db, nowSec());
-          setControl('running', readMode() ?? 'full');
+          setControl('running', readMode() === 'incremental' ? 'incremental' : 'full');
           // 全量回填后新上市的证券没有任务，这里幂等补建（不重复、不影响已完成股票）
           const inserted = ensureDailyTasksForAllSecurities();
           if (inserted > 0) {
@@ -1206,7 +1216,9 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
           error:
             mode === 'full'
               ? '全量回填尚未完成，无法执行增量更新'
-              : '增量更新正在进行中',
+              : mode === 'universe'
+                ? '刷新证券池尚未完成，无法执行增量更新'
+                : '增量更新正在进行中',
         };
       }
 
@@ -1248,6 +1260,52 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
       }
     },
 
+    async refreshUniverse(): Promise<MarketSyncControlResult> {
+      if (schedulerPromise) {
+        return { success: false, error: '同步正在进行中，请等待完成后再刷新证券池' };
+      }
+
+      try {
+        const taskKeys = UNIVERSE_TASK_KINDS.map(kind => buildTaskKey(null, kind));
+        insertPendingTasks(
+          db,
+          UNIVERSE_TASK_KINDS.map(kind => ({ stockCode: null, dataKind: kind })),
+          nowSec()
+        );
+        setTasksPending(db, taskKeys, nowSec());
+        setControl('running', 'universe');
+
+        for (const taskKey of taskKeys) {
+          const task = getTask(db, taskKey);
+          if (!task) {
+            throw new Error(`证券池任务不存在: ${taskKey}`);
+          }
+          await executeTask(task);
+          const finished = getTask(db, taskKey);
+          if (finished?.status !== 'success') {
+            const message = finished?.lastError ?? '证券池任务失败';
+            lastError = message;
+            setMarketMeta({ [META_CONTROL_STATE]: 'failed' }, db);
+            log.error(`刷新证券池失败: ${message}`);
+            return { success: false, error: message };
+          }
+        }
+
+        const inserted = ensureDailyTasksForAllSecurities();
+        if (inserted > 0) {
+          log.info(`刷新证券池后补建日线任务: ${inserted} 个`);
+        }
+        startScheduler();
+        return { success: true };
+      } catch (error) {
+        const message = describeSyncError(error);
+        lastError = message;
+        setMarketMeta({ [META_CONTROL_STATE]: 'failed' }, db);
+        log.error(`刷新证券池失败: ${message}`);
+        return { success: false, error: message };
+      }
+    },
+
     async retryFailed(): Promise<MarketSyncControlResult> {
       if (schedulerPromise) {
         return { success: false, error: '同步正在运行，请等待当前任务结束后再重试失败任务' };
@@ -1262,7 +1320,7 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
         if (reset === 0) {
           return { success: true };
         }
-        setControl('running', readMode() ?? 'full');
+        setControl('running', readMode() === 'incremental' ? 'incremental' : 'full');
         startScheduler();
         return { success: true };
       } catch (error) {

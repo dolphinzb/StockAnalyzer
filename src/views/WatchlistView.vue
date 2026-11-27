@@ -9,6 +9,7 @@ import StockList from '../components/StockList.vue';
 import { useToast } from '../composables/useToast';
 import { useWatchlistStore } from '../stores/watchlist';
 import { KLINE_PERIOD_LABELS, type KlinePeriod } from '../types';
+import { formatPeriodCounts } from '../utils/klinePeriodSummary';
 
 defineOptions({
   name: 'WatchlistView'
@@ -98,43 +99,34 @@ function handleDownloadKline(stockCode: string) {
   }
 }
 
-/** 处理K线下载确认（T108-T110：传递adjustTypes参数并更新Toast通知） */
+/** 处理K线下载确认（多周期：按周期展示各复权类型条数） */
 async function handleKlineDownload(payload: {
   stockCode: string;
   startDate: string;
   endDate: string;
   adjustTypes: ('' | 'qfq')[];
-  period: KlinePeriod;
+  periods: KlinePeriod[];
 }) {
   const result = await store.downloadKline(
     payload.stockCode,
     payload.startDate,
     payload.endDate,
     payload.adjustTypes,
-    payload.period
+    payload.periods
   );
 
-  // T109-T110：根据用户选择的复权类型显示结果
   if (result.success) {
-    const parts: string[] = [];
-    if (payload.adjustTypes.includes('') && result.unadjustedCount !== undefined) {
-      parts.push(`${result.unadjustedCount} 条不复权数据`);
-    }
-    if (payload.adjustTypes.includes('qfq') && result.adjustedCount !== undefined) {
-      parts.push(`${result.adjustedCount} 条前复权数据`);
-    }
-    const message = `${KLINE_PERIOD_LABELS[payload.period]}下载完成，共获取 ${parts.join('，')}`;
-    showToast(message, 'success', 3000);
+    // 多周期结果按「日线 …；周线 …」展示，使用完整文案（Toast 不截断）
+    const { full } = formatPeriodCounts(result.byPeriod);
+    showToast(`下载完成：${full}`, 'success', 3000);
   } else {
-    // 部分失败或全部失败
-    const errors: string[] = [];
-    if (result.unadjustedError) {
-      errors.push(`不复权：${result.unadjustedError}`);
-    }
-    if (result.adjustedError) {
-      errors.push(`前复权：${result.adjustedError}`);
-    }
-    const errorMessage = errors.length > 0 ? errors.join('；') : (result.error || '未知错误');
+    // 按周期列出失败原因，保留成功周期的条数便于用户判断
+    const failedPeriods = (result.byPeriod ?? []).filter(item => !item.success);
+    const errorMessage = failedPeriods.length > 0
+      ? failedPeriods
+        .map(item => `${KLINE_PERIOD_LABELS[item.period]}：${item.error || '未获取到K线数据'}`)
+        .join('；')
+      : (result.error || '未知错误');
     showToast(`下载失败：${errorMessage}`, 'error', 0);
   }
 }
@@ -152,7 +144,7 @@ async function handleBatchDownload(payload: {
   startDate: string;
   endDate: string;
   adjustTypes: ('' | 'qfq')[];
-  period: KlinePeriod;
+  periods: KlinePeriod[];
 }) {
   const summary = await store.downloadKlineBatch(payload);
 

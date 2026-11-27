@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AddTradeResult, CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategyAPI, IndexData, KlineAPI, KlineBatchDownloadInput, KlineBatchProgressPayload, KlineDownloadInput, KlinePeriod, OpenResult, PositionResult, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
+import type { AddTradeResult, CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategyAPI, IndexData, KlineAPI, KlineBatchDownloadInput, KlineBatchProgressPayload, KlineDownloadInput, KlinePeriod, MarketDataAPI, OpenResult, PositionResult, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
 
 // LogAPI 本地定义
 interface LogReadResult {
@@ -326,6 +326,14 @@ const klineAPI: KlineAPI = {
   },
 };
 
+// 行情库同步 API（全市场行情库 market_data.db 的控制面）
+const marketDataAPI: MarketDataAPI = {
+  getStatus: () => ipcRenderer.invoke('market:sync:status'),
+  startFullBackfill: () => ipcRenderer.invoke('market:sync:start'),
+  runIncremental: () => ipcRenderer.invoke('market:sync:incremental'),
+  retryFailed: () => ipcRenderer.invoke('market:sync:retry-failed'),
+};
+
 // 暴露所有 API 到渲染进程
 contextBridge.exposeInMainWorld('electronAPI', windowAPI);
 contextBridge.exposeInMainWorld('configAPI', configAPI);
@@ -338,3 +346,4 @@ contextBridge.exposeInMainWorld('historicalTradeAPI', historicalTradeAPI);
 contextBridge.exposeInMainWorld('gridStrategyAPI', gridStrategyAPI);
 contextBridge.exposeInMainWorld('fundManagementAPI', fundManagementAPI);
 contextBridge.exposeInMainWorld('klineAPI', klineAPI);
+contextBridge.exposeInMainWorld('marketDataAPI', marketDataAPI);

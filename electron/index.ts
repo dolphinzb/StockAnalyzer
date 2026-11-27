@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, s
 import log from 'electron-log';
 import fs from 'fs';
 import { join } from 'path';
-import type { AppConfig, KlineBatchDownloadInput, KlineBatchDownloadSummary, KlinePeriod } from '../shared/types';
+import type { AppConfig, KlineBatchDownloadInput, KlineBatchDownloadSummary, KlineDownloadInput, KlinePeriod } from '../shared/types';
 import {
   addStock,
   closeDatabase,
@@ -30,6 +30,12 @@ import {
   type UpdateStockInput,
   type UpdateTradeInput
 } from './database';
+import { closeMarketDatabase, initMarketDatabase } from './marketDatabase';
+import {
+  getMarketSyncService,
+  recoverInterruptedMarketSync,
+  stopMarketDataSync
+} from './services/marketDataSyncService';
 import {
   setBackupFailureNotifier,
   startBackupScheduler,
@@ -940,16 +946,43 @@ function assertKlinePeriod(period: unknown, required = false): KlinePeriod {
   return period as KlinePeriod;
 }
 
+/** 周期数组归一化的固定顺序：日线 → 周线 → 月线（与界面展示顺序一致） */
+const KLINE_PERIOD_ORDER: KlinePeriod[] = ['d', 'w', 'm'];
+
+/**
+ * 校验并归一化K线周期数组入参
+ * - 缺省 → 按日线处理
+ * - 空数组、非数组、含白名单外元素 → INVALID_PERIOD（空数组视为「未选择周期」，不静默兜底）
+ * - 合法输入按 日线 → 周线 → 月线 去重排序，执行顺序与勾选顺序无关
+ * @param periods 原始入参
+ * @returns 归一化后的周期数组
+ * @throws INVALID_PERIOD 周期缺失或非法
+ */
+function assertKlinePeriods(periods: unknown): KlinePeriod[] {
+  if (periods === undefined || periods === null) {
+    return ['d'];
+  }
+  if (!Array.isArray(periods)) {
+    throw new Error(`INVALID_PERIOD: 周期参数必须为数组，收到 ${String(periods)}`);
+  }
+  if (periods.length === 0) {
+    throw new Error('INVALID_PERIOD: 请至少选择一个K线周期');
+  }
+
+  for (const period of periods) {
+    if (typeof period !== 'string' || !VALID_KLINE_PERIODS.has(period)) {
+      throw new Error(`INVALID_PERIOD: 不支持的K线周期 ${String(period)}`);
+    }
+  }
+
+  const unique = new Set(periods as string[]);
+  return KLINE_PERIOD_ORDER.filter(period => unique.has(period));
+}
+
 /**
  * 下载K线数据（T116-T117：接收adjustTypes参数）
  */
-ipcMain.handle('kline:download', async (_event, input: {
-  stockCode: string;
-  startDate: string;
-  endDate: string;
-  adjustTypes?: ('' | 'qfq')[];
-  period?: KlinePeriod;
-}) => {
+ipcMain.handle('kline:download', async (_event, input: KlineDownloadInput) => {
   log.info('IPC: kline:download', JSON.stringify(input));
   try {
     validateDownloadInput(input.stockCode, input.startDate, input.endDate);
@@ -957,9 +990,9 @@ ipcMain.handle('kline:download', async (_event, input: {
     if (input.adjustTypes && input.adjustTypes.length === 0) {
       throw new Error('请至少选择一种复权类型');
     }
-    // 周期缺省按日线处理，非法值直接拒绝
-    const period = assertKlinePeriod(input.period);
-    return await downloadKline(input.stockCode, input.startDate, input.endDate, input.adjustTypes, period);
+    // 周期缺省按日线处理；空数组与非法值直接拒绝
+    const periods = assertKlinePeriods(input.periods);
+    return await downloadKline(input.stockCode, input.startDate, input.endDate, input.adjustTypes, periods);
   } catch (error) {
     log.error('IPC kline:download error:', error);
     return {
@@ -978,7 +1011,7 @@ handleValidated('kline:download-batch', SCHEMAS.klineDownloadBatch, async (_even
     startDate: input.startDate,
     endDate: input.endDate,
     adjustTypes: input.adjustTypes,
-    period: input.period,
+    periods: input.periods,
   }));
 
   try {
@@ -989,15 +1022,15 @@ handleValidated('kline:download-batch', SCHEMAS.klineDownloadBatch, async (_even
       stockName: nameMap.get(stockCode) ?? '',
     }));
 
-    // 周期为单值，缺省按日线；保留既有白名单校验
-    const period = assertKlinePeriod(input.period);
+    // 周期数组缺省按日线；空数组与非法值在入口拒绝（按 日→周→月 归一化）
+    const periods = assertKlinePeriods(input.periods);
 
     return await downloadBatch(
       stocks,
       input.startDate,
       input.endDate,
       input.adjustTypes ?? ['', 'qfq'],
-      period,
+      periods,
       {
         retry: true,
         onProgress: payload => {
@@ -1023,6 +1056,76 @@ handleValidated('kline:download-batch', SCHEMAS.klineDownloadBatch, async (_even
       error: errorMessage,
     };
     return failedSummary;
+  }
+});
+
+// ==================== 行情库（market_data.db）IPC Handlers ====================
+
+/**
+ * 行情库不可用时的状态兜底：页面能渲染错误，而不是收到未处理的异常
+ */
+function emptyMarketSyncStatus(error: string): import('../shared/types').MarketSyncStatus {
+  return {
+    state: 'failed',
+    mode: null,
+    total: 0,
+    pending: 0,
+    running: 0,
+    success: 0,
+    failed: 0,
+    earliestMissingDate: null,
+    latestTradeDate: null,
+    incrementalTaskCount: 0,
+    currentTaskKey: null,
+    currentStockCode: null,
+    currentStockName: null,
+    lastError: error,
+    updatedAt: new Date().toISOString(),
+    failedTasks: [],
+  };
+}
+
+handleValidated('market:sync:status', SCHEMAS.marketSyncStatus, () => {
+  log.debug('IPC: market:sync:status');
+  try {
+    return getMarketSyncService().getStatus();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('IPC market:sync:status error:', message);
+    return emptyMarketSyncStatus(message);
+  }
+});
+
+handleValidated('market:sync:start', SCHEMAS.marketSyncStart, async () => {
+  log.info('IPC: market:sync:start');
+  try {
+    return await getMarketSyncService().start();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('IPC market:sync:start error:', message);
+    return { success: false, error: message };
+  }
+});
+
+handleValidated('market:sync:incremental', SCHEMAS.marketSyncIncremental, async () => {
+  log.info('IPC: market:sync:incremental');
+  try {
+    return await getMarketSyncService().incremental();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('IPC market:sync:incremental error:', message);
+    return { success: false, error: message };
+  }
+});
+
+handleValidated('market:sync:retry-failed', SCHEMAS.marketSyncRetryFailed, async () => {
+  log.info('IPC: market:sync:retry-failed');
+  try {
+    return await getMarketSyncService().retryFailed();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('IPC market:sync:retry-failed error:', message);
+    return { success: false, error: message };
   }
 });
 
@@ -1108,6 +1211,19 @@ app.whenReady().then(async () => {
     return;
   }
 
+  // 行情库与业务库双轨：初始化失败只影响行情库页面，不阻断自选股等功能
+  try {
+    await initMarketDatabase();
+    recoverInterruptedMarketSync();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('行情库初始化失败:', error);
+    dialog.showErrorBox(
+      '行情库初始化失败',
+      `全市场行情库（market_data.db）不可用，自选股等功能不受影响。\n${message}`
+    );
+  }
+
   fundService = new FundService(getDb());
   currentConfig = loadConfig();
   log.info('Config loaded on startup');
@@ -1151,5 +1267,7 @@ app.on('before-quit', () => {
   stopBackupScheduler(); // 停止数据库备份调度器
   stopKlineDownloadScheduler(); // 停止K线数据自动下载调度器
   stopLogCleanupTimer(); // 停止日志清理定时器
+  stopMarketDataSync(); // 停止行情库同步调度
   closeDatabase();
+  closeMarketDatabase();
 });

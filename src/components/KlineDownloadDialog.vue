@@ -14,7 +14,7 @@ const props = defineProps<Props>();
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
-  download: [payload: { stockCode: string; startDate: string; endDate: string; adjustTypes: ('' | 'qfq')[]; period: KlinePeriod }];
+  download: [payload: { stockCode: string; startDate: string; endDate: string; adjustTypes: ('' | 'qfq')[]; periods: KlinePeriod[] }];
 }>();
 
 /** 计算默认开始日期：当日 */
@@ -38,13 +38,21 @@ const dateRange = ref<{ startDate: string; endDate: string }>({
 /** 复权类型选择（T101：默认全选，与stock-sdk的adjust参数一致） */
 const adjustTypes = ref<('' | 'qfq')[]>(['', 'qfq']);
 
-/** K线周期（单选，默认日线；切换周期不改动日期范围） */
-const period = ref<KlinePeriod>('d');
+/** K线周期（多选，默认全选日/周/月；切换周期不改动日期范围） */
+const periods = ref<KlinePeriod[]>([...KLINE_PERIODS]);
+
+/** 是否已全选周期 */
+const allPeriodsSelected = computed(() => KLINE_PERIODS.every(period => periods.value.includes(period)));
+
+/** 是否部分勾选周期（用于全选复选框半选状态） */
+const partiallySelectedPeriods = computed(
+  () => periods.value.length > 0 && !allPeriodsSelected.value
+);
 
 /** 验证错误信息 */
 const validationError = ref('');
 
-/** 是否可以提交（T102：增加复权类型验证） */
+/** 是否可以提交（T102：增加复权类型验证；多周期需至少选一个） */
 const canSubmit = computed(() => {
   const { startDate, endDate } = dateRange.value;
   if (!startDate || !endDate) return false;
@@ -52,10 +60,19 @@ const canSubmit = computed(() => {
   // 结束日期不能晚于当前日期
   const today = new Date().toISOString().slice(0, 10);
   if (endDate > today) return false;
+  // 至少选择一个周期
+  if (periods.value.length === 0) return false;
   // 至少选择一种复权类型
   if (adjustTypes.value.length === 0) return false;
   return true;
 });
+
+/** 处理周期全选切换 */
+function handleToggleAllPeriods(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked;
+  periods.value = checked ? [...KLINE_PERIODS] : [];
+  validationError.value = '';
+}
 
 /** 处理日期范围变更 */
 function handleDateChange(value: { startDate: string; endDate: string }) {
@@ -89,6 +106,12 @@ function handleConfirm() {
     return;
   }
 
+  // 验证至少选择一个周期
+  if (periods.value.length === 0) {
+    validationError.value = '请至少选择一个周期';
+    return;
+  }
+
   // 验证至少选择一种复权类型（T102）
   if (adjustTypes.value.length === 0) {
     validationError.value = '请至少选择一种复权类型';
@@ -99,13 +122,13 @@ function handleConfirm() {
   const startDateParam = startDate.replace(/-/g, '');
   const endDateParam = endDate.replace(/-/g, '');
 
-  // T103：传递adjustTypes参数给父组件；周期为单值，一并传递
+  // T103：传递adjustTypes参数给父组件；周期按固定顺序（日→周→月）去重后传递
   emit('download', {
     stockCode: props.stockCode,
     startDate: startDateParam,
     endDate: endDateParam,
     adjustTypes: [...adjustTypes.value],
-    period: period.value,
+    periods: KLINE_PERIODS.filter(period => periods.value.includes(period)),
   });
 
   // 关闭对话框
@@ -135,12 +158,24 @@ function handleCancel() {
         @change="handleDateChange"
       />
 
-      <!-- 周期选择（单选，默认日线） -->
+      <!-- 周期选择（多选，默认全选日/周/月） -->
       <div class="period-section">
-        <label class="section-label">周期：</label>
-        <div class="radio-group">
-          <label v-for="p in KLINE_PERIODS" :key="p" class="radio-item">
-            <input type="radio" :value="p" v-model="period" />
+        <div class="section-header">
+          <label class="section-label">周期：</label>
+          <label class="select-all">
+            <input
+              type="checkbox"
+              :checked="allPeriodsSelected"
+              :indeterminate.prop="partiallySelectedPeriods"
+              @change="handleToggleAllPeriods"
+            />
+            <span>全选</span>
+          </label>
+          <span class="selected-count">已选 {{ periods.length }} / 共 {{ KLINE_PERIODS.length }}</span>
+        </div>
+        <div class="checkbox-group">
+          <label v-for="p in KLINE_PERIODS" :key="p" class="checkbox-item">
+            <input type="checkbox" :value="p" v-model="periods" />
             <span>{{ KLINE_PERIOD_LABELS[p] }}</span>
           </label>
         </div>
@@ -209,11 +244,17 @@ function handleCancel() {
   }
 }
 
-/* 周期选择区域样式（单选） */
+/* 周期选择区域样式（多选 + 全选） */
 .period-section {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
 
   .section-label {
     font-size: var(--font-size-sm);
@@ -221,11 +262,40 @@ function handleCancel() {
     color: var(--text-primary);
   }
 
-  .radio-group {
+  .select-all {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      accent-color: var(--color-primary);
+    }
+
+    span {
+      user-select: none;
+    }
+
+    &:hover {
+      color: var(--color-primary);
+    }
+  }
+
+  .selected-count {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+  }
+
+  .checkbox-group {
     display: flex;
     gap: var(--space-4);
 
-    .radio-item {
+    .checkbox-item {
       display: flex;
       align-items: center;
       gap: var(--space-2);
@@ -233,7 +303,7 @@ function handleCancel() {
       font-size: var(--font-size-sm);
       color: var(--text-primary);
 
-      input[type="radio"] {
+      input[type="checkbox"] {
         width: 16px;
         height: 16px;
         cursor: pointer;

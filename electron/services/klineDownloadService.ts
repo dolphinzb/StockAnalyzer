@@ -18,6 +18,7 @@ import type {
   KlineBatchProgressPayload,
   KlineBatchStockResult,
   KlineData,
+  KlineDownloadPeriodResult,
   KlineDownloadResult,
   KlinePeriod
 } from '../../shared/types';
@@ -66,6 +67,24 @@ const PERIOD_LABELS: Record<KlinePeriod, string> = {
   w: '周线',
   m: '月线',
 };
+
+/** 多周期下载的固定执行顺序：日线 → 周线 → 月线（与界面展示顺序一致） */
+const PERIOD_ORDER: KlinePeriod[] = ['d', 'w', 'm'];
+
+/**
+ * 归一化周期数组：去重并按固定顺序排序
+ * 非法/空输入回退为日线（IPC 入口已做白名单校验，此处只做内部兜底）
+ * @param periods 原始周期数组
+ * @returns 归一化后的周期数组（至少一项）
+ */
+function normalizePeriods(periods: KlinePeriod[] | undefined): KlinePeriod[] {
+  if (!Array.isArray(periods) || periods.length === 0) {
+    return ['d'];
+  }
+  const unique = new Set(periods);
+  const ordered = PERIOD_ORDER.filter(period => unique.has(period));
+  return ordered.length > 0 ? ordered : ['d'];
+}
 
 /** 获取主窗口（用于向渲染进程广播事件，参考 alertService 模式） */
 function getMainWindow(): BrowserWindow | null {
@@ -232,103 +251,173 @@ async function downloadSingleAdjust(
 }
 
 /**
- * 手动下载K线数据（T111-T115：根据用户选择的复权类型下载）
+ * 下载单只股票单个周期的K线数据
+ * - 周期内按 adjustTypes 顺序串行调用数据源
+ * - 成功判定：所选复权类型中至少一种返回条数大于 0（与批量下载口径一致）
+ * @param stockCode 股票代码
+ * @param startDate 开始日期 (YYYYMMDD)
+ * @param endDate 结束日期 (YYYYMMDD)
+ * @param adjustTypes 复权类型数组
+ * @param period K线周期
+ * @returns 该周期的下载明细
+ */
+async function downloadPeriod(
+  stockCode: string,
+  startDate: string,
+  endDate: string,
+  adjustTypes: ('' | 'qfq')[],
+  period: KlinePeriod
+): Promise<KlineDownloadPeriodResult> {
+  const periodLabel = PERIOD_LABELS[period] ?? '日线';
+  const result: KlineDownloadPeriodResult = { period, success: false };
+
+  for (const adjustType of adjustTypes) {
+    const single = await downloadSingleAdjust(stockCode, startDate, endDate, adjustType as '' | 'qfq', period);
+
+    if (adjustType === '') {
+      if (single.success) {
+        result.unadjustedCount = single.count;
+      } else {
+        result.unadjustedError = single.error;
+      }
+    } else if (adjustType === 'qfq') {
+      if (single.success) {
+        result.adjustedCount = single.count;
+      } else {
+        result.adjustedError = single.error;
+      }
+    }
+  }
+
+  result.success = (result.unadjustedCount ?? 0) > 0 || (result.adjustedCount ?? 0) > 0;
+
+  // 成功时只留 debug（批量下载时逐只刷屏无意义）；失败用 warn，便于按级别快速定位
+  if (result.success) {
+    log.debug(`${periodLabel}K线数据下载完成: ${stockCode}, 不复权=${result.unadjustedCount || 0}条, 前复权=${result.adjustedCount || 0}条`);
+  } else {
+    const errors: string[] = [];
+    if (result.unadjustedError) errors.push(`不复权: ${result.unadjustedError}`);
+    if (result.adjustedError) errors.push(`前复权: ${result.adjustedError}`);
+    result.error = errors.join('; ') || '未获取到K线数据';
+    log.warn(`${periodLabel}K线数据下载失败: ${stockCode}, ${result.error}`);
+  }
+
+  return result;
+}
+
+/**
+ * 把按周期的明细聚合为下载结果
+ * 顶层条数/错误字段为「所有所选周期的合计」，判定与展示以 byPeriod 为准
+ * @param periods 本次下载的周期（已归一化）
+ * @param byPeriod 按周期的明细
+ * @param adjustTypes 本次请求的复权类型
+ * @returns 下载结果
+ */
+function aggregateDownloadResult(
+  periods: KlinePeriod[],
+  byPeriod: KlineDownloadPeriodResult[],
+  adjustTypes: ('' | 'qfq')[]
+): KlineDownloadResult {
+  const result: KlineDownloadResult = {
+    success: byPeriod.length > 0 && byPeriod.every(item => item.success),
+    periods,
+    byPeriod,
+  };
+
+  if (adjustTypes.includes('')) {
+    result.unadjustedCount = byPeriod.reduce((sum, item) => sum + (item.unadjustedCount ?? 0), 0);
+  }
+  if (adjustTypes.includes('qfq')) {
+    result.adjustedCount = byPeriod.reduce((sum, item) => sum + (item.adjustedCount ?? 0), 0);
+  }
+
+  const unadjustedErrors: string[] = [];
+  const adjustedErrors: string[] = [];
+  for (const item of byPeriod) {
+    if (item.unadjustedError) {
+      unadjustedErrors.push(`${PERIOD_LABELS[item.period]}: ${item.unadjustedError}`);
+    }
+    if (item.adjustedError) {
+      adjustedErrors.push(`${PERIOD_LABELS[item.period]}: ${item.adjustedError}`);
+    }
+  }
+  if (unadjustedErrors.length > 0) {
+    result.unadjustedError = unadjustedErrors.join('; ');
+  }
+  if (adjustedErrors.length > 0) {
+    result.adjustedError = adjustedErrors.join('; ');
+  }
+
+  // 兼容旧版字段
+  result.count = (result.unadjustedCount || 0) + (result.adjustedCount || 0);
+
+  if (!result.success) {
+    const failed = byPeriod.filter(item => !item.success);
+    result.error = failed.length > 0
+      ? failed.map(item => `${PERIOD_LABELS[item.period]}: ${item.error || '未获取到K线数据'}`).join('; ')
+      : '未知错误';
+  }
+
+  return result;
+}
+
+/**
+ * 广播 kline:updated 事件（通知形态检测、K线图等消费方刷新缓存）
+ * @param stockCode 股票代码
+ * @param adjustTypes 本次请求的复权类型
+ * @param periods 本次成功写入的周期
+ */
+function broadcastKlineUpdated(stockCode: string, adjustTypes: ('' | 'qfq')[], periods: KlinePeriod[]): void {
+  const mainWindow = getMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send('kline:updated', {
+    stockCode,
+    adjustTypes,
+    periods,
+  });
+  log.debug(`已广播 kline:updated 事件: ${stockCode}, 周期: ${periods.join('/')}`);
+}
+
+/**
+ * 手动下载K线数据（支持多周期 + 多复权类型）
  * @param stockCode 股票代码
  * @param startDate 开始日期 (YYYYMMDD)
  * @param endDate 结束日期 (YYYYMMDD)
  * @param adjustTypes 复权类型数组（可选，默认 ['', 'qfq']）
- * @param period K线周期（默认日线）
- * @returns 下载结果（包含所选复权类型的统计）
+ * @param periods K线周期数组（默认 ['d']；按日线 → 周线 → 月线串行）
+ * @returns 下载结果（含按周期的明细与合计）
  */
 export async function downloadKline(
   stockCode: string,
   startDate: string,
   endDate: string,
   adjustTypes?: ('' | 'qfq')[],
-  period: KlinePeriod = 'd'
+  periods: KlinePeriod[] = ['d']
 ): Promise<KlineDownloadResult> {
   // T112：如果未指定adjustTypes，默认下载两种类型
-  const typesToDownload = adjustTypes && adjustTypes.length > 0 ? adjustTypes : ['', 'qfq'];
-  const periodLabel = PERIOD_LABELS[period] ?? '日线';
+  const typesToDownload = adjustTypes && adjustTypes.length > 0 ? adjustTypes : (['', 'qfq'] as ('' | 'qfq')[]);
+  const periodsToDownload = normalizePeriods(periods);
+  const periodLabels = periodsToDownload.map(period => PERIOD_LABELS[period]).join(' → ');
 
-  log.debug(`开始下载${periodLabel}K线数据: ${stockCode}, ${startDate} ~ ${endDate}, 复权类型: ${typesToDownload.map(t => t === '' ? '不复权' : '前复权').join(', ')}`);
+  log.debug(`开始下载${periodLabels}K线数据: ${stockCode}, ${startDate} ~ ${endDate}, 复权类型: ${typesToDownload.map(t => t === '' ? '不复权' : '前复权').join(', ')}`);
 
-  // T112：遍历adjustTypes数组，依次下载每种复权类型
-  let unadjustedCount: number | undefined;
-  let adjustedCount: number | undefined;
-  let unadjustedError: string | undefined;
-  let adjustedError: string | undefined;
-  let overallSuccess = false;
+  const byPeriod: KlineDownloadPeriodResult[] = [];
+  for (const period of periodsToDownload) {
+    const periodResult = await downloadPeriod(stockCode, startDate, endDate, typesToDownload, period);
 
-  for (const adjustType of typesToDownload) {
-    const result = await downloadSingleAdjust(stockCode, startDate, endDate, adjustType as '' | 'qfq', period);
-    
-    if (adjustType === '') {
-      // 不复权
-      if (result.success) {
-        unadjustedCount = result.count;
-        overallSuccess = true;
-      } else {
-        unadjustedError = result.error;
-      }
-    } else if (adjustType === 'qfq') {
-      // 前复权
-      if (result.success) {
-        adjustedCount = result.count;
-        overallSuccess = true;
-      } else {
-        adjustedError = result.error;
-      }
+    // 每个周期独立广播：部分周期成功时，成功周期已落库，消费方也需要刷新
+    if (periodResult.success) {
+      broadcastKlineUpdated(stockCode, typesToDownload, [period]);
     }
+
+    byPeriod.push(periodResult);
   }
 
   // 写入由引擎在事务提交时持久化，无需在此显式落盘
-
-  const result: KlineDownloadResult = {
-    success: overallSuccess,
-    unadjustedCount,
-    adjustedCount,
-  };
-
-  // T114：记录失败原因
-  if (unadjustedError) {
-    result.unadjustedError = unadjustedError;
-  }
-  if (adjustedError) {
-    result.adjustedError = adjustedError;
-  }
-
-  // 兼容旧版字段
-  result.count = (unadjustedCount || 0) + (adjustedCount || 0);
-  if (!overallSuccess) {
-    const errors: string[] = [];
-    if (unadjustedError) errors.push(`不复权: ${unadjustedError}`);
-    if (adjustedError) errors.push(`前复权: ${adjustedError}`);
-    result.error = errors.join('; ') || '未知错误';
-  }
-
-  // 成功时只留 debug（批量下载时逐只刷屏无意义）；失败用 warn，便于按级别快速定位
-  if (overallSuccess) {
-    log.debug(`${periodLabel}K线数据下载完成: ${stockCode}, 不复权=${unadjustedCount || 0}条, 前复权=${adjustedCount || 0}条`);
-  } else {
-    log.warn(`${periodLabel}K线数据下载失败: ${stockCode}, ${result.error}`);
-  }
-
-  // 下载成功后广播 kline:updated，通知形态检测等消费方刷新缓存的 K 线数据
-  // （覆盖手动下载与自动调度两条路径，二者都经过此函数）
-  if (overallSuccess) {
-    const mainWindow = getMainWindow();
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('kline:updated', {
-        stockCode,
-        adjustTypes: typesToDownload,
-        periods: [period],
-      });
-      log.debug(`已广播 kline:updated 事件: ${stockCode}, 周期: ${period}`);
-    }
-  }
-
-  return result;
+  return aggregateDownloadResult(periodsToDownload, byPeriod, typesToDownload);
 }
 
 /**
@@ -442,32 +531,59 @@ export async function getLastTradingDay(today: Date = new Date()): Promise<strin
 }
 
 /**
+ * 把重试得到的周期明细合并回首次结果（覆盖同周期项，保持原有顺序）
+ * @param original 首次下载的逐周期明细
+ * @param retried 重试得到的逐周期明细
+ * @returns 合并后的逐周期明细
+ */
+function mergePeriodResults(
+  original: KlineDownloadPeriodResult[],
+  retried: KlineDownloadPeriodResult[]
+): KlineDownloadPeriodResult[] {
+  const retriedMap = new Map(retried.map(item => [item.period, item]));
+  return original.map(item => retriedMap.get(item.period) ?? item);
+}
+
+/**
  * 带重试的K线数据下载
- * 首次失败后自动重试1次
+ * 只对失败的周期重试1次，已成功的周期不重复请求
  * @param stockCode 股票代码
  * @param startDate 开始日期 (YYYYMMDD)
  * @param endDate 结束日期 (YYYYMMDD)
  * @param adjustTypes 复权类型数组（可选，默认 ['', 'qfq']）
- * @param period K线周期（默认日线）
- * @returns 下载结果
+ * @param periods K线周期数组（默认 ['d']）
+ * @returns 下载结果（含按周期的明细）
  */
 export async function downloadWithRetry(
   stockCode: string,
   startDate: string,
   endDate: string,
   adjustTypes?: ('' | 'qfq')[],
-  period: KlinePeriod = 'd'
+  periods: KlinePeriod[] = ['d']
 ): Promise<KlineDownloadResult> {
-  // 首次尝试
-  let result = await downloadKline(stockCode, startDate, endDate, adjustTypes, period);
+  const typesToDownload = adjustTypes && adjustTypes.length > 0 ? adjustTypes : (['', 'qfq'] as ('' | 'qfq')[]);
+  const periodsToDownload = normalizePeriods(periods);
 
-  // 首次失败时重试1次
-  if (!result.success) {
-    log.warn(`K线数据下载失败，重试1次: ${stockCode}`);
-    result = await downloadKline(stockCode, startDate, endDate, adjustTypes, period);
+  // 首次尝试
+  const firstResult = await downloadKline(stockCode, startDate, endDate, typesToDownload, periodsToDownload);
+  if (firstResult.success) {
+    return firstResult;
   }
 
-  return result;
+  // 只重试失败的周期，已成功的周期保持原结果
+  const failedPeriods = (firstResult.byPeriod ?? [])
+    .filter(item => !item.success)
+    .map(item => item.period);
+
+  if (failedPeriods.length === 0) {
+    return firstResult;
+  }
+
+  log.warn(`K线数据下载失败，重试失败周期1次: ${stockCode}, 周期: ${failedPeriods.map(period => PERIOD_LABELS[period]).join('/')}`);
+  const retried = await downloadKline(stockCode, startDate, endDate, typesToDownload, failedPeriods);
+
+  const merged = mergePeriodResults(firstResult.byPeriod ?? [], retried.byPeriod ?? []);
+  return aggregateDownloadResult(periodsToDownload, merged, typesToDownload);
 }
 
 /** 批量下载互斥标志：同一时刻只允许一个批量任务（手动批量或定时自动） */
@@ -533,43 +649,66 @@ export function buildBatchStockResult(
   stockCode: string,
   stockName: string,
   adjustTypes: ('' | 'qfq')[],
-  period: KlinePeriod = 'd'
+  periods: KlinePeriod[] = ['d']
 ): KlineBatchStockResult {
   const typesToCheck = adjustTypes.length > 0 ? adjustTypes : (['', 'qfq'] as ('' | 'qfq')[]);
+  const periodsToCheck = normalizePeriods(periods);
+
+  // 以按周期明细为准；明细缺失（如调用抛错）时按「该周期失败」兜底，避免误判成功
+  const sourceByPeriod = downloadResult.byPeriod ?? [];
+  const byPeriod: KlineDownloadPeriodResult[] = periodsToCheck.map(period => {
+    const item = sourceByPeriod.find(entry => entry.period === period);
+    if (item) {
+      return item;
+    }
+    return {
+      period,
+      success: false,
+      error: downloadResult.error || '未获取到K线数据',
+    };
+  });
+
   const result: KlineBatchStockResult = {
     stockCode,
     stockName,
-    period,
+    periods: periodsToCheck,
+    byPeriod,
     success: false,
   };
 
+  // 单周期任务保留 period 回显（旧字段，仅用于日志/旧消费方阅读）
+  if (periodsToCheck.length === 1) {
+    result.period = periodsToCheck[0];
+  }
+
   if (typesToCheck.includes('')) {
-    result.unadjustedCount = downloadResult.unadjustedCount ?? 0;
-    if (downloadResult.unadjustedError) {
-      result.unadjustedError = downloadResult.unadjustedError;
+    result.unadjustedCount = byPeriod.reduce((sum, item) => sum + (item.unadjustedCount ?? 0), 0);
+    const errors = byPeriod
+      .filter(item => item.unadjustedError)
+      .map(item => `${PERIOD_LABELS[item.period]}: ${item.unadjustedError}`);
+    if (errors.length > 0) {
+      result.unadjustedError = errors.join('; ');
     }
   }
 
   if (typesToCheck.includes('qfq')) {
-    result.adjustedCount = downloadResult.adjustedCount ?? 0;
-    if (downloadResult.adjustedError) {
-      result.adjustedError = downloadResult.adjustedError;
+    result.adjustedCount = byPeriod.reduce((sum, item) => sum + (item.adjustedCount ?? 0), 0);
+    const errors = byPeriod
+      .filter(item => item.adjustedError)
+      .map(item => `${PERIOD_LABELS[item.period]}: ${item.adjustedError}`);
+    if (errors.length > 0) {
+      result.adjustedError = errors.join('; ');
     }
   }
 
-  result.success = typesToCheck.some(type =>
-    type === '' ? (result.unadjustedCount ?? 0) > 0 : (result.adjustedCount ?? 0) > 0
-  );
+  // 整体成功 = 所有所选周期均成功（任一周期静默失败都不算成功）
+  result.success = byPeriod.length > 0 && byPeriod.every(item => item.success);
 
   if (!result.success) {
-    const errors: string[] = [];
-    if (typesToCheck.includes('') && result.unadjustedError) {
-      errors.push(`不复权: ${result.unadjustedError}`);
-    }
-    if (typesToCheck.includes('qfq') && result.adjustedError) {
-      errors.push(`前复权: ${result.adjustedError}`);
-    }
-    result.error = errors.length > 0 ? errors.join('; ') : (downloadResult.error || '未获取到K线数据');
+    const failed = byPeriod.filter(item => !item.success);
+    result.error = failed.length > 0
+      ? failed.map(item => `${PERIOD_LABELS[item.period]}: ${item.error || '未获取到K线数据'}`).join('; ')
+      : (downloadResult.error || '未获取到K线数据');
   }
 
   return result;
@@ -772,6 +911,7 @@ export function collectPendingStocks(
  * @param startDate 整批默认开始日期 (YYYYMMDD)
  * @param endDate 结束日期 (YYYYMMDD)
  * @param adjustTypes 复权类型数组
+ * @param periods K线周期数组（默认 ['d']；按日线 → 周线 → 月线串行）
  * @param options 可选配置（重试、进度回调）
  * @returns 批量下载汇总结果
  */
@@ -780,7 +920,7 @@ export async function downloadBatch(
   startDate: string,
   endDate: string,
   adjustTypes: ('' | 'qfq')[],
-  period: KlinePeriod = 'd',
+  periods: KlinePeriod[] = ['d'],
   options: DownloadBatchOptions = {}
 ): Promise<KlineBatchDownloadSummary> {
   // 互斥：已有批量任务（手动或定时）在执行时直接拒绝
@@ -789,6 +929,7 @@ export async function downloadBatch(
   }
 
   const typesToDownload = adjustTypes.length > 0 ? adjustTypes : (['', 'qfq'] as ('' | 'qfq')[]);
+  const periodsToDownload = normalizePeriods(periods);
 
   // 整批预校验：任一非法则整批不启动（逐只起点在循环内单独校验与钳制）
   validateBatchDownloadInput(stocks.map(stock => stock.stockCode), startDate, endDate, typesToDownload);
@@ -796,10 +937,10 @@ export async function downloadBatch(
   batchDownloading = true;
   const total = stocks.length;
   const results: KlineBatchStockResult[] = [];
-  const periodLabel = PERIOD_LABELS[period] ?? '日线';
+  const periodLabels = periodsToDownload.map(period => PERIOD_LABELS[period]).join(' → ');
 
   log.info(
-    `开始批量下载${periodLabel}K线数据: 共 ${total} 只, 区间 ${summarizeStartDates(stocks, startDate, endDate)}, 复权类型: ${typesToDownload.map(type => (type === '' ? '不复权' : '前复权')).join(', ')}`
+    `开始批量下载${periodLabels}K线数据: 共 ${total} 只, 区间 ${summarizeStartDates(stocks, startDate, endDate)}, 复权类型: ${typesToDownload.map(type => (type === '' ? '不复权' : '前复权')).join(', ')}`
   );
 
   try {
@@ -815,16 +956,16 @@ export async function downloadBatch(
         total,
         stockCode: stock.stockCode,
         stockName: stock.stockName,
-        period,
+        periods: periodsToDownload,
         startDate: from,
       });
 
       let downloadResult: KlineDownloadResult;
       try {
-        log.debug(`${periodLabel}下载区间: ${stock.stockCode}, ${from} ~ ${endDate}`);
+        log.debug(`${periodLabels}下载区间: ${stock.stockCode}, ${from} ~ ${endDate}`);
         downloadResult = options.retry
-          ? await downloadWithRetry(stock.stockCode, from, endDate, typesToDownload, period)
-          : await downloadKline(stock.stockCode, from, endDate, typesToDownload, period);
+          ? await downloadWithRetry(stock.stockCode, from, endDate, typesToDownload, periodsToDownload)
+          : await downloadKline(stock.stockCode, from, endDate, typesToDownload, periodsToDownload);
       } catch (error) {
         downloadResult = {
           success: false,
@@ -832,7 +973,7 @@ export async function downloadBatch(
         };
       }
 
-      const result = buildBatchStockResult(downloadResult, stock.stockCode, stock.stockName, typesToDownload, period);
+      const result = buildBatchStockResult(downloadResult, stock.stockCode, stock.stockName, typesToDownload, periodsToDownload);
       results.push(result);
 
       emitProgress(options.onProgress, {
@@ -841,7 +982,7 @@ export async function downloadBatch(
         total,
         stockCode: stock.stockCode,
         stockName: stock.stockName,
-        period,
+        periods: periodsToDownload,
         startDate: from,
         result,
       });
@@ -851,7 +992,7 @@ export async function downloadBatch(
   }
 
   const summary = buildBatchSummary(results);
-  log.info(`批量下载${periodLabel}K线数据完成: 共 ${summary.total} 只, 成功 ${summary.successCount} 只, 失败 ${summary.failedCount} 只`);
+  log.info(`批量下载${periodLabels}K线数据完成: 共 ${summary.total} 只, 成功 ${summary.successCount} 只, 失败 ${summary.failedCount} 只`);
 
   for (const result of results) {
     if (!result.success) {
@@ -918,7 +1059,8 @@ export async function performAutoDownload(): Promise<void> {
     let summary: KlineBatchDownloadSummary;
     try {
       // 整批缺省起点用 endDate：逐只起点已填好，缺省值只用于单只起点异常时的回退
-      summary = await downloadBatch(pending, endDate, endDate, ['', 'qfq'], period, { retry: true });
+      // 自动下载按周期分层，单次调用只处理一个周期
+      summary = await downloadBatch(pending, endDate, endDate, ['', 'qfq'], [period], { retry: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.startsWith('BATCH_DOWNLOAD_IN_PROGRESS')) {

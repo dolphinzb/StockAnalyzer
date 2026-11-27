@@ -98,7 +98,7 @@ const cases: ChannelCase[] = [
     channel: 'kline:download-batch',
     schema: SCHEMAS.klineDownloadBatch,
     badArgs: [undefined],
-    goodArgs: [{ stockCodes: ['000001'], startDate: '20260101', endDate: '20261114' }],
+    goodArgs: [{ stockCodes: ['000001'], startDate: '20260101', endDate: '20261114', periods: ['d', 'w'] }],
   },
 ];
 

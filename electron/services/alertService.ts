@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, Notification } from 'electron';
 import log from 'electron-log';
 import type { WatchlistStock } from '../database';
 import type { PriceUpdate } from '../../shared/types';
@@ -36,7 +36,6 @@ function sendAlertToRenderer(alert: Alert): void {
 }
 
 function showSystemNotification(alert: Alert): void {
-  const { Notification } = require('electron');
   if (Notification.isSupported()) {
     const title = alert.alertType === 'BUY' ? '买入告警' : '卖出告警';
     const body = `${alert.stockName} (${alert.stockCode})\n当前价格: ¥${alert.triggerPrice}\n阈值: ¥${alert.threshold}`;

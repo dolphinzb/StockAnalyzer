@@ -8,6 +8,8 @@ import type {
   KlineBatchDownloadSummary,
   KlineDownloadInput,
   KlinePeriod,
+  MarketKlineBar,
+  MarketKlineQuery,
   SecuritiesDirectoryPage,
   SecuritiesDirectoryQuery,
 } from '../shared/types';
@@ -44,7 +46,7 @@ import {
   recoverInterruptedMarketSync,
   stopMarketDataSync
 } from './services/marketDataSyncService';
-import { searchSecurities } from './services/marketRepository';
+import { readMarketKline, searchSecurities } from './services/marketRepository';
 import {
   setBackupFailureNotifier,
   startBackupScheduler,
@@ -260,6 +262,36 @@ function createTray(): void {
   log.info('System tray created');
 }
 
+/** dev 模式 Vite 地址 */
+const DEV_SERVER_URL = 'http://localhost:15173';
+/** dev 模式等待 Vite 就绪的最大重试次数与间隔 */
+const DEV_SERVER_MAX_RETRIES = 30;
+const DEV_SERVER_RETRY_DELAY_MS = 1000;
+
+/**
+ * dev 模式下等待 Vite 就绪后再加载页面。
+ * `npm run dev` 并行启动 Vite 与 Electron，Electron 可能先于 Vite 监听到端口；
+ * 只调用一次 loadURL 会永久停留在空白页，这里失败后按秒重试。
+ */
+function loadDevServer(window: BrowserWindow, attempt = 1): void {
+  window.loadURL(DEV_SERVER_URL).catch((error) => {
+    if (window.isDestroyed()) {
+      return;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    log.warn(`Dev server load failed (attempt ${attempt}/${DEV_SERVER_MAX_RETRIES}): ${message}`);
+    if (attempt >= DEV_SERVER_MAX_RETRIES) {
+      log.error(`Dev server unreachable after ${DEV_SERVER_MAX_RETRIES} attempts: ${DEV_SERVER_URL}`);
+      return;
+    }
+    setTimeout(() => {
+      if (!window.isDestroyed()) {
+        loadDevServer(window, attempt + 1);
+      }
+    }, DEV_SERVER_RETRY_DELAY_MS);
+  });
+}
+
 function createWindow(): void {
   log.info('Creating main window...');
 
@@ -276,6 +308,10 @@ function createWindow(): void {
       sandbox: true,
     },
     show: false,
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    log.error(`Window failed to load ${validatedURL}: ${errorCode} ${errorDescription}`);
   });
 
   mainWindow.on('ready-to-show', () => {
@@ -1163,6 +1199,21 @@ handleValidated(
       return searchSecurities(getMarketDb(), query);
     } catch (error) {
       log.error('IPC market:securities:list error:', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  }
+);
+
+/** 全市场 K 线只读查询（market_data.db），非法参数由 handleValidated 拒绝 */
+handleValidated(
+  'market:kline:query',
+  SCHEMAS.marketKlineQuery,
+  (_event, query: MarketKlineQuery): MarketKlineBar[] => {
+    log.debug('IPC: market:kline:query', query.stockCode, query.period, query.adjust);
+    try {
+      return readMarketKline(getMarketDb(), query);
+    } catch (error) {
+      log.error('IPC market:kline:query error:', error instanceof Error ? error.message : String(error));
       throw error;
     }
   }

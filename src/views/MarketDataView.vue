@@ -138,10 +138,10 @@ const stateClass = computed(() => `state-${state.value}`);
 </script>
 
 <template>
-  <div class="market-data-view">
+  <div class="page market-data-view">
     <header class="page-header">
       <div class="title-block">
-        <h1>行情库</h1>
+        <h1 class="page-title">行情库</h1>
         <span class="state-badge" :class="stateClass">{{ STATE_LABELS[state] }}</span>
         <span v-if="status?.mode" class="mode-tag">
           {{ status.mode === 'full' ? '全量回填' : status.mode === 'universe' ? '刷新证券池' : '增量更新' }}
@@ -287,27 +287,13 @@ const stateClass = computed(() => `state-${state.value}`);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-5);
   min-height: 100%;
-}
-
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
 }
 
 .title-block {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-
-  h1 {
-    margin: 0;
-    font-size: var(--font-size-xl);
-    font-weight: 600;
-  }
 }
 
 .state-badge {
@@ -329,7 +315,7 @@ const stateClass = computed(() => `state-${state.value}`);
   }
 
   &.state-completed {
-    color: #237804;
+    color: var(--color-success);
     background-color: var(--bg-success-subtle);
     border-color: var(--color-success);
   }
@@ -509,39 +495,6 @@ const stateClass = computed(() => `state-${state.value}`);
   dd {
     margin: 0;
     font-size: var(--font-size-md);
-  }
-}
-
-.btn {
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:disabled {
-    cursor: not-allowed;
-    opacity: 0.55;
-  }
-}
-
-.btn-primary {
-  color: var(--text-on-color);
-  background-color: var(--color-primary);
-
-  &:not(:disabled):hover {
-    background-color: var(--color-primary-dark);
-  }
-}
-
-.btn-secondary {
-  color: var(--text-primary);
-  background-color: var(--bg-primary);
-  border-color: var(--border-color-strong);
-
-  &:not(:disabled):hover {
-    background-color: var(--bg-hover);
   }
 }
 

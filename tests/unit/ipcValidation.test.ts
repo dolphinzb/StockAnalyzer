@@ -234,6 +234,34 @@ describe('证券名录查询入参校验', () => {
   });
 });
 
+describe('全市场 K 线查询入参校验', () => {
+  it('接受合法股票代码、周期与复权类型', () => {
+    const [query] = validateArgs('market:kline:query', SCHEMAS.marketKlineQuery, [
+      { stockCode: '600519', period: 'w', adjust: 'hfq' },
+    ]);
+
+    expect(query).toEqual({ stockCode: '600519', period: 'w', adjust: 'hfq' });
+  });
+
+  it('拒绝非法周期与复权类型', () => {
+    expect(() => validateArgs('market:kline:query', SCHEMAS.marketKlineQuery, [
+      { stockCode: '600519', period: 'y', adjust: 'qfq' },
+    ])).toThrow(/query.period/);
+    expect(() => validateArgs('market:kline:query', SCHEMAS.marketKlineQuery, [
+      { stockCode: '600519', period: 'd', adjust: 'none' },
+    ])).not.toThrow();
+    expect(() => validateArgs('market:kline:query', SCHEMAS.marketKlineQuery, [
+      { stockCode: '600519', period: 'd', adjust: 'invalid' },
+    ])).toThrow(/query.adjust/);
+  });
+
+  it('拒绝空股票代码', () => {
+    expect(() => validateArgs('market:kline:query', SCHEMAS.marketKlineQuery, [
+      { stockCode: '', period: 'd', adjust: 'qfq' },
+    ])).toThrow(/query.stockCode/);
+  });
+});
+
 describe('校验器职责边界', () => {
   it('不引入任何数据源端点常量或端点查询函数', () => {
     const source = readFileSync(new URL('../../electron/ipcValidation.ts', import.meta.url), 'utf8');

@@ -16,6 +16,7 @@ import WatchlistView from './views/WatchlistView.vue'
 import FundManagementView from './views/FundManagementView.vue'
 import PatternScanView from './views/PatternScanView.vue'
 import SecuritiesDirectoryView from './views/SecuritiesDirectoryView.vue'
+import MarketKlineView from './views/MarketKlineView.vue'
 import MarketDataView from './views/MarketDataView.vue'
 
 const { currentViewId, navigate } = useNavigation()
@@ -30,6 +31,7 @@ const viewComponents = {
   'fund-management': FundManagementView,
   'pattern-scan': PatternScanView,
   'securities-directory': SecuritiesDirectoryView,
+  'market-kline': MarketKlineView,
   'market-data': MarketDataView,
   settings: SettingsView,
   log: LogPage

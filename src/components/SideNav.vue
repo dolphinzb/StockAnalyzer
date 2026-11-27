@@ -76,6 +76,12 @@ const navItems: NavItem[] = [
     iconPath: 'M4 6h2M4 12h2M4 18h2M9 6h11M9 12h11M9 18h11'
   },
   {
+    id: 'market-kline',
+    label: 'K线查看',
+    // 蜡烛图图标：三根不同高度的 K 线
+    iconPath: 'M6 3v14M10 7v10M14 5v12M18 9v8'
+  },
+  {
     id: 'market-data',
     label: '行情库',
     // 数据库/存储图标：三层数据盘

@@ -1161,6 +1161,34 @@ export interface SecuritiesDirectoryPage {
   pageSize: number;
 }
 
+/** 全市场 K 线查询周期：d 日线 | w 周线 | m 月线 */
+export type MarketKlinePeriod = 'd' | 'w' | 'm';
+
+/** 全市场 K 线复权类型：none 不复权 | qfq 前复权 | hfq 后复权 */
+export type MarketKlineAdjust = 'none' | 'qfq' | 'hfq';
+
+/** 全市场 K 线查询入参 */
+export interface MarketKlineQuery {
+  stockCode: string;
+  period: MarketKlinePeriod;
+  adjust: MarketKlineAdjust;
+}
+
+/** 全市场 K 线统一返回记录（涨跌字段由主进程按口径提供，渲染进程不重算） */
+export interface MarketKlineBar {
+  tradeDate: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+  amount: number | null;
+  turnoverRate: number | null;
+  amplitude: number | null;
+  changePercent: number | null;
+  changeAmount: number | null;
+}
+
 /** 行情库管理 API（preload 暴露） */
 export interface MarketDataAPI {
   getStatus(): Promise<MarketSyncStatus>;
@@ -1169,6 +1197,7 @@ export interface MarketDataAPI {
   runIncremental(): Promise<MarketSyncControlResult>;
   retryFailed(): Promise<MarketSyncControlResult>;
   listSecurities(query?: SecuritiesDirectoryQuery): Promise<SecuritiesDirectoryPage>;
+  queryKline(query: MarketKlineQuery): Promise<MarketKlineBar[]>;
 }
 
 /**

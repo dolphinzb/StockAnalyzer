@@ -25,7 +25,7 @@ declare global {
   }
 }
 
-const { navigate } = useNavigation();
+const { navigate, navigateToMarketKline } = useNavigation();
 const watchlistStore = useWatchlistStore();
 
 const keywordInput = ref('');
@@ -237,7 +237,7 @@ onUnmounted(() => {
       <label class="filter-field filter-keyword">
         <span class="filter-label">关键字</span>
         <input
-          class="search-input"
+          class="input search-input"
           type="search"
           placeholder="代码或名称，如 600519 / 银行"
           :value="keywordInput"
@@ -308,13 +308,18 @@ onUnmounted(() => {
               </span>
             </td>
             <td>
-              <button
-                class="btn btn-secondary btn-small"
-                :disabled="inWatchlist(item.code)"
-                @click="openEditor(item)"
-              >
-                {{ inWatchlist(item.code) ? '已在自选' : '加入自选' }}
-              </button>
+              <div class="row-actions">
+                <button
+                  class="btn btn-secondary btn-sm"
+                  :disabled="inWatchlist(item.code)"
+                  @click="openEditor(item)"
+                >
+                  {{ inWatchlist(item.code) ? '已在自选' : '加入自选' }}
+                </button>
+                <button class="btn btn-secondary btn-sm" @click="navigateToMarketKline(item.code)">
+                  查看K线
+                </button>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -338,14 +343,14 @@ onUnmounted(() => {
         跳至
         <input
           v-model.number="jumpPage"
-          class="jump-input"
+          class="input jump-input"
           type="number"
           min="1"
           :max="totalPages"
           @keyup.enter="jumpToPage"
         />
         页
-        <button class="btn btn-secondary btn-small" :disabled="loading" @click="jumpToPage">跳转</button>
+        <button class="btn btn-secondary btn-sm" :disabled="loading" @click="jumpToPage">跳转</button>
       </span>
       <span class="page-size-block">
         每页
@@ -375,27 +380,13 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-5);
   min-height: 100%;
-}
-
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
 }
 
 .title-block {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
-
-  h1 {
-    margin: 0;
-    font-size: var(--font-size-xl);
-    font-weight: 600;
-  }
 }
 
 .page-subtitle {
@@ -419,22 +410,6 @@ onUnmounted(() => {
   align-items: center;
   flex-wrap: nowrap;
   gap: var(--space-2);
-}
-
-.search-input,
-.select,
-.jump-input {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-color-strong);
-  border-radius: var(--radius-md);
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
-}
-
-// 全局 .select 固定高 36px，上下 padding 过大会挤压文字行高导致底部裁切
-.select {
-  padding: 0 var(--space-2);
 }
 
 .filter-field {
@@ -515,6 +490,12 @@ onUnmounted(() => {
   }
 }
 
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .code-cell {
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
@@ -526,7 +507,7 @@ onUnmounted(() => {
   font-size: var(--font-size-xs);
 
   &.status-active {
-    color: #237804;
+    color: var(--color-success);
     background-color: var(--bg-success-subtle);
   }
 
@@ -534,44 +515,6 @@ onUnmounted(() => {
     color: var(--text-tertiary);
     background-color: var(--bg-tertiary);
   }
-}
-
-.btn {
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:disabled {
-    cursor: not-allowed;
-    opacity: 0.55;
-  }
-}
-
-.btn-primary {
-  color: var(--text-on-color);
-  background-color: var(--color-primary);
-
-  &:not(:disabled):hover {
-    background-color: var(--color-primary-dark);
-  }
-}
-
-.btn-secondary {
-  color: var(--text-primary);
-  background-color: var(--bg-primary);
-  border-color: var(--border-color-strong);
-
-  &:not(:disabled):hover {
-    background-color: var(--bg-hover);
-  }
-}
-
-.btn-small {
-  padding: var(--space-1) var(--space-2);
-  font-size: var(--font-size-xs);
 }
 
 .page-size-block {
@@ -583,7 +526,8 @@ onUnmounted(() => {
 }
 
 .select-small {
-  padding: var(--space-1) var(--space-2);
+  width: auto;
+  padding: 0 var(--space-2);
   font-size: var(--font-size-xs);
 }
 
@@ -641,6 +585,5 @@ onUnmounted(() => {
 
 .jump-input {
   width: 72px;
-  padding: var(--space-1) var(--space-2);
 }
 </style>

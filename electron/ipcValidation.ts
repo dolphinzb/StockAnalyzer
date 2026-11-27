@@ -318,4 +318,12 @@ export const SCHEMAS = {
       pageSize: v.optional(v.number('query.pageSize', { integer: true, min: 1, max: 200 }), 50),
     }),
   ],
+  // 全市场 K 线只读查询：周期与复权必须显式传入，不做缺省兜底
+  marketKlineQuery: [
+    v.object('query', {
+      stockCode: v.string('query.stockCode', { minLength: 1, maxLength: 32, pattern: /^[a-zA-Z0-9]+$/ }),
+      period: v.enumOf('query.period', ['d', 'w', 'm']),
+      adjust: v.enumOf('query.adjust', ['none', 'qfq', 'hfq']),
+    }),
+  ],
 } satisfies Record<string, readonly Validator[]>;

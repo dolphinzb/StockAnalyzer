@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AddTradeResult, CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategyAPI, IndexData, KlineAPI, KlineBatchDownloadInput, KlineBatchProgressPayload, KlineDownloadInput, KlinePeriod, MarketDataAPI, OpenResult, PositionResult, PriceUpdate, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
+import type { AddTradeResult, CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategyAPI, IndexData, KlineAPI, KlineBatchDownloadInput, KlineBatchProgressPayload, KlineDownloadInput, KlinePeriod, MarketDataAPI, MarketKlineQuery, OpenResult, PositionResult, PriceUpdate, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
 
 // LogAPI 本地定义
 interface LogReadResult {
@@ -327,6 +327,7 @@ const marketDataAPI: MarketDataAPI = {
   runIncremental: () => ipcRenderer.invoke('market:sync:incremental'),
   retryFailed: () => ipcRenderer.invoke('market:sync:retry-failed'),
   listSecurities: (query = {}) => ipcRenderer.invoke('market:securities:list', query),
+  queryKline: (query: MarketKlineQuery) => ipcRenderer.invoke('market:kline:query', query),
 };
 
 // 暴露所有 API 到渲染进程

@@ -5,7 +5,13 @@
  * 表名一律来自白名单映射常量，禁止拼接外部输入。
  */
 
-import type { SecuritiesDirectoryPage, SecuritiesDirectoryQuery } from '../../shared/types';
+import type {
+  MarketKlineAdjust,
+  MarketKlineBar,
+  MarketKlineQuery,
+  SecuritiesDirectoryPage,
+  SecuritiesDirectoryQuery,
+} from '../../shared/types';
 import type { SqlValue } from '../sqliteEngine';
 import {
   executeMarket,
@@ -709,6 +715,124 @@ export function readAdjustedPeriodKline(
     return [];
   }
   return aggregateAdjustedBars(withFactor, period, calendar);
+}
+
+/** 带涨跌字段的 K 线来源行（日线原始行与复权周期行均满足） */
+interface KlineBarWithChanges {
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+  amount: number | null;
+  turnoverRate: number | null;
+  amplitude: number | null;
+  changePercent: number | null;
+  changeAmount: number | null;
+}
+
+/** 补齐涨跌字段后的派生周期行，保留周期身份用于展示日期映射 */
+interface DerivedKlineBar extends KlineBarWithChanges {
+  periodEndDate: string;
+}
+
+/** 按相邻收盘价补齐派生周期未存储的涨跌字段；首根返回 null */
+function withDerivedChanges(bars: readonly MarketDerivedBar[]): DerivedKlineBar[] {
+  return bars.map((bar, index) => {
+    const previousClose = index > 0 ? bars[index - 1].close : null;
+    const hasPrevious = typeof previousClose === 'number' && previousClose > 0;
+    const hasClose = typeof bar.close === 'number';
+    const changeAmount = hasPrevious && hasClose ? (bar.close as number) - (previousClose as number) : null;
+    const changePercent = changeAmount === null ? null : (changeAmount / (previousClose as number)) * 100;
+    const amplitude =
+      hasPrevious && typeof bar.high === 'number' && typeof bar.low === 'number'
+        ? ((bar.high - bar.low) / (previousClose as number)) * 100
+        : null;
+    return { ...bar, changeAmount, changePercent, amplitude };
+  });
+}
+
+/**
+ * 读取复权日线：逐日应用因子到开高低收，并在主进程按复权价计算涨跌字段。
+ * 因子完全缺失时返回空数组，不退化为不复权数据。
+ */
+export function readAdjustedDaily(
+  db: MarketDatabase,
+  stockCode: string,
+  adjust: Exclude<MarketKlineAdjust, 'none'>
+): MarketDailyRawRow[] {
+  const factors = readAdjustFactors(db, stockCode, adjust);
+  if (factors.size === 0) {
+    return [];
+  }
+
+  const scaled: MarketDailyRawRow[] = [];
+  for (const bar of readDailyRaw(db, stockCode)) {
+    const factor = factors.get(bar.tradeDate);
+    if (factor === undefined || !Number.isFinite(factor) || factor <= 0) {
+      continue;
+    }
+    scaled.push({
+      ...bar,
+      open: bar.open === null ? null : bar.open * factor,
+      high: bar.high === null ? null : bar.high * factor,
+      low: bar.low === null ? null : bar.low * factor,
+      close: bar.close === null ? null : bar.close * factor,
+      changeAmount: null,
+      changePercent: null,
+      amplitude: null,
+    });
+  }
+
+  return scaled.map((bar, index) => {
+    const previousClose = index > 0 ? scaled[index - 1].close : null;
+    const hasPrevious = typeof previousClose === 'number' && previousClose > 0;
+    const hasClose = typeof bar.close === 'number';
+    const changeAmount = hasPrevious && hasClose ? (bar.close as number) - (previousClose as number) : null;
+    const changePercent = changeAmount === null ? null : (changeAmount / (previousClose as number)) * 100;
+    const amplitude =
+      hasPrevious && typeof bar.high === 'number' && typeof bar.low === 'number'
+        ? ((bar.high - bar.low) / (previousClose as number)) * 100
+        : null;
+    return { ...bar, changeAmount, changePercent, amplitude };
+  });
+}
+
+function toMarketKlineBar(tradeDate: string, bar: KlineBarWithChanges): MarketKlineBar {
+  return {
+    tradeDate,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume: bar.volume,
+    amount: bar.amount,
+    turnoverRate: bar.turnoverRate,
+    amplitude: bar.amplitude,
+    changePercent: bar.changePercent,
+    changeAmount: bar.changeAmount,
+  };
+}
+
+/** 按周期与复权类型读取全市场 K 线，统一返回完整升序历史 */
+export function readMarketKline(db: MarketDatabase, query: MarketKlineQuery): MarketKlineBar[] {
+  const { stockCode, period, adjust } = query;
+
+  if (period === 'd') {
+    const bars = adjust === 'none' ? readDailyRaw(db, stockCode) : readAdjustedDaily(db, stockCode, adjust);
+    return bars.map(bar => toMarketKlineBar(bar.tradeDate, bar));
+  }
+
+  const marketPeriod: MarketPeriod = period === 'w' ? 'weekly' : 'monthly';
+  if (adjust !== 'none') {
+    return readAdjustedPeriodKline(db, stockCode, marketPeriod, adjust).map(bar =>
+      toMarketKlineBar(bar.periodEndDate, bar)
+    );
+  }
+
+  return withDerivedChanges(readDerivedPeriods(db, stockCode, marketPeriod)).map(bar =>
+    toMarketKlineBar(bar.periodEndDate, bar)
+  );
 }
 
 /**

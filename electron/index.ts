@@ -433,8 +433,8 @@ ipcMain.handle('watchlist:reorder', (_event, orderedIds: number[]) => {
 ipcMain.handle('prices:refresh', async () => {
   log.info('IPC: prices:refresh');
   try {
-    const stocks = getEnabledStocks();
-    await manualRefresh(stocks);
+    const stocks = getWatchlist();
+    return await manualRefresh(stocks);
   } catch (error) {
     log.error('IPC prices:refresh error:', error);
     throw error;
@@ -1230,7 +1230,7 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
   isQuitting = false;
-  startScheduler(getEnabledStocks);
+  startScheduler(getWatchlist);
   // 自动备份失败时给出用户可见提示，不再只写日志
   setBackupFailureNotifier((reason) => {
     try {

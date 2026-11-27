@@ -147,7 +147,12 @@ export const useWatchlistStore = defineStore('watchlist', () => {
   async function refreshPrices(): Promise<void> {
     isRefreshing.value = true;
     try {
-      await window.stockWatcherAPI.refreshPrices();
+      const updates = await window.stockWatcherAPI.refreshPrices();
+      if (updates.length > 0) {
+        handlePriceUpdate(updates);
+      }
+    } catch (error) {
+      console.error('刷新价格失败，保留已有价格', error);
     } finally {
       isRefreshing.value = false;
     }

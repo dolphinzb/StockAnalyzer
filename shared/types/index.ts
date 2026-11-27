@@ -401,6 +401,22 @@ export interface BackupAPI {
 }
 
 /**
+ * 单只股票的一轮价格更新。
+ * price 必须是有效正数才会下发；其余价格字段允许为空（日 K 回退时库内可能为 NULL）。
+ */
+export interface PriceUpdate {
+  stockCode: string;
+  price: number;
+  openPrice: number | null;
+  highPrice: number | null;
+  lowPrice: number | null;
+  prevClosePrice: number | null;
+  priceChange: number | null;
+  priceChangePercent: number | null;
+  timestamp: string;
+}
+
+/**
  * 股票观察者API类型 - 通过 preload contextBridge 暴露给渲染进程
  */
 export interface StockWatcherAPI {
@@ -410,9 +426,9 @@ export interface StockWatcherAPI {
   deleteStock(id: number): Promise<void>;
   /** 按完整的有序 id 列表重写自选股顺序，返回重排后的列表 */
   reorderWatchlist(orderedIds: number[]): Promise<any[]>;
-  refreshPrices(): Promise<void>;
+  refreshPrices(): Promise<PriceUpdate[]>;
   getLastRefreshTime(): Promise<string | null>;
-  onPriceUpdate(callback: (prices: any[]) => void): () => void;
+  onPriceUpdate(callback: (prices: PriceUpdate[]) => void): () => void;
   onAlert(callback: (alert: any) => void): () => void;
   onRefreshTimeUpdate(callback: (time: string) => void): () => void;
   onIndexUpdate(callback: (data: { indices: IndexData[]; status: 'normal' | 'error'; errorMessage?: string | null; timestamp: string }) => void): () => void;

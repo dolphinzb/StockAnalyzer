@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AddTradeResult, CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategyAPI, IndexData, KlineAPI, KlineBatchDownloadInput, KlineBatchProgressPayload, KlineDownloadInput, KlinePeriod, MarketDataAPI, OpenResult, PositionResult, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
+import type { AddTradeResult, CalculateOpenInput, CalculatePositionInput, ConfigAPI, CreateStrategyInput, FundManagementAPI, GridAPI, GridStrategyAPI, IndexData, KlineAPI, KlineBatchDownloadInput, KlineBatchProgressPayload, KlineDownloadInput, KlinePeriod, MarketDataAPI, OpenResult, PositionResult, PriceUpdate, TransferRecordInput, TransferRecordUpdate, UpdateStrategyInput, WindowAPI } from '../shared/types';
 
 // LogAPI 本地定义
 interface LogReadResult {
@@ -17,19 +17,6 @@ interface LogAPI {
   listLogDates(): Promise<string[]>;
   getLogPath(): Promise<string>;
   openLogDirectory(): Promise<LogOpenDirectoryResult>;
-}
-
-// 渲染进程本地类型（从 src/types 导入，但 preload 无法直接导入，需要重新定义）
-interface PriceUpdate {
-  stockCode: string;
-  price: number;
-  openPrice: number;
-  highPrice: number;
-  lowPrice: number;
-  prevClosePrice: number;
-  priceChange: number;
-  priceChangePercent: number;
-  timestamp: string;
 }
 
 interface Alert {
@@ -91,7 +78,7 @@ interface StockWatcherAPI {
   updateStock(id: number, updates: UpdateStockInput): Promise<WatchlistStock>;
   deleteStock(id: number): Promise<void>;
   reorderWatchlist(orderedIds: number[]): Promise<WatchlistStock[]>;
-  refreshPrices(): Promise<void>;
+  refreshPrices(): Promise<PriceUpdate[]>;
   getLastRefreshTime(): Promise<string | null>;
   onPriceUpdate(callback: (prices: PriceUpdate[]) => void): () => void;
   onAlert(callback: (alert: Alert) => void): () => void;

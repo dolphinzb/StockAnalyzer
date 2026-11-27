@@ -991,6 +991,73 @@ export function getLatestTradeDates(
 }
 
 /**
+ * 日 K 回退所需的单股最新一根日 K（不复权优先，缺失时前复权）
+ */
+export interface KlineFallbackQuote {
+  /** 交易日，YYYY-MM-DD */
+  tradeDate: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  changeAmount: number | null;
+  changePercent: number | null;
+}
+
+/**
+ * 批量取给定代码集合中每只股票各自最新一根日 K，用于实时行情缺失时回退。
+ * 单条 SQL 完成：先按复权优先级（'' > qfq）再按交易日倒序排序，取每组第一行。
+ * 每行的 trade_date 即该股自身的最新交易日，新鲜度由调用方逐股判定。
+ *
+ * @param stockCodes 股票代码列表（纯数字）
+ * @param target 目标数据库实例（默认取全局库，测试可注入内存库）
+ * @returns 股票代码 → 最新日 K；库中无记录（或复权类型不符）的股票不在 Map 中
+ */
+export function getLatestKlineQuotes(
+  stockCodes: string[],
+  target?: Database
+): Map<string, KlineFallbackQuote> {
+  const quotes = new Map<string, KlineFallbackQuote>();
+  if (!Array.isArray(stockCodes) || stockCodes.length === 0) {
+    return quotes;
+  }
+
+  const table = tableOf('d');
+  const placeholders = stockCodes.map(() => '?').join(', ');
+  const rows = queryRows(
+    `SELECT stock_code, trade_date, open, close, high, low, change_amount, change_percent
+     FROM (
+       SELECT stock_code, trade_date, open, close, high, low, change_amount, change_percent,
+              ROW_NUMBER() OVER (
+                PARTITION BY stock_code
+                ORDER BY CASE adjust_type WHEN '' THEN 0 WHEN 'qfq' THEN 1 ELSE 2 END,
+                         trade_date DESC
+              ) AS rn
+       FROM ${table}
+       WHERE stock_code IN (${placeholders}) AND adjust_type IN ('', 'qfq')
+     )
+     WHERE rn = 1`,
+    stockCodes,
+    target ?? getDb()
+  );
+
+  for (const row of rows) {
+    const stockCode = String(row[0] ?? '');
+    quotes.set(stockCode, {
+      tradeDate: String(row[1] ?? ''),
+      open: row[2] as number | null,
+      close: row[3] as number | null,
+      high: row[4] as number | null,
+      low: row[5] as number | null,
+      changeAmount: row[6] as number | null,
+      changePercent: row[7] as number | null,
+    });
+  }
+
+  return quotes;
+}
+
+/**
  * stock-sdk 返回的K线数据项类型
  */
 interface HistoryKlineItem {

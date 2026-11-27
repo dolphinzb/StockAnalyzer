@@ -45,6 +45,7 @@ let cleanupWatchlist: (() => void) | null = null;
 
 onMounted(() => {
   cleanupWatchlist = watchlistStore.setupEventListeners();
+  void watchlistStore.refreshPrices();
 });
 
 onUnmounted(() => {

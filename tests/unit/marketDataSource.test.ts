@@ -9,7 +9,7 @@ describe('行情库数据源标识', () => {
     expect(FACTOR_SOURCE).toBe('derived:sohu_hisHq');
   });
 
-  it('保留 raw/qfq/hfq 三类任务语义', () => {
-    expect(DAILY_KINDS).toEqual(['raw_daily', 'qfq_daily', 'hfq_daily']);
+  it('一只证券只生成一个日线任务', () => {
+    expect(DAILY_KINDS).toEqual(['raw_daily']);
   });
 });

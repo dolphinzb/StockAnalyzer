@@ -22,9 +22,7 @@ import type {
   MarketSyncStatus,
 } from '../../shared/types';
 import {
-  areDailyTasksSucceeded,
   claimNextTask,
-  countAdjustFactors,
   countDailyTasks,
   countSecurities,
   countTasks,
@@ -37,17 +35,20 @@ import {
   listDailyTasks,
   listFailedTasks,
   listSecurities,
+  listStocksWithIncompleteFactors,
   listTradingCalendar,
   markTaskRetry,
   markTaskSuccess,
   marketLevelTasks,
   nextScheduledRetryAt,
+  purgeLegacyDailyTasks,
   readAdjustFactors,
   readDailyRaw,
   rebuildDerivedPeriods,
   replaceAdjustFactors,
   resetFailedTasks,
   resetInterruptedTasks,
+  resetTasksForStocks,
   setTasksPending,
   summarizeIncrementalTasks,
   upsertAdjustFactors,
@@ -84,6 +85,7 @@ import {
   MAX_AUTO_RETRIES,
   nextTradingDay,
   parseRetryAfter,
+  previousTradingDay,
   runWorkerPool,
   ymdToIso,
   type RateLimiter,
@@ -97,13 +99,24 @@ import {
 } from './marketUniverseService';
 import { createMarketSdkClient, type MarketKlineItem, type MarketSdkLike } from './marketSdkClient';
 import { createSohuKlineClient } from './sohuKlineClient';
+import {
+  deriveSohuFactors,
+  hasUsableFactors,
+  mergeSohuFactors,
+  type SohuFactorSet,
+} from './sohuAdjustment';
 
 /** 原始日线数据源标识 */
 export const DAILY_RAW_SOURCE = 'sohu_hisHq';
-/** 会话内因子缓存上限（防止长时间运行时内存膨胀） */
-const SESSION_CACHE_LIMIT = 500;
 /** 复权事件判定的兜底最小相对阈值（低于此变化无法与舍入噪声区分） */
 const MIN_CORPORATE_ACTION_DELTA = 1e-4;
+
+/** 日线任务写入行（保留数据源口径的涨跌与振幅字段） */
+export type DailyBarRow = MarketDailyBar & {
+  amplitude: number | null;
+  changePercent: number | null;
+  changeAmount: number | null;
+};
 
 /** 相邻交易日的后复权因子采样点（用于判断区间内是否发生除权除息） */
 export interface HfqFactorPoint {
@@ -188,13 +201,6 @@ export interface MarketSyncService {
   stop(): void;
   /** 当前是否正在运行 */
   isRunning(): boolean;
-}
-
-/** 会话内三类日线收盘价缓存（用于在三个任务都成功后推导因子） */
-interface SessionEntry {
-  raw?: Map<string, number>;
-  qfq?: Map<string, number>;
-  hfq?: Map<string, number>;
 }
 
 /** meta 键 */
@@ -359,17 +365,6 @@ export function sdkSymbol(code: string, exchange: string): string {
   return `${prefix}${code}`;
 }
 
-/** 复权类型映射 */
-function adjustOfKind(kind: MarketDataKind): '' | 'qfq' | 'hfq' {
-  if (kind === 'qfq_daily') {
-    return 'qfq';
-  }
-  if (kind === 'hfq_daily') {
-    return 'hfq';
-  }
-  return '';
-}
-
 /**
  * 把 SDK 日线转换为仓储可写入的结构，并按日期去重排序
  */
@@ -428,9 +423,33 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
   let current: { taskKey: string | null; stockCode: string | null } | null = null;
   let lastError: string | null = null;
   let calendarCache: string[] | null = null;
-  const session = new Map<string, SessionEntry>();
 
   const nowSec = (): number => Math.floor(now() / 1000);
+
+  /**
+   * 升级到「一证券一日线任务」的幂等迁移
+   *
+   * - 删除按复权类型拆分的旧任务行（它们没有数据产物，因子已写入 `adjust_factors`）
+   * - 日线任务已成功但因子缺失/不完整的证券重置为 `pending`：下一次回填只需一次请求补算
+   * - 因子完整的证券保持 `success`，升级后不重复下载
+   */
+  const migrateToSingleDailyTask = (): void => {
+    try {
+      const purged = purgeLegacyDailyTasks(db);
+      if (purged > 0) {
+        log.info(`升级单任务口径：清理旧复权日线任务 ${purged} 个`);
+      }
+      const incomplete = listStocksWithIncompleteFactors(db);
+      if (incomplete.length > 0) {
+        resetTasksForStocks(db, incomplete, nowSec());
+        log.info(`升级单任务口径：${incomplete.length} 只证券因子不完整，日线任务已重置为待补算`);
+      }
+    } catch (error) {
+      log.warn(`任务口径迁移失败（不阻断同步）: ${describeSyncError(error)}`);
+    }
+  };
+
+  migrateToSingleDailyTask();
 
   /** meta 数值读取 */
   const readMetaNumber = (key: string, fallback?: number): number | undefined => {
@@ -500,17 +519,16 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
   /** 带限速的 HTTP 视图 */
   const limitedFetch: MarketHttpFetch = request => limited(() => deps.fetchText(request));
 
-  /** 拉取某股票某复权类型的日线 */
+  /** 拉取某证券原始日线（复权因子由本地推导，不再按复权类型发请求） */
   const fetchBars = async (
     security: MarketSecurityRow,
-    adjust: '' | 'qfq' | 'hfq',
     startDate: string,
     endDate: string
-  ): Promise<Array<MarketDailyBar & { amplitude: number | null; changePercent: number | null; changeAmount: number | null }>> => {
+  ): Promise<DailyBarRow[]> => {
     const items = await limited(() =>
       deps.sdk.getHistoryKline(sdkSymbol(security.code, security.exchange), {
         period: 'daily',
-        adjust,
+        adjust: '',
         startDate: isoToYmd(startDate),
         endDate: isoToYmd(endDate),
       })
@@ -518,24 +536,198 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
     return toDailyBars(items, startDate, endDate);
   };
 
-  /** 记录会话缓存（限制条目数） */
-  const rememberCloses = (code: string, kind: MarketDataKind, bars: readonly MarketDailyBar[]): void => {
-    const key = kind === 'raw_daily' ? 'raw' : kind === 'qfq_daily' ? 'qfq' : 'hfq';
-    const entry = session.get(code) ?? {};
-    const closes = new Map<string, number>();
+  /** 日线行转因子推导所需的 K 线结构 */
+  const toKlineItems = (bars: readonly DailyBarRow[]): MarketKlineItem[] =>
+    bars.map(bar => ({
+      date: bar.tradeDate,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+      volume: bar.volume,
+      amount: bar.amount,
+      amplitude: bar.amplitude,
+      changePercent: bar.changePercent,
+      change: bar.changeAmount,
+      turnoverRate: bar.turnoverRate,
+    }));
+
+  /** 库内原始日线行转因子推导所需的 K 线结构 */
+  const rawRowsToKlineItems = (rows: readonly MarketDailyRawRow[]): MarketKlineItem[] =>
+    rows.map(row => ({
+      date: row.tradeDate,
+      open: row.open,
+      high: row.high,
+      low: row.low,
+      close: row.close,
+      volume: row.volume,
+      amount: row.amount,
+      amplitude: row.amplitude,
+      changePercent: row.changePercent,
+      change: row.changeAmount,
+      turnoverRate: row.turnoverRate,
+    }));
+
+  /**
+   * 由累计因子与原始收盘价生成待写入的因子行
+   * @param dates 需要写入的交易日
+   * @param factors 累计因子
+   * @param rawCloseByDate 交易日 → 原始收盘价
+   * @returns 有效行与非法行（非法行用于质量异常）
+   */
+  const buildFactorRows = (
+    dates: readonly string[],
+    factors: SohuFactorSet,
+    rawCloseByDate: ReadonlyMap<string, number | null>
+  ): {
+    rows: MarketFactorRow[];
+    invalid: Array<{
+      tradeDate: string;
+      rawClose: number | null;
+      qfqFactor: number | null;
+      hfqFactor: number | null;
+    }>;
+  } => {
+    const rows: MarketFactorRow[] = [];
+    const invalid: Array<{
+      tradeDate: string;
+      rawClose: number | null;
+      qfqFactor: number | null;
+      hfqFactor: number | null;
+    }> = [];
+
+    for (const tradeDate of dates) {
+      const rawClose = rawCloseByDate.get(tradeDate) ?? null;
+      const qfqFactor = factors.qfq.get(tradeDate) ?? null;
+      const hfqFactor = factors.hfq.get(tradeDate) ?? null;
+      const usable =
+        rawClose !== null &&
+        rawClose > 0 &&
+        qfqFactor !== null &&
+        hfqFactor !== null &&
+        Number.isFinite(qfqFactor) &&
+        Number.isFinite(hfqFactor) &&
+        qfqFactor > 0 &&
+        hfqFactor > 0;
+      if (!usable) {
+        invalid.push({ tradeDate, rawClose, qfqFactor, hfqFactor });
+        continue;
+      }
+      rows.push({ tradeDate, qfqFactor: qfqFactor as number, hfqFactor: hfqFactor as number });
+    }
+
+    return { rows, invalid };
+  };
+
+  /** 写入因子行并记录非法因子（失败只记录，不阻断任务） */
+  const writeFactorRows = (
+    stockCode: string,
+    rows: readonly MarketFactorRow[],
+    invalid: ReadonlyArray<{
+      tradeDate: string;
+      rawClose: number | null;
+      qfqFactor: number | null;
+      hfqFactor: number | null;
+    }>,
+    replace: boolean
+  ): void => {
+    if (rows.length === 0) {
+      recordIssues(detectFactorInvalid(stockCode, invalid));
+      return;
+    }
+    if (replace) {
+      replaceAdjustFactors(db, stockCode, rows, undefined, nowSec());
+    } else {
+      upsertAdjustFactors(db, stockCode, rows, undefined, nowSec());
+    }
+    recordIssues(detectFactorInvalid(stockCode, invalid.filter(row => row.rawClose !== null && row.rawClose > 0)));
+  };
+
+  /**
+   * 全历史因子重算并整只替换（只读库内原始日线，零网络请求）
+   *
+   * 全量回填、增量除权重标定、库内因子缺失三种场景共用。
+   */
+  const rebuildFactorsFromRaw = (stockCode: string): void => {
+    const rawRows = readDailyRaw(db, stockCode);
+    if (rawRows.length === 0) {
+      return;
+    }
+    const items = rawRowsToKlineItems(rawRows);
+    const derived = deriveSohuFactors(items);
+    const rawCloseByDate = new Map<string, number | null>();
+    for (const item of items) {
+      rawCloseByDate.set(item.date, item.close);
+    }
+    const { rows, invalid } = buildFactorRows(items.map(item => item.date), derived, rawCloseByDate);
+    writeFactorRows(stockCode, rows, invalid, true);
+  };
+
+  /** 取因子表中日期最大的因子值（无事件时新区间沿用该值） */
+  const lastStoredFactor = (factors: ReadonlyMap<string, number>): number | null => {
+    let baseDate = '';
+    let value: number | null = null;
+    factors.forEach((factor, date) => {
+      if (date >= baseDate) {
+        baseDate = date;
+        value = factor;
+      }
+    });
+    return value;
+  };
+
+  /**
+   * 增量任务的因子维护
+   *
+   * - 库内无可用因子：退化为库内全量重算（不额外请求）
+   * - 区间含除权除息（含区间首日）：按库内原始日线重算全历史因子，替代补拉全历史 qfq
+   * - 否则复权因子在相邻事件之间恒定，新区间沿用库内最近的因子值，只追加新区间行
+   */
+  const refreshIncrementFactors = (
+    stockCode: string,
+    bars: readonly DailyBarRow[],
+    newDates: readonly string[]
+  ): void => {
+    const stored: SohuFactorSet = {
+      qfq: readAdjustFactors(db, stockCode, 'qfq'),
+      hfq: readAdjustFactors(db, stockCode, 'hfq'),
+    };
+    if (!hasUsableFactors(stored)) {
+      rebuildFactorsFromRaw(stockCode);
+      return;
+    }
+
+    // 事件判定：区间前一日与区间内各点的 hfq 因子跳变（区间首日的事件也能被识别）
+    const items = toKlineItems(bars);
+    const merged = mergeSohuFactors(stored, items);
+    const points: HfqFactorPoint[] = items.map(item => ({
+      tradeDate: item.date,
+      rawClose: typeof item.close === 'number' ? item.close : Number.NaN,
+      hfqFactor: merged.hfq.get(item.date) ?? Number.NaN,
+    }));
+    if (detectCorporateAction(points)) {
+      log.info(`检测到除权除息，按库内原始日线重算全历史因子: ${stockCode}`);
+      rebuildFactorsFromRaw(stockCode);
+      return;
+    }
+
+    const qfqBase = lastStoredFactor(stored.qfq);
+    const hfqBase = lastStoredFactor(stored.hfq);
+    if (qfqBase === null || hfqBase === null) {
+      rebuildFactorsFromRaw(stockCode);
+      return;
+    }
+
+    const carried: SohuFactorSet = {
+      qfq: new Map(newDates.map(date => [date, qfqBase] as const)),
+      hfq: new Map(newDates.map(date => [date, hfqBase] as const)),
+    };
+    const rawCloseByDate = new Map<string, number | null>();
     for (const bar of bars) {
-      if (typeof bar.close === 'number' && Number.isFinite(bar.close)) {
-        closes.set(bar.tradeDate, bar.close);
-      }
+      rawCloseByDate.set(bar.tradeDate, bar.close);
     }
-    entry[key] = closes;
-    session.set(code, entry);
-    if (session.size > SESSION_CACHE_LIMIT) {
-      const firstKey = session.keys().next().value;
-      if (firstKey !== undefined) {
-        session.delete(firstKey);
-      }
-    }
+    const { rows, invalid } = buildFactorRows(newDates, carried, rawCloseByDate);
+    writeFactorRows(stockCode, rows, invalid, false);
   };
 
   /** 记录质量异常（失败不阻断导入） */
@@ -602,7 +794,7 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
     log.info(`证券池任务完成（${kind}）: 共 ${result.total} 只，在市 ${result.active} 只`);
   };
 
-  /** 执行单只股票的日线任务 */
+  /** 执行单只股票的日线任务（一次请求完成原始日线、复权因子与派生周期） */
   const runDailyTask = async (task: MarketTaskRow): Promise<string | null> => {
     const stockCode = task.stockCode;
     if (!stockCode) {
@@ -621,6 +813,8 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
     }
 
     let startDate = BACKFILL_START_DATE;
+    let requestStartDate = startDate;
+    let incremental = false;
     if (mode === 'incremental') {
       if (!task.lastSuccessDate) {
         throw new Error('增量任务缺少 last_success_date，请先完成全量回填');
@@ -631,14 +825,19 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
         return task.lastSuccessDate;
       }
       startDate = next;
+      // 请求起点前移一个交易日（仍是同一次请求），用于识别区间首日是否除权除息
+      requestStartDate = previousTradingDay(calendar, startDate) ?? startDate;
+      incremental = true;
     }
 
     const startIso = ymdToIso(startDate);
-    const adjust = adjustOfKind(task.dataKind);
-    const bars = await fetchBars(security, adjust, startIso, endDate);
+    const requestStartIso = ymdToIso(requestStartDate);
+    const bars = await fetchBars(security, requestStartIso, endDate);
+    // 前移带回的前一交易日只参与因子推导，不改变断点推进口径
+    const newBars = incremental ? bars.filter(bar => bar.tradeDate >= startIso) : bars;
 
-    if (adjust === '') {
-      upsertDailyRaw(db, stockCode, bars, DAILY_RAW_SOURCE, nowSec());
+    if (newBars.length > 0) {
+      upsertDailyRaw(db, stockCode, newBars, DAILY_RAW_SOURCE, nowSec());
       // 周/月派生只依赖原始日线；从受影响周期开始重建
       rebuildDerivedPeriods(db, stockCode, 'weekly', {
         fromDate: startIso,
@@ -650,232 +849,32 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
         calendar,
         now: nowSec(),
       });
-      recordIssues(collectRawIssues(security, bars, { startDate: startIso, endDate }));
+      recordIssues(collectRawIssues(security, newBars, { startDate: startIso, endDate }));
     }
 
-    rememberCloses(stockCode, task.dataKind, bars);
+    // 因子由同一批原始日线推导：全量/补算走库内全历史重算，增量按需合并或重标定
+    if (incremental) {
+      if (newBars.length > 0) {
+        refreshIncrementFactors(
+          stockCode,
+          bars,
+          newBars.map(bar => bar.tradeDate)
+        );
+      }
+    } else {
+      rebuildFactorsFromRaw(stockCode);
+    }
 
     if (bars.length === 0) {
       // 未上市期间或区间内无交易日：视为正常结果，断点推进到终点
       return endDate;
     }
-    return bars[bars.length - 1].tradeDate;
-  };
 
-  /**
-   * 判断增量区间内是否发生除权除息
-   *
-   * 采样序列 = 区间前最近一个已存 hfq 因子点 + 区间内各点（按日期升序），
-   * 任一相邻点发生 hfq 因子跳变即视为区间内存在复权事件。
-   */
-  const hasCorporateActionInIncrement = (
-    rawByDate: Map<string, number | null>,
-    storedHfq: Map<string, number>,
-    factorRows: ReadonlyArray<{ tradeDate: string; hfqFactor: number }>
-  ): boolean => {
-    if (factorRows.length === 0 || storedHfq.size === 0) {
-      return false;
-    }
-    const earliest = factorRows[0].tradeDate;
-    let previousDate: string | null = null;
-    storedHfq.forEach((_factor, date) => {
-      if (date < earliest && (previousDate === null || date > previousDate)) {
-        previousDate = date;
-      }
-    });
-
-    const points: HfqFactorPoint[] = [];
-    if (previousDate !== null) {
-      const rawClose = rawByDate.get(previousDate);
-      const previousFactor = storedHfq.get(previousDate);
-      if (typeof rawClose === 'number' && rawClose > 0 && previousFactor && previousFactor > 0) {
-        points.push({ tradeDate: previousDate, rawClose, hfqFactor: previousFactor });
-      }
-    }
-    for (const row of factorRows) {
-      const rawClose = rawByDate.get(row.tradeDate);
-      if (typeof rawClose === 'number' && rawClose > 0) {
-        points.push({ tradeDate: row.tradeDate, rawClose, hfqFactor: row.hfqFactor });
-      }
-    }
-    return detectCorporateAction(points);
-  };
-
-  /**
-   * 前复权重标定：补拉一次全历史 qfq 日线，按股票全量替换因子
-   *
-   * hfq 历史因子稳定，直接沿用库内值（不足处用会话内新区间数据补齐），不做重新推导。
-   * @param factorRows 本次增量区间已推导出的因子（覆盖不完整时退化为局部写入）
-   */
-  const rescaleQfqHistory = async (
-    security: MarketSecurityRow,
-    rawRows: readonly MarketDailyRawRow[],
-    storedHfq: Map<string, number>,
-    factorRows: ReadonlyArray<{ tradeDate: string; qfqFactor: number; hfqFactor: number }>
-  ): Promise<void> => {
-    let lastRawDate = '';
-    for (const row of rawRows) {
-      if (row.tradeDate > lastRawDate) {
-        lastRawDate = row.tradeDate;
-      }
-    }
-    if (lastRawDate === '') {
-      return;
-    }
-
-    log.info(`检测到除权除息，重标定前复权因子: ${security.code}`);
-    const qfqBars = await fetchBars(security, 'qfq', ymdToIso(BACKFILL_START_DATE), lastRawDate);
-    const qfqByDate = new Map<string, number>();
-    for (const bar of qfqBars) {
-      if (typeof bar.close === 'number' && bar.close > 0) {
-        qfqByDate.set(bar.tradeDate, bar.close);
-      }
-    }
-
-    // hfq 因子：库内历史值优先，区间内新推导出的因子覆盖
-    const hfqFactors = new Map<string, number>(storedHfq);
-    for (const row of factorRows) {
-      hfqFactors.set(row.tradeDate, row.hfqFactor);
-    }
-
-    const rows: MarketFactorRow[] = [];
-    for (const raw of rawRows) {
-      const rawClose = raw.close;
-      const qfqClose = qfqByDate.get(raw.tradeDate) ?? null;
-      const hfqFactor = hfqFactors.get(raw.tradeDate) ?? null;
-      if (
-        rawClose === null ||
-        rawClose <= 0 ||
-        qfqClose === null ||
-        hfqFactor === null ||
-        hfqFactor <= 0
-      ) {
-        continue;
-      }
-      rows.push({ tradeDate: raw.tradeDate, qfqFactor: qfqClose / rawClose, hfqFactor });
-    }
-
-    if (rows.length !== rawRows.length) {
-      // 覆盖不完整时不做全量替换，退化为局部写入，避免丢失仍有效的历史因子
-      log.warn(
-        `前复权重标定覆盖不完整（${rows.length}/${rawRows.length}），退化为局部写入: ${security.code}`
-      );
-      upsertAdjustFactors(db, security.code, factorRows, undefined, nowSec());
-      return;
-    }
-
-    replaceAdjustFactors(db, security.code, rows, undefined, nowSec());
-  };
-
-  /**
-   * 三类日线任务都成功后刷新复权因子
-   *
-   * - 会话内已拿到 raw/qfq/hfq 全历史收盘价：按股票全量替换
-   * - 会话内只有增量区间数据且区间内无除权除息：局部 UPSERT（历史 hfq 与 qfq 因子不变）
-   * - 会话内只有增量区间数据但区间内发生除权除息：前复权以最新价为基准，全部历史 qfq 因子
-   *   都需要重标定，此时补拉一次全历史 qfq 并按股票全量替换；hfq 历史值稳定，取库内原值合并
-   * - 会话内缺数据但库内已有因子：跳过（重启后的补跑场景，避免额外全历史请求）
-   * - 既无会话数据也无因子：补拉全历史 qfq/hfq 后推导
-   */
-  const maybeRefreshFactors = async (stockCode: string): Promise<void> => {
-    if (!areDailyTasksSucceeded(db, stockCode)) {
-      return;
-    }
-    const security = getSecurity(db, stockCode);
-    if (!security) {
-      return;
-    }
-
-    const entry = session.get(stockCode);
-    let qfq = entry?.qfq ?? null;
-    let hfq = entry?.hfq ?? null;
-    const hasFactors = countAdjustFactors(db, stockCode) > 0;
-
-    if ((!qfq || !hfq || qfq.size === 0 || hfq.size === 0) && !hasFactors) {
-      const endDate = getLatestTradeDate();
-      if (!endDate) {
-        return;
-      }
-      try {
-        const qfqBars = await fetchBars(security, 'qfq', ymdToIso(BACKFILL_START_DATE), endDate);
-        const hfqBars = await fetchBars(security, 'hfq', ymdToIso(BACKFILL_START_DATE), endDate);
-        rememberCloses(stockCode, 'qfq_daily', qfqBars);
-        rememberCloses(stockCode, 'hfq_daily', hfqBars);
-        qfq = session.get(stockCode)?.qfq ?? null;
-        hfq = session.get(stockCode)?.hfq ?? null;
-      } catch (error) {
-        log.warn(`补拉复权日线用于因子推导失败 ${stockCode}: ${String(error)}`);
-        return;
-      }
-    }
-
-    if (!qfq || !hfq || qfq.size === 0 || hfq.size === 0) {
-      return;
-    }
-
-    const rawRows: MarketDailyRawRow[] = readDailyRaw(db, stockCode);
-    const rawByDate = new Map<string, number | null>();
-    for (const row of rawRows) {
-      rawByDate.set(row.tradeDate, row.close);
-    }
-
-    // 写入前读取已存 hfq 因子：既用于事件判定，也用于重标定时保留历史 hfq 值
-    const storedHfq = readAdjustFactors(db, stockCode, 'hfq');
-    const factorRows: Array<{ tradeDate: string; qfqFactor: number; hfqFactor: number }> = [];
-    const invalid: Array<{
-      tradeDate: string;
-      rawClose: number | null;
-      qfqFactor: number | null;
-      hfqFactor: number | null;
-    }> = [];
-
-    for (const row of rawRows) {
-      const rawClose = row.close;
-      const qfqClose = qfq.get(row.tradeDate) ?? null;
-      const hfqClose = hfq.get(row.tradeDate) ?? null;
-      if (rawClose === null || rawClose <= 0 || qfqClose === null || hfqClose === null) {
-        invalid.push({
-          tradeDate: row.tradeDate,
-          rawClose,
-          qfqFactor: qfqClose === null ? null : qfqClose,
-          hfqFactor: hfqClose === null ? null : hfqClose,
-        });
-        continue;
-      }
-      const qfqFactor = qfqClose / rawClose;
-      const hfqFactor = hfqClose / rawClose;
-      if (!Number.isFinite(qfqFactor) || !Number.isFinite(hfqFactor) || qfqFactor <= 0 || hfqFactor <= 0) {
-        invalid.push({ tradeDate: row.tradeDate, rawClose, qfqFactor, hfqFactor });
-        continue;
-      }
-      factorRows.push({ tradeDate: row.tradeDate, qfqFactor, hfqFactor });
-    }
-
-    if (factorRows.length === 0) {
-      recordIssues(detectFactorInvalid(stockCode, invalid));
-      session.delete(stockCode);
-      return;
-    }
-
-    const coversFullHistory = factorRows.length === rawRows.length;
-
-    try {
-      if (coversFullHistory) {
-        // 覆盖全历史：按股票全量替换
-        replaceAdjustFactors(db, stockCode, factorRows, undefined, nowSec());
-      } else if (hasCorporateActionInIncrement(rawByDate, storedHfq, factorRows)) {
-        await rescaleQfqHistory(security, rawRows, storedHfq, factorRows);
-      } else {
-        // 区间内无除权除息：历史因子不变，只追加新区间，避免删除仍有效的历史因子
-        upsertAdjustFactors(db, stockCode, factorRows, undefined, nowSec());
-      }
-      const invalidRows = invalid.filter(row => row.rawClose !== null && row.rawClose > 0);
-      recordIssues(detectFactorInvalid(stockCode, invalidRows));
-    } catch (error) {
-      log.warn(`复权因子写入失败 ${stockCode}: ${String(error)}`);
-    } finally {
-      session.delete(stockCode);
-    }
+    const latestTradeDate = bars[bars.length - 1].tradeDate;
+    log.info(
+      `${incremental ? '增量' : '全量'}日线下载成功: ${stockCode} ${security.name} ${newBars.length} 条, 截至 ${latestTradeDate}`
+    );
+    return latestTradeDate;
   };
 
   /**
@@ -929,9 +928,6 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
       } else {
         const lastSuccessDate = await runDailyTask(task);
         markTaskSuccess(db, task.taskKey, lastSuccessDate, nowSec());
-        if (task.stockCode) {
-          await maybeRefreshFactors(task.stockCode);
-        }
       }
     } catch (error) {
       handleFailure(task, error);
@@ -1057,7 +1053,7 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
 
     const securityCount = countSecurities(db);
     const inserted = ensureDailyTasksForAllSecurities();
-    log.info(`全量回填任务已生成: 新增 ${inserted} 个（证券 ${securityCount} 只 × 3）`);
+    log.info(`全量回填任务已生成: 新增 ${inserted} 个（证券 ${securityCount} 只，每只 1 个日线任务）`);
     return { success: true };
   };
 
@@ -1224,8 +1220,8 @@ export function createMarketSyncService(deps: MarketSyncDeps): MarketSyncService
         if (summary.activeTaskCount === 0) {
           return { success: false, error: '尚未生成日线任务，请先执行全量回填' };
         }
-        // 全量回填后新上市的证券没有任务：必须先继续全量回填补齐历史
-        if (summary.activeTaskCount < countSecurities(db, true) * 3) {
+        // 全量回填后新上市的证券没有任务：必须先继续全量回填补齐历史（一证券一个日线任务）
+        if (summary.activeTaskCount < countSecurities(db, true)) {
           return { success: false, error: '存在尚未生成日线任务的证券，请先执行全量回填' };
         }
         if (summary.missingLastSuccess > 0 || countUnfinishedDailyTasks(db) > 0) {
@@ -1313,11 +1309,7 @@ export function getMarketSyncService(): MarketSyncService {
     const configuredRps = getMarketMeta(META_RPS, db);
     const sdkRps = configuredRps === null ? undefined : Number(configuredRps);
 
-    const factorReader = (code: string) => ({
-      qfq: readAdjustFactors(db, code, 'qfq'),
-      hfq: readAdjustFactors(db, code, 'hfq'),
-    });
-    const klineClient = createSohuKlineClient({ readFactors: factorReader });
+    const klineClient = createSohuKlineClient();
 
     singleton = createMarketSyncService({
       db,

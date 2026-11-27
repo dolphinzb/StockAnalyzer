@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MarketKlineItem } from '../../electron/services/marketSdkClient';
 import {
-  applySohuFactors,
   deriveSohuFactors,
   hasUsableFactors,
   mergeSohuFactors,
@@ -50,22 +49,6 @@ describe('搜狐本地复权引擎', () => {
     const factors = deriveSohuFactors([bar('2025-01-02', 10, 0), withPercent]);
 
     expect(factors.eventFactors.get('2025-01-03')).toBeCloseTo(0.9, 6);
-  });
-
-  it('复权价格与涨跌额同步缩放，成交量和成交额保持不变', () => {
-    const bars = [bar('2025-01-02', 10, 0), bar('2025-01-03', 9, 0.5)];
-    bars[0].change = -1;
-    const factors = deriveSohuFactors(bars);
-    const qfq = applySohuFactors(bars, factors, 'qfq');
-    const hfq = applySohuFactors(bars, factors, 'hfq');
-
-    expect(qfq[0].close).toBe(8.5);
-    expect(qfq[0].change).toBeCloseTo(-0.85, 2);
-    expect(qfq[1].close).toBe(9);
-    expect(hfq[0].close).toBe(10);
-    expect(hfq[1].close).toBeCloseTo(9 / 0.85, 2);
-    expect(qfq[0].volume).toBe(100);
-    expect(qfq[0].amount).toBe(1000);
   });
 
   it('合并增量事件到历史因子', () => {

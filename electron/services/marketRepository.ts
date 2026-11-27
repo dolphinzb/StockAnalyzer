@@ -853,7 +853,7 @@ export function resetFailedTasks(
   );
 }
 
-/** 把指定股票的任务重置为 pending（增量更新用，不新建任务键） */
+/** 把指定股票的任务重置为 pending（增量更新/因子补算用，不新建任务键） */
 export function resetTasksForStocks(
   db: MarketDatabase,
   stockCodes: readonly string[],
@@ -862,7 +862,7 @@ export function resetTasksForStocks(
   let modified = 0;
   transactionMarket(() => {
     for (const stockCode of stockCodes) {
-      for (const kind of ['raw_daily', 'qfq_daily', 'hfq_daily'] as const) {
+      for (const kind of ['raw_daily'] as const) {
         modified += executeMarket(
           `UPDATE sync_state
            SET status = 'pending', retry_count = 0, next_retry_at = NULL, last_error = NULL, updated_at = ?
@@ -899,7 +899,7 @@ export function setTasksPending(
 
 /** 增量补跑汇总（只统计在市证券的日线任务） */
 export interface MarketIncrementalSummary {
-  /** 在市证券的日线任务总数（应为 在市政券数 × 3） */
+  /** 在市证券的日线任务总数（应为 在市政券数 × 1） */
   activeTaskCount: number;
   /** 尚无 last_success_date 的任务数（>0 表示全量回填未完成） */
   missingLastSuccess: number;
@@ -1037,17 +1037,43 @@ export function lastFailedError(db: MarketDatabase): string | null {
 }
 
 /**
- * 读取某股票三类日线任务的成功状态
- * @returns 三类任务是否都已成功
+ * 清理按复权类型拆分的旧日线任务（升级到一证券一任务时执行一次）
+ *
+ * `qfq_daily / hfq_daily` 任务没有数据产物（因子写入 `adjust_factors`），
+ * 删除任务行不影响任何行情数据。
+ * @returns 删除的任务数
  */
-export function areDailyTasksSucceeded(db: MarketDatabase, stockCode: string): boolean {
-  const rows = queryMarketRows(
-    `SELECT COUNT(*) FROM sync_state
-     WHERE stock_code = ? AND data_kind IN ('raw_daily', 'qfq_daily', 'hfq_daily') AND status = 'success'`,
-    [stockCode],
+export function purgeLegacyDailyTasks(db: MarketDatabase): number {
+  return executeMarket(
+    `DELETE FROM sync_state WHERE data_kind IN ('qfq_daily', 'hfq_daily')`,
+    [],
     db
   );
-  return Number(rows[0]?.[0] ?? 0) === 3;
+}
+
+/**
+ * 列出「日线任务已成功但因子缺失或不完整」的证券
+ *
+ * 一证券一任务改造后，因子由同一任务内的原始日线推导；旧库中因子缺失的证券
+ * 需要重置任务补算，因子完整的证券保持不动，避免重复下载。
+ * @returns 需要补算因子的证券代码
+ */
+export function listStocksWithIncompleteFactors(db: MarketDatabase): string[] {
+  const rows = queryMarketRows(
+    `SELECT s.stock_code
+     FROM sync_state s
+     WHERE s.data_kind = 'raw_daily'
+       AND s.status = 'success'
+       AND s.stock_code IS NOT NULL
+       AND (SELECT COUNT(*) FROM adjust_factors f WHERE f.stock_code = s.stock_code)
+           < (SELECT COUNT(*) FROM kline_daily_raw r WHERE r.stock_code = s.stock_code)
+     ORDER BY s.stock_code`,
+    [],
+    db
+  );
+  return rows
+    .map(row => (row[0] === null || row[0] === undefined ? '' : String(row[0])))
+    .filter(code => code !== '');
 }
 
 /** 读取全部日线任务（增量计划用） */

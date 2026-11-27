@@ -249,8 +249,13 @@ export const MARKET_TASK_CODE = '__MARKET__';
 /** 市场级任务类型（不绑定具体股票） */
 export const MARKET_LEVEL_KINDS: readonly MarketDataKind[] = ['active_codes', 'delisted_codes', 'calendar'];
 
-/** 股票级日线任务类型 */
-export const DAILY_KINDS: readonly MarketDataKind[] = ['raw_daily', 'qfq_daily', 'hfq_daily'];
+/**
+ * 股票级日线任务类型
+ *
+ * 一只证券只生成一个日线任务：一次请求取回原始日线后，qfq/hfq 因子由同一批数据在本地推导。
+ * `qfq_daily / hfq_daily` 仅保留在类型与标签中，用于兼容历史 `sync_state` 行与前端展示，不再生成。
+ */
+export const DAILY_KINDS: readonly MarketDataKind[] = ['raw_daily'];
 
 /** 数据任务类型的中文标签 */
 export const DATA_KIND_LABELS: Record<MarketDataKind, string> = {
@@ -299,6 +304,25 @@ export function nextTradingDay(calendar: readonly string[], date: string): strin
     }
   }
   return null;
+}
+
+/**
+ * 取日历中严格早于给定日期的最近交易日
+ *
+ * 增量下载用它把请求起点前移一个交易日，让区间首日是否除权除息可被识别。
+ * @param calendar 升序排列的交易日（YYYY-MM-DD）
+ * @param date 基准日期（YYYY-MM-DD）
+ * @returns 上一交易日；不存在时返回 null
+ */
+export function previousTradingDay(calendar: readonly string[], date: string): string | null {
+  let previous: string | null = null;
+  for (const candidate of calendar) {
+    if (candidate >= date) {
+      break;
+    }
+    previous = candidate;
+  }
+  return previous;
 }
 
 /**

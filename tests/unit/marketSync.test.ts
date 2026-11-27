@@ -128,15 +128,23 @@ function toIso(value: string | undefined, fallback: string): string {
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
 }
 
-/** 构造一组日线（按复权类型给不同价格） */
-function klinesFor(symbol: string, adjust: '' | 'qfq' | 'hfq', startDate?: string, endDate?: string): MarketKlineItem[] {
+/**
+ * 构造一组原始日线
+ *
+ * 涨跌额/涨跌幅按「当日收盘 - 前一日收盘」给出，保证无除权除息事件（因子恒为 1）；
+ * 否则聚合推导会把每个交易日都误判为事件。
+ */
+function klinesFor(symbol: string, startDate?: string, endDate?: string): MarketKlineItem[] {
   void symbol;
   const start = toIso(startDate, '1990-01-01');
   const end = toIso(endDate, '2999-12-31');
-  // 无除权事件的数据：复权价 = 原始价 × 常数，因子在整个区间恒定
-  const ratio = adjust === '' ? 1 : adjust === 'qfq' ? 0.5 : 2;
-  return CALENDAR.filter(date => date >= start && date <= end).map((date, index) => {
-    const price = Number(((10 + index) * ratio).toFixed(2));
+  const dates = CALENDAR.filter(date => date >= start && date <= end);
+  const priceAt = (date: string): number => Number((10 + CALENDAR.indexOf(date)).toFixed(2));
+
+  return dates.map((date, index) => {
+    const price = priceAt(date);
+    const previous = index > 0 ? priceAt(dates[index - 1]) : price;
+    const change = Number((price - previous).toFixed(2));
     return {
       date,
       open: price,
@@ -146,8 +154,8 @@ function klinesFor(symbol: string, adjust: '' | 'qfq' | 'hfq', startDate?: strin
       volume: 100,
       amount: 1000,
       amplitude: 2,
-      changePercent: 1,
-      change: 0.1,
+      changePercent: previous > 0 ? Number(((change / previous) * 100).toFixed(2)) : 0,
+      change,
       turnoverRate: 1,
     };
   });
@@ -173,7 +181,7 @@ function makeSdk(options: {
           releases.push(resolve);
         });
       }
-      return klinesFor(symbol, request.adjust, request.startDate, request.endDate);
+      return klinesFor(symbol, request.startDate, request.endDate);
     },
     async getAShareCodeList() {
       return options.codes ?? ['600519', '000001'];
@@ -201,17 +209,36 @@ function makeSdk(options: {
 }
 
 /**
- * 自定义价格序列的 SDK：用于构造区间内发生除权除息的场景
+ * 自定义原始日线序列的 SDK：用于构造区间内发生除权除息的场景
  * @param rawCloses 日期 → 不复权收盘价
- * @param hfqRatio 日期 → 后复权倍率（倍率变化即代表除权除息）
- * @param qfqRatio 日期 → 前复权倍率（以最新价为基准，事件后全部历史会被重标定）
+ * @param impliedPrev 日期 → 除权后的「前一日收盘」（省略则等于前一交易日收盘，即无事件）
  */
-function makeCustomSdk(options: {
+function makeRawSdk(options: {
   rawCloses: Record<string, number>;
-  hfqRatio: (date: string) => number;
-  qfqRatio: (date: string) => number;
+  impliedPrev?: Record<string, number>;
 }): FakeSdk {
   const requests: KlineRequest[] = [];
+  const dates = Object.keys(options.rawCloses).sort();
+  const items: MarketKlineItem[] = dates.map((date, index) => {
+    const close = options.rawCloses[date];
+    const previous = index > 0 ? options.rawCloses[dates[index - 1]] : close;
+    const impliedPrevious = options.impliedPrev?.[date] ?? previous;
+    const change = Number((close - impliedPrevious).toFixed(4));
+    return {
+      date,
+      open: close,
+      high: close,
+      low: close,
+      close,
+      volume: 100,
+      amount: 1000,
+      amplitude: 2,
+      changePercent: Number(((change / impliedPrevious) * 100).toFixed(4)),
+      change,
+      turnoverRate: 1,
+    };
+  });
+
   const sdk: MarketSdkLike = {
     async getHistoryKline(symbol, request) {
       requests.push({
@@ -222,31 +249,7 @@ function makeCustomSdk(options: {
       });
       const start = toIso(request.startDate, '1990-01-01');
       const end = toIso(request.endDate, '2999-12-31');
-      return Object.entries(options.rawCloses)
-        .filter(([date]) => date >= start && date <= end)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([date, rawClose]) => {
-          const ratio =
-            request.adjust === ''
-              ? 1
-              : request.adjust === 'qfq'
-                ? options.qfqRatio(date)
-                : options.hfqRatio(date);
-          const price = Number((rawClose * ratio).toFixed(2));
-          return {
-            date,
-            open: price,
-            high: price,
-            low: price,
-            close: price,
-            volume: 100,
-            amount: 1000,
-            amplitude: 2,
-            changePercent: 1,
-            change: 0.1,
-            turnoverRate: 1,
-          };
-        });
+      return items.filter(item => item.date >= start && item.date <= end);
     },
     async getAShareCodeList() {
       return ['600519'];
@@ -302,21 +305,15 @@ function seedIncrementalDb(lastSuccess: Record<string, string> = {}): void {
   saveSecurities(db, securities, 1);
   replaceTradingCalendar(db, CALENDAR, 'test');
 
+  // 一证券一个日线任务
   insertPendingTasks(
     db,
-    securities.flatMap(security =>
-      (['raw_daily', 'qfq_daily', 'hfq_daily'] as const).map(dataKind => ({
-        stockCode: security.code,
-        dataKind,
-      }))
-    ),
+    securities.map(security => ({ stockCode: security.code, dataKind: 'raw_daily' as const })),
     1
   );
 
   for (const [code, date] of Object.entries(lastSuccess)) {
-    for (const kind of ['raw_daily', 'qfq_daily', 'hfq_daily'] as const) {
-      markTaskSuccess(db, buildTaskKey(code, kind), date, 1);
-    }
+    markTaskSuccess(db, buildTaskKey(code, 'raw_daily'), date, 1);
   }
 }
 
@@ -326,10 +323,17 @@ const SEED_RAW_CLOSES: Record<string, number> = {
   '2026-11-18': 10.02,
   '2026-11-19': 10.05,
 };
+/** 无除权除息的增量数据 */
 const NEW_RAW_CLOSES: Record<string, number> = {
   '2026-11-20': 10.1,
-  '2026-11-23': 11,
-  '2026-11-24': 11.2,
+  '2026-11-23': 10.15,
+  '2026-11-24': 10.2,
+};
+/** 11-23 发生 10 送 10（价格减半），除权后前收为 10.1 / 2 */
+const NEW_RAW_CLOSES_WITH_SPLIT: Record<string, number> = {
+  '2026-11-20': 10.1,
+  '2026-11-23': 5.5,
+  '2026-11-24': 5.6,
 };
 
 function seedFactorIncrementalDb(): void {
@@ -350,32 +354,37 @@ function seedFactorIncrementalDb(): void {
     1
   );
   replaceTradingCalendar(db, CALENDAR, 'test');
+  const seedDates = Object.keys(SEED_RAW_CLOSES).sort();
   upsertDailyRaw(
     db,
     '600519',
-    Object.entries(SEED_RAW_CLOSES).map(([tradeDate, close]) => ({
-      tradeDate,
-      open: close,
-      high: close,
-      low: close,
-      close,
-      volume: 100,
-      amount: 1000,
-      turnoverRate: 1,
-    })),
+    seedDates.map((tradeDate, index) => {
+      const close = SEED_RAW_CLOSES[tradeDate];
+      const previous = index > 0 ? SEED_RAW_CLOSES[seedDates[index - 1]] : close;
+      return {
+        tradeDate,
+        open: close,
+        high: close,
+        low: close,
+        close,
+        volume: 100,
+        amount: 1000,
+        turnoverRate: 1,
+        changeAmount: Number((close - previous).toFixed(4)),
+        changePercent: previous > 0 ? Number((((close - previous) / previous) * 100).toFixed(4)) : 0,
+      };
+    }),
     'test'
   );
+  // 历史无除权事件，因子恒为 1（与本地推导口径一致）
   replaceAdjustFactors(
     db,
     '600519',
-    Object.keys(SEED_RAW_CLOSES).map(tradeDate => ({ tradeDate, qfqFactor: 0.5, hfqFactor: 2 }))
+    seedDates.map(tradeDate => ({ tradeDate, qfqFactor: 1, hfqFactor: 1 }))
   );
 
-  const kinds = ['raw_daily', 'qfq_daily', 'hfq_daily'] as const;
-  insertPendingTasks(db, kinds.map(kind => ({ stockCode: '600519', dataKind: kind })), 1);
-  for (const kind of kinds) {
-    markTaskSuccess(db, buildTaskKey('600519', kind), '2026-11-19', 1);
-  }
+  insertPendingTasks(db, [{ stockCode: '600519', dataKind: 'raw_daily' }], 1);
+  markTaskSuccess(db, buildTaskKey('600519', 'raw_daily'), '2026-11-19', 1);
 }
 
 describe('失败原因展开', () => {
@@ -638,22 +647,28 @@ describe('全量回填', () => {
 
     const status = service.getStatus();
     expect(status.state).toBe('completed');
-    expect(status.total).toBe(9); // 3 个市场级任务 + 2 只证券 × 3
-    expect(status.success).toBe(9);
+    // 3 个市场级任务 + 2 只证券 × 1 个日线任务
+    expect(status.total).toBe(5);
+    expect(status.success).toBe(5);
     expect(status.failed).toBe(0);
 
     // 原始日线：2 只证券 × 6 个交易日
     expect(readDailyRaw(db, '600519')).toHaveLength(CALENDAR.length);
     expect(readDailyRaw(db, '000001')).toHaveLength(CALENDAR.length);
 
-    // 因子由真实 raw/qfq/hfq 收盘价推导
+    // 无除权事件：因子恒为 1，且与原始日线逐日一一对应
     const factor = queryMarketRows(
       "SELECT qfq_factor, hfq_factor FROM adjust_factors WHERE stock_code = '600519' AND trade_date = '2026-11-17'",
       [],
       db
     );
-    expect(Number(factor[0][0])).toBeCloseTo(0.5);
-    expect(Number(factor[0][1])).toBeCloseTo(2);
+    expect(Number(factor[0][0])).toBeCloseTo(1);
+    expect(Number(factor[0][1])).toBeCloseTo(1);
+    expect(
+      Number(
+        queryMarketValue<number>("SELECT COUNT(*) FROM adjust_factors WHERE stock_code = '600519'", [], db)
+      )
+    ).toBe(CALENDAR.length);
 
     // 周/月派生缓存
     expect(
@@ -675,14 +690,17 @@ describe('全量回填', () => {
       )
     ).toBe(1);
 
-    // 每只证券只下载三类日线，各一次
-    expect(fake.requests).toHaveLength(6);
+    // 每只证券只发起一次原始日线请求（不再按复权类型重复下载）
+    expect(fake.requests).toHaveLength(2);
+    for (const request of fake.requests) {
+      expect(request.adjust).toBe('');
+    }
 
     // 重复点击开始：不重复生成任务，也不重复下载
     await service.start();
     await waitFor(() => !service?.isRunning());
-    expect(countTasks(db).total).toBe(9);
-    expect(fake.requests).toHaveLength(6);
+    expect(countTasks(db).total).toBe(5);
+    expect(fake.requests).toHaveLength(2);
   });
 
   it('任务键幂等：重复生成不新增行', () => {
@@ -708,11 +726,11 @@ describe('全量回填', () => {
     expect(task?.status).toBe('failed');
     expect(task?.retryCount).toBe(3);
     expect(task?.nextRetryAt).toBeNull();
-    // 三类任务各「初始请求 + 3 次自动重试」，共 3 × 4 次
-    expect(fake.requests).toHaveLength(12);
+    // 单任务「初始请求 + 3 次自动重试」，共 4 次
+    expect(fake.requests).toHaveLength(4);
 
     expect(service.getStatus().state).toBe('failed');
-    expect(service.getStatus().failedTasks.length).toBe(3);
+    expect(service.getStatus().failedTasks.length).toBe(1);
   });
 
   it('重试失败只重置 failed 任务，success 任务与已写入数据保持不变', () => {
@@ -736,7 +754,7 @@ describe('全量回填', () => {
     );
     markTaskRetry(
       db,
-      buildTaskKey('600519', 'qfq_daily'),
+      buildTaskKey('000001', 'raw_daily'),
       { retryCount: 3, nextRetryAt: null, error: '模拟失败' },
       2
     );
@@ -745,21 +763,13 @@ describe('全量回填', () => {
     expect(reset).toBe(1);
 
     expect(getTask(db, buildTaskKey('600519', 'raw_daily'))?.status).toBe('success');
-    expect(getTask(db, buildTaskKey('600519', 'hfq_daily'))?.status).toBe('success');
-    expect(getTask(db, buildTaskKey('600519', 'qfq_daily'))?.status).toBe('pending');
+    expect(getTask(db, buildTaskKey('000001', 'raw_daily'))?.status).toBe('pending');
     expect(readDailyRaw(db, '600519')).toHaveLength(1);
   });
 
   it('断点恢复：running 回退 pending、控制状态 idle、不自动继续', async () => {
     seedIncrementalDb({ '600519': '2026-11-20', '000001': '2026-11-20' });
-    // 已有因子时不再补拉复权日线，便于断言只执行未完成任务
-    replaceAdjustFactors(db, '600519', [{ tradeDate: '2026-11-17', qfqFactor: 0.5, hfqFactor: 2 }]);
     // 模拟上次进程退出时仍在运行的任务
-    executeMarket(
-      "UPDATE sync_state SET status = 'running' WHERE task_key = ?",
-      [buildTaskKey('600519', 'hfq_daily')],
-      db
-    );
     executeMarket("UPDATE sync_state SET status = 'running' WHERE task_key = ?", [
       buildTaskKey('600519', 'raw_daily'),
     ], db);
@@ -768,7 +778,6 @@ describe('全量回填', () => {
     service = createMarketSyncService({ db, sdk: fake.sdk, fetchText, now, sleep });
     service.recover();
 
-    expect(getTask(db, buildTaskKey('600519', 'hfq_daily'))?.status).toBe('pending');
     expect(getTask(db, buildTaskKey('600519', 'raw_daily'))?.status).toBe('pending');
     expect(getMarketMeta('sync_control_state', db)).toBe('idle');
     expect(service.isRunning()).toBe(false);
@@ -777,7 +786,7 @@ describe('全量回填', () => {
     // 用户点击继续后只执行未完成任务
     await service.start();
     await waitFor(() => !service?.isRunning());
-    expect(fake.requests).toHaveLength(2);
+    expect(fake.requests).toHaveLength(1);
   });
 
   it('全量运行中拒绝增量更新', async () => {
@@ -797,6 +806,85 @@ describe('全量回填', () => {
   });
 });
 
+describe('升级到单任务口径', () => {
+  it('清理旧复权任务，只重置因子不完整的证券', () => {
+    saveSecurities(
+      db,
+      [
+        {
+          code: '600519',
+          exchange: 'SH',
+          name: '贵州茅台',
+          listDate: '2001-08-27',
+          delistDate: null,
+          isActive: true,
+          codeSource: 'manual',
+          fetchedAt: 1,
+        },
+        {
+          code: '000001',
+          exchange: 'SZ',
+          name: '平安银行',
+          listDate: '1991-04-03',
+          delistDate: null,
+          isActive: true,
+          codeSource: 'manual',
+          fetchedAt: 1,
+        },
+      ],
+      1
+    );
+    replaceTradingCalendar(db, CALENDAR, 'test');
+    insertPendingTasks(
+      db,
+      ['600519', '000001'].flatMap(code =>
+        (['raw_daily', 'qfq_daily', 'hfq_daily'] as const).map(dataKind => ({
+          stockCode: code,
+          dataKind,
+        }))
+      ),
+      1
+    );
+    for (const code of ['600519', '000001']) {
+      for (const kind of ['raw_daily', 'qfq_daily', 'hfq_daily'] as const) {
+        markTaskSuccess(db, buildTaskKey(code, kind), '2026-11-19', 1);
+      }
+    }
+
+    const bar = (tradeDate: string) => ({
+      tradeDate,
+      open: 10,
+      high: 10,
+      low: 10,
+      close: 10,
+      volume: 1,
+      amount: 1,
+      turnoverRate: 1,
+    });
+    upsertDailyRaw(db, '600519', [bar('2026-11-18'), bar('2026-11-19')], 'test');
+    upsertDailyRaw(db, '000001', [bar('2026-11-18'), bar('2026-11-19')], 'test');
+    // 600519 因子完整；000001 因子缺失
+    replaceAdjustFactors(
+      db,
+      '600519',
+      ['2026-11-18', '2026-11-19'].map(tradeDate => ({ tradeDate, qfqFactor: 1, hfqFactor: 1 }))
+    );
+
+    const fake = makeSdk();
+    service = createMarketSyncService({ db, sdk: fake.sdk, fetchText, now, sleep });
+
+    // 旧任务行被清理
+    expect(getTask(db, buildTaskKey('600519', 'qfq_daily'))).toBeNull();
+    expect(getTask(db, buildTaskKey('000001', 'hfq_daily'))).toBeNull();
+    expect(countTasks(db).total).toBe(2);
+    // 因子完整的证券不重跑；因子缺失的证券重置待补算
+    expect(getTask(db, buildTaskKey('600519', 'raw_daily'))?.status).toBe('success');
+    expect(getTask(db, buildTaskKey('000001', 'raw_daily'))?.status).toBe('pending');
+    // 迁移本身不发请求
+    expect(fake.requests).toHaveLength(0);
+  });
+});
+
 describe('手动增量补跑', () => {
   it('从各任务 last_success_date 的下一交易日补到最新交易日', async () => {
     seedIncrementalDb({ '600519': '2026-11-17', '000001': '2026-11-20' });
@@ -806,34 +894,33 @@ describe('手动增量补跑', () => {
     const before = service.getStatus();
     expect(before.latestTradeDate).toBe('2026-11-24');
     expect(before.earliestMissingDate).toBe('2026-11-18');
-    expect(before.incrementalTaskCount).toBe(6);
+    // 一证券一个任务：2 只证券 → 2 个待补任务
+    expect(before.incrementalTaskCount).toBe(2);
 
     const result = await service.incremental();
     expect(result.success).toBe(true);
 
     await waitFor(() => !service?.isRunning());
 
+    // 每只证券只发一次原始日线请求；起点前移一个交易日用于识别区间首日除权
+    expect(fake.requests).toHaveLength(2);
     const starts = new Map<string, string | undefined>();
     for (const request of fake.requests) {
-      starts.set(request.symbol + request.adjust, request.startDate);
-    }
-    // 600519：11-17 的下一交易日 11-18；000001：11-20 的下一交易日 11-23
-    expect(starts.get('sh600519')).toBe('20261118');
-    expect(starts.get('sh600519qfq')).toBe('20261118');
-    expect(starts.get('sz000001')).toBe('20261123');
-    expect(starts.get('sz000001hfq')).toBe('20261123');
-    for (const request of fake.requests) {
+      expect(request.adjust).toBe('');
       expect(request.endDate).toBe('20261124');
+      starts.set(request.symbol, request.startDate);
     }
+    // 600519：11-17 的下一交易日 11-18，请求起点前移到 11-17
+    expect(starts.get('sh600519')).toBe('20261117');
+    // 000001：11-20 的下一交易日 11-23，请求起点前移到 11-20
+    expect(starts.get('sz000001')).toBe('20261120');
   });
 
-  it('增量区间内发生除权除息时补拉全历史 qfq 并重标定因子', async () => {
+  it('增量区间内发生除权除息时用库内原始日线重算因子，不补拉全历史', async () => {
     seedFactorIncrementalDb();
-    const fake = makeCustomSdk({
-      rawCloses: { ...SEED_RAW_CLOSES, ...NEW_RAW_CLOSES },
-      hfqRatio: date => (date >= '2026-11-23' ? 2.1 : 2),
-      // 事件后前复权以最新价为基准：全部历史被重标定为 2/2.1
-      qfqRatio: date => (date >= '2026-11-23' ? 1 : 2 / 2.1),
+    const fake = makeRawSdk({
+      rawCloses: { ...SEED_RAW_CLOSES, ...NEW_RAW_CLOSES_WITH_SPLIT },
+      impliedPrev: { '2026-11-23': 10.1 / 2 },
     });
     service = createMarketSyncService({ db, sdk: fake.sdk, fetchText, now, sleep });
 
@@ -841,44 +928,47 @@ describe('手动增量补跑', () => {
     expect(result.success).toBe(true);
     await waitFor(() => !service?.isRunning());
 
-    // 额外发起一次全历史 qfq 请求
-    expect(
-      fake.requests.some(request => request.adjust === 'qfq' && request.startDate === '19900101')
-    ).toBe(true);
+    // 只发一次增量请求，不再补拉全历史 qfq
+    expect(fake.requests).toHaveLength(1);
+    expect(fake.requests[0].adjust).toBe('');
+    expect(fake.requests[0].startDate).toBe('20261119');
+    expect(fake.requests.some(request => request.startDate === '19900101')).toBe(false);
 
     const qfq = readAdjustFactors(db, '600519', 'qfq');
     const hfq = readAdjustFactors(db, '600519', 'hfq');
     expect(qfq.size).toBe(6);
-    // 历史前复权因子整体重标定
-    expect(qfq.get('2026-11-17')).toBeCloseTo(2 / 2.1, 2);
-    expect(qfq.get('2026-11-19')).toBeCloseTo(2 / 2.1, 2);
-    // 事件后的新日期按新基准
+    // 除权后前复权基准整体重标定：事件前 × 0.5
+    expect(qfq.get('2026-11-17')).toBeCloseTo(0.5, 2);
+    expect(qfq.get('2026-11-19')).toBeCloseTo(0.5, 2);
     expect(qfq.get('2026-11-24')).toBeCloseTo(1, 2);
-    // 后复权历史因子保持稳定，仅追加新值
-    expect(hfq.get('2026-11-19')).toBeCloseTo(2, 2);
-    expect(hfq.get('2026-11-24')).toBeCloseTo(2.1, 2);
+    // 后复权历史保持基准，事件后 × 2
+    expect(hfq.get('2026-11-19')).toBeCloseTo(1, 2);
+    expect(hfq.get('2026-11-24')).toBeCloseTo(2, 2);
   });
 
-  it('增量区间无除权除息时只局部写入，历史因子不变', async () => {
+  it('增量区间无除权除息时只追加新区间因子，历史因子保持不变', async () => {
     seedFactorIncrementalDb();
-    const fake = makeCustomSdk({
-      rawCloses: { ...SEED_RAW_CLOSES, ...NEW_RAW_CLOSES },
-      hfqRatio: () => 2,
-      qfqRatio: () => 0.5,
-    });
+    // 历史因子刻意与「本地重算」不同：用于证明无事件时既不覆盖历史，也只沿用最近值
+    replaceAdjustFactors(
+      db,
+      '600519',
+      Object.keys(SEED_RAW_CLOSES).map(tradeDate => ({ tradeDate, qfqFactor: 0.5, hfqFactor: 2 }))
+    );
+    const fake = makeRawSdk({ rawCloses: { ...SEED_RAW_CLOSES, ...NEW_RAW_CLOSES } });
     service = createMarketSyncService({ db, sdk: fake.sdk, fetchText, now, sleep });
 
     const result = await service.incremental();
     expect(result.success).toBe(true);
     await waitFor(() => !service?.isRunning());
 
-    // 三类日线各一次，无全历史补拉
-    expect(fake.requests).toHaveLength(3);
+    // 单次增量请求，无全历史补拉
+    expect(fake.requests).toHaveLength(1);
     expect(fake.requests.some(request => request.startDate === '19900101')).toBe(false);
 
     const qfq = readAdjustFactors(db, '600519', 'qfq');
     expect(qfq.size).toBe(6);
     expect(qfq.get('2026-11-17')).toBeCloseTo(0.5, 2);
+    // 无事件：新区间沿用库内最近的因子值
     expect(qfq.get('2026-11-24')).toBeCloseTo(0.5, 2);
     expect(readAdjustFactors(db, '600519', 'hfq').get('2026-11-24')).toBeCloseTo(2, 2);
   });
@@ -925,7 +1015,8 @@ describe('手动增量补跑', () => {
     await waitFor(() => !service?.isRunning());
 
     expect(getTask(db, buildTaskKey('300750', 'raw_daily'))?.status).toBe('success');
-    expect(fake.requests.filter(request => request.symbol === 'sz300750')).toHaveLength(3);
+    // 新增证券只补一个日线任务，一次请求
+    expect(fake.requests.filter(request => request.symbol === 'sz300750')).toHaveLength(1);
   });
 
   it('存在未完成全量任务时拒绝增量', async () => {

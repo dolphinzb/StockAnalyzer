@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD
+This spec defines the candlestick pattern recognition capability: a pure-function algorithm library under `shared/patterns/` that detects 32 classic Japanese candlestick patterns with trend preconditions and strength scoring, plus the page that lets the user scan one watchlist stock over a chosen adjustment type and date window, filter the results, and link a result row to the K-line chart through pattern markers.
 
 ## Requirements
 

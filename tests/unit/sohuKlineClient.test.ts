@@ -75,58 +75,27 @@ describe('搜狐 K 线客户端', () => {
     ).toEqual([]);
   });
 
-  it('无历史因子时回退全历史并生成本地 qfq', async () => {
+  it('同一区间重复请求复用缓存（重试/并发去重）', async () => {
     const fetchBytes = vi.fn(async () => responseBytes(AMPLE_RESPONSE));
     const client = createSohuKlineClient({ fetchBytes });
 
-    const bars = await client.getHistoryKline('sh600519', {
-      period: 'daily',
-      adjust: 'qfq',
-      startDate: '20250102',
-      endDate: '20250103',
-    });
+    const [first, second] = await Promise.all([
+      client.getHistoryKline('sh600519', {
+        period: 'daily',
+        adjust: '',
+        startDate: '20250102',
+        endDate: '20250103',
+      }),
+      client.getHistoryKline('sh600519', {
+        period: 'daily',
+        adjust: '',
+        startDate: '20250102',
+        endDate: '20250103',
+      }),
+    ]);
 
     expect(fetchBytes).toHaveBeenCalledTimes(1);
-    expect(String(fetchBytes.mock.calls[0][0])).toContain('start=19900101');
-    expect(bars).toHaveLength(2);
-    expect(bars[0].close).toBeCloseTo(8.5, 2);
-  });
-
-  it('raw/qfq/hfq 三条任务共享同一次 raw 请求', async () => {
-    const fetchBytes = vi.fn(async () => responseBytes(AMPLE_RESPONSE));
-    const client = createSohuKlineClient({ fetchBytes });
-
-    await Promise.all(
-      (['', 'qfq', 'hfq'] as const).map(adjust =>
-        client.getHistoryKline('sh600519', {
-          period: 'daily',
-          adjust,
-          startDate: '19900101',
-          endDate: '20250103',
-        })
-      )
-    );
-
-    expect(fetchBytes).toHaveBeenCalledTimes(1);
-  });
-
-  it('有历史因子时增量只请求起点前一天到终点', async () => {
-    const fetchBytes = vi.fn(async () => responseBytes(AMPLE_RESPONSE));
-    const readFactors = vi.fn(() => ({
-      qfq: new Map([['2025-01-02', 1]]),
-      hfq: new Map([['2025-01-02', 1]]),
-    }));
-    const client = createSohuKlineClient({ fetchBytes, readFactors });
-
-    await client.getHistoryKline('sh600519', {
-      period: 'daily',
-      adjust: 'hfq',
-      startDate: '20250102',
-      endDate: '20250103',
-    });
-
-    expect(readFactors).toHaveBeenCalledWith('600519');
-    expect(String(fetchBytes.mock.calls[0][0])).toContain('start=20250101');
+    expect(first).toEqual(second);
   });
 
   it('raw 增量只请求传入区间', async () => {
@@ -145,26 +114,18 @@ describe('搜狐 K 线客户端', () => {
     expect(url).toContain('end=20250103');
   });
 
-  it('qfq/hfq 增量优先复用当前进程因子缓存', async () => {
+  it('复权请求显式报错，避免为复权类型重复下载全历史', async () => {
     const fetchBytes = vi.fn(async () => responseBytes(AMPLE_RESPONSE));
-    const readFactors = vi.fn(() => null);
-    const client = createSohuKlineClient({ fetchBytes, readFactors });
+    const client = createSohuKlineClient({ fetchBytes });
 
-    await client.getHistoryKline('sh600519', {
-      period: 'daily',
-      adjust: 'qfq',
-      startDate: '19900101',
-      endDate: '20250103',
-    });
-    await client.getHistoryKline('sh600519', {
-      period: 'daily',
-      adjust: 'hfq',
-      startDate: '20250102',
-      endDate: '20250103',
-    });
-
-    expect(readFactors).toHaveBeenCalledTimes(1);
-    expect(fetchBytes).toHaveBeenCalledTimes(2);
-    expect(String(fetchBytes.mock.calls[1][0])).toContain('start=20250101');
+    await expect(
+      client.getHistoryKline('sh600519', {
+        period: 'daily',
+        adjust: 'qfq',
+        startDate: '20250102',
+        endDate: '20250103',
+      })
+    ).rejects.toThrow('SOHU_UNSUPPORTED_ADJUST');
+    expect(fetchBytes).not.toHaveBeenCalled();
   });
 });

@@ -19,10 +19,6 @@ export interface SohuDerivedFactors extends SohuFactorSet {
 
 const MIN_EVENT_DELTA = 1e-4;
 
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
 function finite(value: number | null | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
@@ -131,49 +127,6 @@ export function mergeSohuFactors(
   }
 
   return { qfq, hfq };
-}
-
-/**
- * 将累计因子应用到原始日线，生成 raw/qfq/hfq 对应序列。
- */
-export function applySohuFactors(
-  bars: readonly MarketKlineItem[],
-  factors: SohuFactorSet,
-  adjust: '' | 'qfq' | 'hfq'
-): MarketKlineItem[] {
-  const factorMap = adjust === 'qfq' ? factors.qfq : factors.hfq;
-  const result: MarketKlineItem[] = [];
-
-  for (const bar of bars) {
-    if (adjust === '') {
-      result.push({ ...bar });
-      continue;
-    }
-
-    const multiplier = factorMap.get(bar.date) ?? 1;
-    const open = finite(bar.open) ? round2(bar.open * multiplier) : bar.open;
-    const high = finite(bar.high) ? round2(bar.high * multiplier) : bar.high;
-    const low = finite(bar.low) ? round2(bar.low * multiplier) : bar.low;
-    const close = finite(bar.close) ? round2(bar.close * multiplier) : bar.close;
-    const change = finite(bar.change) ? round2(bar.change * multiplier) : bar.change;
-
-    result.push({
-      ...bar,
-      open,
-      high,
-      low,
-      close,
-      change,
-    });
-  }
-
-  return result.map((bar, index) => {
-    const previousClose = index > 0 && finite(result[index - 1].close) ? result[index - 1].close : null;
-    if (!finite(bar.high) || !finite(bar.low) || !finite(previousClose) || previousClose <= 0) {
-      return { ...bar, amplitude: null };
-    }
-    return { ...bar, amplitude: round2(((bar.high - bar.low) / previousClose) * 100) };
-  });
 }
 
 export function hasUsableFactors(factors: SohuFactorSet | null | undefined): factors is SohuFactorSet {

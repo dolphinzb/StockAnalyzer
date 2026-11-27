@@ -204,8 +204,8 @@ const stateClass = computed(() => `state-${state.value}`);
       <div class="action-card">
         <h2>全量回填</h2>
         <p class="action-desc">
-          覆盖沪深北全部 A 股（含退市），从 1990 年起拉取原始日线、前复权与后复权日线。
-          任务会持久化，可随时中断并在下次继续。
+          覆盖沪深北全部 A 股（含退市），从 1990 年起每只证券拉取一次原始日线，
+          并在本地推导前复权与后复权因子。任务按证券持久化，可随时中断并在下次继续。
         </p>
         <div class="action-buttons">
           <button class="btn btn-primary" :disabled="!canStart" @click="startFullBackfill">

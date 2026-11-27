@@ -1,36 +1,25 @@
 /**
  * 搜狐历史 K 线适配层
  *
- * 只实现 MarketSdkLike.getHistoryKline 需要的日线能力。
+ * 只实现 MarketSdkLike.getHistoryKline 的原始日线能力。
  * 搜狐响应为 GBK 编码 JSON，日期默认倒序；这里统一归一化为升序 MarketKlineItem[]。
+ *
+ * 复权（qfq/hfq）不在此层生成：同步服务用同一份原始日线在本地推导因子后直接落库，
+ * 因此本适配器收到复权请求时显式报错，避免再次出现「为复权类型重复下载全历史」。
  */
 
 import type { MarketKlineItem } from './marketSdkClient';
-import {
-  applySohuFactors,
-  deriveSohuFactors,
-  hasUsableFactors,
-  mergeSohuFactors,
-  type SohuFactorSet,
-} from './sohuAdjustment';
 
 export const SOHU_HISTORY_URL = 'https://q.stock.sohu.com/hisHq';
 export const SOHU_EARLIEST_START_DATE = '19900101';
 
 const DEFAULT_CACHE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_CACHE_ENTRIES = 256;
-const DEFAULT_MAX_FACTOR_ENTRIES = 500;
-
-export interface SohuFactorReader {
-  (stockCode: string): SohuFactorSet | null;
-}
 
 export interface SohuKlineClientOptions {
   fetchBytes?: (url: string) => Promise<ArrayBuffer>;
-  readFactors?: SohuFactorReader;
   maxCacheEntries?: number;
   cacheTtlMs?: number;
-  maxFactorEntries?: number;
 }
 
 interface CachedRequest {
@@ -62,10 +51,6 @@ export function toSohuCode(symbol: string): string {
     throw new Error(`INVALID_SYMBOL: 不支持的搜狐证券代码 ${symbol}`);
   }
   return `cn_${code}`;
-}
-
-export function stockCodeOf(symbol: string): string {
-  return symbol.replace(/^(sh|sz|bj)/i, '');
 }
 
 export function buildSohuHistoryUrl(sohuCode: string, startDate: string, endDate: string): string {
@@ -181,7 +166,10 @@ function withContext(label: string, error: unknown): Error {
 }
 
 /**
- * 创建仅提供 getHistoryKline 的搜狐客户端。
+ * 创建仅提供原始日线的搜狐客户端。
+ *
+ * 请求缓存按 `symbol|startDate|endDate` 去重，用于同一证券的重试与并发去重；
+ * 复权序列由同步服务在本地推导，因此不缓存任何因子。
  */
 export function createSohuKlineClient(options: SohuKlineClientOptions = {}): Pick<
   import('./marketSdkClient').MarketSdkLike,
@@ -190,9 +178,7 @@ export function createSohuKlineClient(options: SohuKlineClientOptions = {}): Pic
   const fetchBytes = options.fetchBytes ?? defaultFetchBytes;
   const maxCacheEntries = options.maxCacheEntries ?? DEFAULT_MAX_CACHE_ENTRIES;
   const cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
-  const maxFactorEntries = options.maxFactorEntries ?? DEFAULT_MAX_FACTOR_ENTRIES;
   const requestCache = new Map<string, CachedRequest>();
-  const factorCache = new Map<string, SohuFactorSet>();
 
   async function fetchRaw(symbol: string, startDate: string, endDate: string): Promise<MarketKlineItem[]> {
     const key = `${symbol}|${startDate}|${endDate}`;
@@ -230,39 +216,18 @@ export function createSohuKlineClient(options: SohuKlineClientOptions = {}): Pic
       if (itemOptions.period !== 'daily') {
         throw new Error(`SOHU_UNSUPPORTED_PERIOD: ${itemOptions.period}`);
       }
+      if (itemOptions.adjust !== '') {
+        throw new Error(
+          `SOHU_UNSUPPORTED_ADJUST: 搜狐适配器只提供原始日线，复权序列请在同步服务内由原始日线推导（${symbol} ${itemOptions.adjust}）`
+        );
+      }
+
       const startDate = itemOptions.startDate ?? SOHU_EARLIEST_START_DATE;
       const endDate = itemOptions.endDate ?? localYmd();
-      const label = `sohu getHistoryKline ${symbol} ${itemOptions.adjust || 'raw'} ${startDate}~${endDate}`;
+      const label = `sohu getHistoryKline ${symbol} ${startDate}~${endDate}`;
 
       try {
-        if (itemOptions.adjust === '') {
-          return await fetchRaw(symbol, startDate, endDate);
-        }
-
-        const stockCode = stockCodeOf(symbol);
-        const cachedFactors = factorCache.get(stockCode);
-        const stored = hasUsableFactors(cachedFactors)
-          ? cachedFactors
-          : options.readFactors?.(stockCode) ?? null;
-        let rawBars: MarketKlineItem[];
-        let factors: SohuFactorSet;
-
-        if (hasUsableFactors(stored)) {
-          rawBars = await fetchRaw(symbol, previousYmd(startDate), endDate);
-          factors = mergeSohuFactors(stored, rawBars);
-        } else {
-          rawBars = await fetchRaw(symbol, SOHU_EARLIEST_START_DATE, endDate);
-          factors = deriveSohuFactors(rawBars);
-        }
-
-        factorCache.set(stockCode, factors);
-        if (factorCache.size > maxFactorEntries) {
-          const oldest = factorCache.keys().next().value;
-          if (oldest) factorCache.delete(oldest);
-        }
-
-        const inRange = rawBars.filter(bar => bar.date >= `${startDate.slice(0, 4)}-${startDate.slice(4, 6)}-${startDate.slice(6, 8)}`);
-        return applySohuFactors(inRange, factors, itemOptions.adjust);
+        return await fetchRaw(symbol, startDate, endDate);
       } catch (error) {
         if (error instanceof Error && error.message.includes('sohu getHistoryKline')) throw error;
         throw withContext(label, error);

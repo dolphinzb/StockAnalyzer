@@ -1120,12 +1120,48 @@ export interface MarketSyncControlResult {
   error?: string;
 }
 
+/** 证券名录交易所筛选：ALL 表示不限 */
+export type SecuritiesExchangeFilter = 'ALL' | 'SH' | 'SZ' | 'BJ';
+
+/** 证券名录在市状态筛选：active 仅在市，all 含退市 */
+export type SecuritiesStatusFilter = 'active' | 'all';
+
+/** 证券名录查询入参（各字段均可缺省，由主进程补默认值） */
+export interface SecuritiesDirectoryQuery {
+  keyword?: string;
+  exchange?: SecuritiesExchangeFilter;
+  status?: SecuritiesStatusFilter;
+  /** 从 1 开始 */
+  page?: number;
+  pageSize?: number;
+}
+
+/** 证券名录列表项（不含任何价格字段） */
+export interface SecuritiesDirectoryItem {
+  code: string;
+  name: string;
+  exchange: 'SH' | 'SZ' | 'BJ';
+  listDate: string | null;
+  delistDate: string | null;
+  isActive: boolean;
+  codeSource: string;
+}
+
+/** 证券名录分页结果 */
+export interface SecuritiesDirectoryPage {
+  items: SecuritiesDirectoryItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 /** 行情库管理 API（preload 暴露） */
 export interface MarketDataAPI {
   getStatus(): Promise<MarketSyncStatus>;
   startFullBackfill(): Promise<MarketSyncControlResult>;
   runIncremental(): Promise<MarketSyncControlResult>;
   retryFailed(): Promise<MarketSyncControlResult>;
+  listSecurities(query?: SecuritiesDirectoryQuery): Promise<SecuritiesDirectoryPage>;
 }
 
 /**

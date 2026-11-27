@@ -307,4 +307,14 @@ export const SCHEMAS = {
   marketSyncStart: [],
   marketSyncIncremental: [],
   marketSyncRetryFailed: [],
+  // 证券名录查询：keyword 允许空白串（由 repository trim 后决定是否过滤）
+  marketSecuritiesList: [
+    v.object('query', {
+      keyword: v.optional(v.string('query.keyword', { allowEmpty: true, maxLength: 64 }), ''),
+      exchange: v.optional(v.enumOf('query.exchange', ['ALL', 'SH', 'SZ', 'BJ']), 'ALL'),
+      status: v.optional(v.enumOf('query.status', ['active', 'all']), 'active'),
+      page: v.optional(v.number('query.page', { integer: true, min: 1 }), 1),
+      pageSize: v.optional(v.number('query.pageSize', { integer: true, min: 1, max: 200 }), 50),
+    }),
+  ],
 } satisfies Record<string, readonly Validator[]>;

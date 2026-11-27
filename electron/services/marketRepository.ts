@@ -5,6 +5,7 @@
  * 表名一律来自白名单映射常量，禁止拼接外部输入。
  */
 
+import type { SecuritiesDirectoryPage, SecuritiesDirectoryQuery } from '../../shared/types';
 import type { SqlValue } from '../sqliteEngine';
 import {
   executeMarket,
@@ -277,6 +278,50 @@ export function countSecurities(db: MarketDatabase, activeOnly = false): number 
     db
   );
   return Number(value ?? 0);
+}
+
+/** 分页查询证券名录：关键字按代码/名称包含匹配，交易所与在市状态可组合 */
+export function searchSecurities(
+  db: MarketDatabase,
+  query: SecuritiesDirectoryQuery = {}
+): SecuritiesDirectoryPage {
+  const keyword = (query.keyword ?? '').trim();
+  const exchange = query.exchange ?? 'ALL';
+  const status = query.status ?? 'active';
+  const page = query.page ?? 1;
+  const pageSize = query.pageSize ?? 50;
+
+  const conditions: string[] = [];
+  const params: SqlValue[] = [];
+  if (status === 'active') {
+    conditions.push('is_active = 1');
+  }
+  if (exchange !== 'ALL') {
+    conditions.push('exchange = ?');
+    params.push(exchange);
+  }
+  if (keyword) {
+    conditions.push('(code LIKE ? OR name LIKE ?)');
+    const pattern = `%${keyword}%`;
+    params.push(pattern, pattern);
+  }
+  const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const totalValue = queryMarketValue<number>(
+    `SELECT COUNT(*) FROM securities ${whereSql}`,
+    params,
+    db
+  );
+  const total = Number(totalValue ?? 0);
+  const rows = queryMarketRows(
+    `SELECT code, exchange, name, list_date, delist_date, is_active, code_source
+     FROM securities ${whereSql}
+     ORDER BY code ASC LIMIT ? OFFSET ?`,
+    [...params, pageSize, (page - 1) * pageSize],
+    db
+  );
+
+  return { items: rows.map(toSecurityRow), total, page, pageSize };
 }
 
 function toSecurityRow(row: SqlValue[]): MarketSecurityRow {

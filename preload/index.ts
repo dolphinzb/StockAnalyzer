@@ -319,6 +319,7 @@ const marketDataAPI: MarketDataAPI = {
   startFullBackfill: () => ipcRenderer.invoke('market:sync:start'),
   runIncremental: () => ipcRenderer.invoke('market:sync:incremental'),
   retryFailed: () => ipcRenderer.invoke('market:sync:retry-failed'),
+  listSecurities: (query = {}) => ipcRenderer.invoke('market:securities:list', query),
 };
 
 // 暴露所有 API 到渲染进程

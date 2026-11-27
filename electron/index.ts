@@ -2,7 +2,15 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, s
 import log from 'electron-log';
 import fs from 'fs';
 import { join } from 'path';
-import type { AppConfig, KlineBatchDownloadInput, KlineBatchDownloadSummary, KlineDownloadInput, KlinePeriod } from '../shared/types';
+import type {
+  AppConfig,
+  KlineBatchDownloadInput,
+  KlineBatchDownloadSummary,
+  KlineDownloadInput,
+  KlinePeriod,
+  SecuritiesDirectoryPage,
+  SecuritiesDirectoryQuery,
+} from '../shared/types';
 import {
   addStock,
   closeDatabase,
@@ -12,7 +20,6 @@ import {
   deleteStock,
   deleteTradeRecord,
   getDb,
-  getEnabledStocks,
   getPositions,
   getTradeRecords,
   getTradeRecordsByStockCode,
@@ -30,12 +37,13 @@ import {
   type UpdateStockInput,
   type UpdateTradeInput
 } from './database';
-import { closeMarketDatabase, initMarketDatabase } from './marketDatabase';
+import { closeMarketDatabase, getMarketDb, initMarketDatabase } from './marketDatabase';
 import {
   getMarketSyncService,
   recoverInterruptedMarketSync,
   stopMarketDataSync
 } from './services/marketDataSyncService';
+import { searchSecurities } from './services/marketRepository';
 import {
   setBackupFailureNotifier,
   startBackupScheduler,
@@ -1128,6 +1136,20 @@ handleValidated('market:sync:retry-failed', SCHEMAS.marketSyncRetryFailed, async
     return { success: false, error: message };
   }
 });
+
+handleValidated(
+  'market:securities:list',
+  SCHEMAS.marketSecuritiesList,
+  (_event, query: SecuritiesDirectoryQuery): SecuritiesDirectoryPage => {
+    log.debug('IPC: market:securities:list');
+    try {
+      return searchSecurities(getMarketDb(), query);
+    } catch (error) {
+      log.error('IPC market:securities:list error:', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  }
+);
 
 /**
  * 获取K线数据

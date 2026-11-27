@@ -200,6 +200,40 @@ describe('关键通道 schema', () => {
   });
 });
 
+describe('证券名录查询入参校验', () => {
+  it('缺省参数补齐默认值', () => {
+    const [query] = validateArgs('market:securities:list', SCHEMAS.marketSecuritiesList, [{}]);
+
+    expect(query).toEqual({
+      keyword: '',
+      exchange: 'ALL',
+      status: 'active',
+      page: 1,
+      pageSize: 50,
+    });
+  });
+
+  it('接受空白关键字与合法筛选组合', () => {
+    const [query] = validateArgs('market:securities:list', SCHEMAS.marketSecuritiesList, [
+      { keyword: '   ', exchange: 'SZ', status: 'all', page: 2, pageSize: 100 },
+    ]);
+
+    expect(query).toMatchObject({ exchange: 'SZ', status: 'all', page: 2, pageSize: 100 });
+  });
+
+  it('拒绝超出上限的 pageSize、非法交易所与非整数页码', () => {
+    expect(() => validateArgs('market:securities:list', SCHEMAS.marketSecuritiesList, [
+      { pageSize: 500 },
+    ])).toThrow(/pageSize/);
+    expect(() => validateArgs('market:securities:list', SCHEMAS.marketSecuritiesList, [
+      { exchange: 'HK' },
+    ])).toThrow(/query.exchange/);
+    expect(() => validateArgs('market:securities:list', SCHEMAS.marketSecuritiesList, [
+      { page: 1.5 },
+    ])).toThrow(/必须是整数/);
+  });
+});
+
 describe('校验器职责边界', () => {
   it('不引入任何数据源端点常量或端点查询函数', () => {
     const source = readFileSync(new URL('../../electron/ipcValidation.ts', import.meta.url), 'utf8');

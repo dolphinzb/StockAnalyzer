@@ -100,6 +100,12 @@ const cases: ChannelCase[] = [
     badArgs: [undefined],
     goodArgs: [{ stockCodes: ['000001'], startDate: '20260101', endDate: '20261114', periods: ['d', 'w'] }],
   },
+  {
+    channel: 'market:securities:list',
+    schema: SCHEMAS.marketSecuritiesList,
+    badArgs: [{ pageSize: 500 }],
+    goodArgs: [{ keyword: '银行', exchange: 'SZ', status: 'active', page: 1, pageSize: 50 }],
+  },
 ];
 
 function invokeFor(testCase: ChannelCase, handler: IpcHandler) {

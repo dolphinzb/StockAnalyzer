@@ -323,6 +323,7 @@ const klineAPI: KlineAPI = {
 const marketDataAPI: MarketDataAPI = {
   getStatus: () => ipcRenderer.invoke('market:sync:status'),
   startFullBackfill: () => ipcRenderer.invoke('market:sync:start'),
+  refreshUniverse: () => ipcRenderer.invoke('market:sync:refresh-universe'),
   runIncremental: () => ipcRenderer.invoke('market:sync:incremental'),
   retryFailed: () => ipcRenderer.invoke('market:sync:retry-failed'),
   listSecurities: (query = {}) => ipcRenderer.invoke('market:securities:list', query),

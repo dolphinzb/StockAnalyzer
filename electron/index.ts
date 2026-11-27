@@ -1121,6 +1121,17 @@ handleValidated('market:sync:start', SCHEMAS.marketSyncStart, async () => {
   }
 });
 
+handleValidated('market:sync:refresh-universe', SCHEMAS.marketSyncRefreshUniverse, async () => {
+  log.info('IPC: market:sync:refresh-universe');
+  try {
+    return await getMarketSyncService().refreshUniverse();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error('IPC market:sync:refresh-universe error:', message);
+    return { success: false, error: message };
+  }
+});
+
 handleValidated('market:sync:incremental', SCHEMAS.marketSyncIncremental, async () => {
   log.info('IPC: market:sync:incremental');
   try {

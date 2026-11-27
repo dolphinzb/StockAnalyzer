@@ -22,6 +22,7 @@ import {
   type MarketDatabase,
 } from '../../electron/marketDatabase';
 import {
+  enrichMissingNames,
   fetchSseSecurities,
   fetchSzseSecurities,
   inferExchange,
@@ -33,6 +34,7 @@ import {
   stripHtml,
   syncTradingCalendar,
   type MarketHttpFetch,
+  type ParsedSecurity,
   type UniverseDeps,
 } from '../../electron/services/marketUniverseService';
 import {
@@ -141,6 +143,41 @@ describe('交易所名录字段映射', () => {
     const rows = parseSdkCodes(['sh600519', 'sz000001', 'bj920000', '900901']);
     expect(rows.map(row => row.code)).toEqual(['600519', '000001', '920000']);
     expect(rows.every(row => row.codeSource === 'sdk_active')).toBe(true);
+  });
+});
+
+describe('SDK 名称兜底代码格式', () => {
+  it('按交易所传带市场前缀代码，并把响应映射回内部纯代码', async () => {
+    const requested: string[][] = [];
+    const deps: UniverseDeps = {
+      fetchText: async () => '',
+      sdk: {
+        getHistoryKline: async () => [],
+        getAShareCodeList: async () => [],
+        getTradingCalendar: async () => [],
+        getAllQuotesByCodes: async codes => {
+          requested.push(codes);
+          const names: Record<string, string> = {
+            bj430047: '北交所测试',
+            sh600519: '贵州茅台',
+            sz000001: '平安银行',
+          };
+          return codes.map(code => ({ code, name: names[code] ?? code }));
+        },
+      },
+    };
+    const items: ParsedSecurity[] = [
+      { code: '430047', exchange: 'BJ', name: '430047', listDate: null, delistDate: null, isActive: true, codeSource: 'sdk_active' },
+      { code: '600519', exchange: 'SH', name: '600519', listDate: null, delistDate: null, isActive: true, codeSource: 'sdk_active' },
+      { code: '000001', exchange: 'SZ', name: '000001', listDate: null, delistDate: null, isActive: true, codeSource: 'sdk_active' },
+    ];
+
+    await enrichMissingNames(deps, items);
+
+    expect(requested).toEqual([['bj430047', 'sh600519', 'sz000001']]);
+    expect(items.map(item => item.name)).toEqual(['北交所测试', '贵州茅台', '平安银行']);
+    expect(items.map(item => item.code)).toEqual(['430047', '600519', '000001']);
+    expect(items[0].listDate).toBeNull();
   });
 });
 

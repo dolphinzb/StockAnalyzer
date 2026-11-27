@@ -36,6 +36,7 @@ const {
   loadError,
   manualRefresh,
   startFullBackfill,
+  refreshUniverse,
   runIncremental,
   retryFailed,
 } = useMarketDataSync();
@@ -143,7 +144,7 @@ const stateClass = computed(() => `state-${state.value}`);
         <h1>行情库</h1>
         <span class="state-badge" :class="stateClass">{{ STATE_LABELS[state] }}</span>
         <span v-if="status?.mode" class="mode-tag">
-          {{ status.mode === 'full' ? '全量回填' : '增量更新' }}
+          {{ status.mode === 'full' ? '全量回填' : status.mode === 'universe' ? '刷新证券池' : '增量更新' }}
         </span>
       </div>
       <div class="header-actions">
@@ -210,6 +211,9 @@ const stateClass = computed(() => `state-${state.value}`);
         <div class="action-buttons">
           <button class="btn btn-primary" :disabled="!canStart" @click="startFullBackfill">
             {{ status?.pending ? '继续全量回填' : '开始全量回填' }}
+          </button>
+          <button class="btn btn-secondary" :disabled="!canStart" @click="refreshUniverse">
+            刷新证券池
           </button>
           <button class="btn btn-secondary" :disabled="!canRetry" @click="retryFailed">
             重试失败

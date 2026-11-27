@@ -305,6 +305,7 @@ export const SCHEMAS = {
   // 行情库同步控制通道均为无入参命令，参数由主进程内部决定
   marketSyncStatus: [],
   marketSyncStart: [],
+  marketSyncRefreshUniverse: [],
   marketSyncIncremental: [],
   marketSyncRetryFailed: [],
   // 证券名录查询：keyword 允许空白串（由 repository trim 后决定是否过滤）

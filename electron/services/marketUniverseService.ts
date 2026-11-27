@@ -25,7 +25,7 @@ import {
   type MarketSecurityRow,
 } from './marketRepository';
 import { BSE_DELISTED_FALLBACK, MANUAL_SECURITIES } from './marketManualOverrides';
-import type { MarketSdkLike } from './marketSdkClient';
+import { toSdkCode, type MarketSdkLike } from './marketSdkClient';
 
 /** HTTP 请求描述 */
 export interface MarketHttpRequest {
@@ -480,7 +480,9 @@ export async function enrichMissingNames(
   for (let index = 0; index < pending.length; index += CHUNK) {
     const chunk = pending.slice(index, index + CHUNK);
     try {
-      const quotes = await deps.sdk.getAllQuotesByCodes(chunk.map(item => item.code));
+      const quotes = await deps.sdk.getAllQuotesByCodes(
+        chunk.map(item => toSdkCode(item.code, item.exchange))
+      );
       const nameMap = new Map(quotes.map(quote => [quote.code.replace(/^(sh|sz|bj)/, ''), quote.name]));
       for (const item of chunk) {
         const name = nameMap.get(item.code);

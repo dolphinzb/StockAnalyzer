@@ -141,3 +141,19 @@ describe('已接入校验的通道契约', () => {
     expect(handler).toHaveBeenCalledOnce();
   });
 });
+
+describe('无入参的行情库同步通道', () => {
+  it('market:sync:refresh-universe 通过校验并进入业务逻辑', () => {
+    const testCase: ChannelCase = {
+      channel: 'market:sync:refresh-universe',
+      schema: SCHEMAS.marketSyncRefreshUniverse,
+      badArgs: [],
+      goodArgs: [],
+    };
+    const handler = vi.fn(() => 'business-ran');
+    const invoke = invokeFor(testCase, handler as IpcHandler);
+
+    expect(invoke()).toBe('business-ran');
+    expect(handler).toHaveBeenCalledOnce();
+  });
+});

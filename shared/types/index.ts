@@ -1070,7 +1070,7 @@ export interface KlineAPI {
 export type MarketSyncState = 'idle' | 'running' | 'completed' | 'failed';
 
 /** 同步运行模式 */
-export type MarketSyncMode = 'full' | 'incremental';
+export type MarketSyncMode = 'full' | 'incremental' | 'universe';
 
 /** 同步数据类型 */
 export type MarketDataKind =
@@ -1165,6 +1165,7 @@ export interface SecuritiesDirectoryPage {
 export interface MarketDataAPI {
   getStatus(): Promise<MarketSyncStatus>;
   startFullBackfill(): Promise<MarketSyncControlResult>;
+  refreshUniverse(): Promise<MarketSyncControlResult>;
   runIncremental(): Promise<MarketSyncControlResult>;
   retryFailed(): Promise<MarketSyncControlResult>;
   listSecurities(query?: SecuritiesDirectoryQuery): Promise<SecuritiesDirectoryPage>;

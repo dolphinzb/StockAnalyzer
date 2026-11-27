@@ -11,6 +11,7 @@ import type {
   SecuritiesDirectoryPage,
   SecuritiesDirectoryQuery,
 } from '../shared/types';
+import { IPC_CHANNELS } from '../shared/types';
 import {
   addStock,
   closeDatabase,
@@ -197,6 +198,7 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let isWindowReady = false;
 let currentConfig: AppConfig | null = null;
 let isQuitting = false;
 let fundService: FundService | null = null;
@@ -278,7 +280,9 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     log.info('Window ready to show');
+    isWindowReady = true;
     mainWindow?.show();
+    mainWindow?.webContents.send(IPC_CHANNELS.WINDOW_READY);
     if (currentConfig) {
       mainWindow?.webContents.send('config:loaded', currentConfig);
       log.info('Config sent to renderer');
@@ -338,6 +342,8 @@ ipcMain.on('window:close', () => {
 ipcMain.handle('window:is-maximized', () => {
   return mainWindow?.isMaximized() ?? false;
 });
+
+ipcMain.handle(IPC_CHANNELS.WINDOW_IS_READY, () => isWindowReady);
 
 ipcMain.handle('config:get', () => {
   log.debug('IPC: config:get');

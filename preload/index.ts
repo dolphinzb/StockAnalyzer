@@ -122,6 +122,12 @@ const windowAPI: WindowAPI = {
     ipcRenderer.on('window:maximized', handler);
     return () => ipcRenderer.removeListener('window:maximized', handler);
   },
+  onWindowReady: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('window:ready', handler);
+    return () => ipcRenderer.removeListener('window:ready', handler);
+  },
+  isWindowReady: () => ipcRenderer.invoke('window:is-ready'),
 };
 
 // 配置 API

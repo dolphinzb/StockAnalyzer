@@ -31,6 +31,10 @@ export interface WindowAPI {
   close: () => void;
   isMaximized: () => Promise<boolean>;
   onMaximized: (callback: (isMaximized: boolean) => void) => void;
+  /** 主窗口完成 ready-to-show（可显示）后回调，返回取消订阅函数 */
+  onWindowReady: (callback: () => void) => () => void;
+  /** 查询主窗口是否已 ready-to-show，避免渲染进程挂载过晚漏掉事件 */
+  isWindowReady: () => Promise<boolean>;
   /** 获取应用版本与运行环境信息 */
   getAppInfo: () => Promise<AppInfo>;
   /** 打开数据库文件所在目录 */
@@ -155,6 +159,8 @@ export const IPC_CHANNELS = {
   WINDOW_CLOSE: 'window:close',
   WINDOW_IS_MAXIMIZED: 'window:is-maximized',
   WINDOW_MAXIMIZED: 'window:maximized',
+  WINDOW_READY: 'window:ready',
+  WINDOW_IS_READY: 'window:is-ready',
   CONFIG_GET: 'config:get',
   CONFIG_SET: 'config:set',
   CONFIG_LOADED: 'config:loaded',

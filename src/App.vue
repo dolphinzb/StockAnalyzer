@@ -44,15 +44,33 @@ const handleNavigate = (viewId: ViewId) => {
 }
 
 let cleanupWatchlist: (() => void) | null = null;
+let stopWindowReadyListener: (() => void) | null = null;
+let coldStartRefreshTriggered = false;
 
-onMounted(() => {
-  cleanupWatchlist = watchlistStore.setupEventListeners();
+function triggerColdStartRefresh(): void {
+  if (coldStartRefreshTriggered) return;
+  coldStartRefreshTriggered = true;
+  if (stopWindowReadyListener) {
+    stopWindowReadyListener();
+    stopWindowReadyListener = null;
+  }
   void watchlistStore.refreshPrices();
+}
+
+onMounted(async () => {
+  cleanupWatchlist = watchlistStore.setupEventListeners();
+  stopWindowReadyListener = window.electronAPI.onWindowReady(triggerColdStartRefresh);
+  if (await window.electronAPI.isWindowReady()) {
+    triggerColdStartRefresh();
+  }
 });
 
 onUnmounted(() => {
   if (cleanupWatchlist) {
     cleanupWatchlist();
+  }
+  if (stopWindowReadyListener) {
+    stopWindowReadyListener();
   }
 });
 </script>
